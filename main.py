@@ -5,9 +5,17 @@ from PyQt5.QtWidgets import QApplication
 from core.kernel import Kernel
 from view.ventana import MainWindow
 from plugins.ui_plugin import UIPlugin
-from plugins.home_plugin.home_plugin import Plugin_home
+from plugins.home.home_plugin import Plugin_home
 from plugins.analysis.time.average.average_plugin import Average_plugin
 from plugins.analysis.time.erp.erp_plugin import Erp_plugin
+
+#Frecuencia
+from plugins.analysis.frequency.fft.fft_plugin import Fft_plugin
+from plugins.analysis.frequency.fft_average.fft_average_plugin import Fft_average_plugin
+from plugins.analysis.frequency.psd.psd_plugin import Psd_plugin
+from plugins.analysis.frequency.relative_psd.relative_psd_plugin import Relative_psd_plugin
+from plugins.analysis.frequency.psd_average.psd_average_plugin import Psd_average_plugin
+
 
 
 def main():
@@ -17,21 +25,35 @@ def main():
     kernel = Kernel()
 
 
-    # plugin para home 
+    '''Home plugins'''
     home_plugin = Plugin_home()
+    ui_plugin = UIPlugin()
+    
     kernel.register_plugin("home", home_plugin)
+    kernel.register_plugin("ui", ui_plugin)     #plugin para leer señal
 
-    # plugin para tiempo avergae
-    time_average_plugin = Average_plugin()
+
+    '''Time plugins'''
+    time_average_plugin = Average_plugin() # plugin para tiempo avergae 
+    time_erp_plugin = Erp_plugin() # plugin para ERP
+
+    kernel.register_plugin("time_erp", time_erp_plugin)
     kernel.register_plugin("time_average", time_average_plugin)
 
-    # plugin para ERP
-    time_erp_plugin = Erp_plugin()
-    kernel.register_plugin("time_erp", time_erp_plugin)
 
-    #plugin para leer señal 
-    ui_plugin = UIPlugin()
-    kernel.register_plugin("ui", ui_plugin)
+
+    '''Frequency plugins'''
+    frequency_fft_plugin = Fft_plugin()
+    frequency_fft_average_plugin = Fft_average_plugin()
+    frequency_psd_plugin = Psd_plugin()
+    frequency_relative_psd_plugin = Relative_psd_plugin()
+    frequency_psd_average_plugin = Psd_average_plugin()
+
+    kernel.register_plugin("frequency_fft", frequency_fft_plugin)
+    kernel.register_plugin("frequency_fft_average", frequency_fft_average_plugin)
+    kernel.register_plugin("frequency_psd", frequency_psd_plugin)
+    kernel.register_plugin("frequency_relative_psd", frequency_relative_psd_plugin)
+    kernel.register_plugin("frequency_psd_average", frequency_psd_average_plugin)
 
 
     # Ventana principal 
