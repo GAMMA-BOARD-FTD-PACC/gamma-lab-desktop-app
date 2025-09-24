@@ -7,6 +7,7 @@ from view.ventana import MainWindow
 from plugins.ui_plugin import UIPlugin
 from plugins.home_plugin.home_plugin import Plugin_home
 from plugins.analysis.time.average.average_plugin import Average_plugin
+from plugins.analysis.time.erp.erp_plugin import Erp_plugin
 
 
 def main():
@@ -23,6 +24,10 @@ def main():
     # plugin para tiempo avergae
     time_average_plugin = Average_plugin()
     kernel.register_plugin("time_average", time_average_plugin)
+
+    # plugin para ERP
+    time_erp_plugin = Erp_plugin()
+    kernel.register_plugin("time_erp", time_erp_plugin)
 
     #plugin para leer señal 
     ui_plugin = UIPlugin()
