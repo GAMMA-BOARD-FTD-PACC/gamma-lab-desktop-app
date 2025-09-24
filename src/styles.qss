@@ -1,0 +1,65 @@
+/* Fondo general */
+QMainWindow {
+    background-color: #f5f5f5;
+    border: none;
+    margin: 0px;
+    padding: 0px;
+}
+
+/* Barra de botones principal (fila de navegación) */
+QPushButton {
+    background-color: transparent;
+    color: #2E60A9;
+    border: none;
+    font-size: 12px;
+    font-weight: light;
+    padding: 5px 10px;
+}
+
+/* Hover */
+QPushButton:hover {
+    text-decoration: underline;
+}
+
+/* Pressed */
+QPushButton:pressed {
+    text-decoration: underline;
+    font-weight: bold;
+}
+
+/* Checked */
+QPushButton:checked {
+    background-color: #2E60A9;
+    color: #FFFFFF;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    border-bottom-left-radius: 0px;
+    border-bottom-right-radius: 0px;
+}
+
+#buttonContainer {
+    background-color: #2E60A9;
+    border: none;
+    margin: 0px;
+    padding: 0px;
+    min-height: 100px;
+    max-height: 100px;
+}
+
+#buttonContainer QToolButton {
+    background-color: transparent;
+    color: white;
+    border: none;
+    font-size: 14px;
+    padding: 5px 12px;
+}
+
+#buttonContainer QToolButton :hover {
+    text-decoration: underline;
+}
+
+#buttonContainer QToolButton :checked {
+    background-color: white;
+    border-radius: 6px;
+}
+
