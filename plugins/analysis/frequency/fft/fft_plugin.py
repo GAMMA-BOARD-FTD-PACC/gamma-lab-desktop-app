@@ -44,6 +44,9 @@ class Fft_plugin(IPlugin):
     def stop(self):
         print("Deteniendo Fft")
         self.mainwin = None
+    
+    def get_widget(self, parent=None):
+        return None
 
     # def get_widget(self, parent=None):
     #     if self.widget is None:

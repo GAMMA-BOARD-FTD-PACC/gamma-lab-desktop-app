@@ -45,6 +45,9 @@ class Relative_psd_plugin(IPlugin):
         print("Deteniendo Relative_psd")
         self.mainwin = None
 
+    def get_widget(self, parent=None):
+        return None
+
     # def get_widget(self, parent=None):
     #     if self.widget is None:
     #         self.widget = QWidget(parent)

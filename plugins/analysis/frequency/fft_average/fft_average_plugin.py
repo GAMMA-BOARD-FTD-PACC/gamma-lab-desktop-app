@@ -45,6 +45,9 @@ class Fft_average_plugin(IPlugin):
     def stop(self):
         print("Deteniendo Fft_average")
         self.mainwin = None
+    
+    def get_widget(self, parent=None):
+        return None
 
     # def get_widget(self, parent=None):
     #     if self.widget is None:

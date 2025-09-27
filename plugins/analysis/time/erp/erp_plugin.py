@@ -44,7 +44,9 @@ class Erp_plugin(IPlugin):
     def stop(self):
         print("Deteniendo ERP")
         self.mainwin = None
-
+    
+    def get_widget(self, parent=None):
+        return None
     # def get_widget(self, parent=None):
     #     if self.widget is None:
     #         self.widget = QWidget(parent)

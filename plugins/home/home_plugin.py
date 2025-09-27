@@ -25,3 +25,6 @@ class Plugin_home(IPlugin):
 
     def stop(self):
         print("Deteniendo UIPlugin")
+
+    def get_widget(self, parent=None):
+        return None

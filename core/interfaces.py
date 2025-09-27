@@ -37,6 +37,11 @@ class IPlugin(ABC):
         """Se invoca cuando el kernel detiene los plugins."""
         pass
 
+    @abstractmethod
+    def get_widget(self, parent=None):
+        """Devuelve el widget asociado al plugin"""
+        pass
+
 
 class IService(ABC):
     """Marca para servicios expuestos en el kernel (opcional)."""

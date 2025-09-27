@@ -45,6 +45,9 @@ class Psd_plugin(IPlugin):
         print("Deteniendo Psd")
         self.mainwin = None
 
+    def get_widget(self, parent=None):
+        return None
+
     # def get_widget(self, parent=None):
     #     if self.widget is None:
     #         self.widget = QWidget(parent)

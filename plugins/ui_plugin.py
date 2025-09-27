@@ -32,6 +32,9 @@ class UIPlugin(IPlugin):
     def stop(self):
         print("Deteniendo UIPlugin")
 
+    def get_widget(self, parent=None):
+        return None
+
     def build_widget(self):
         if self.widget is None:
             self.widget = QWidget()
