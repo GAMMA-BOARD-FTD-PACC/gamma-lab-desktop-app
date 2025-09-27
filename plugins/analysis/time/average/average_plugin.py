@@ -1,6 +1,7 @@
 from core.interfaces import IPlugin
 from .average_plugin_ui import Ui_Form
 from PyQt5.QtWidgets import QWidget
+import os
 
 class Average_plugin(IPlugin):
     def __init__(self):
@@ -15,7 +16,9 @@ class Average_plugin(IPlugin):
         return "Average"
     
     def icon(self) -> str:
-        return "./src/icons/dominios/icn_average.png"
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        ruta = os.path.join(base_path, "src\icn_average.png")
+        return ruta
     
     def category(self):
         return "Analysis"
@@ -33,6 +36,14 @@ class Average_plugin(IPlugin):
                 pass
 
     def start(self, kernel):
+        """
+        Inicia el plugin Average.
+        
+        Se llama cuando el kernel inicia los plugins.
+        
+        :param kernel: Instancia del kernel
+        :type kernel: Kernel
+        """
         print("Iniciando Average")
         self.mainwin = kernel.get_service("MainWindow")
         if self.mainwin:

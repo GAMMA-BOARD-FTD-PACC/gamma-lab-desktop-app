@@ -1,5 +1,6 @@
 from core.interfaces import IPlugin
 from PyQt5.QtWidgets import QWidget
+import os
 
 class Fft_plugin(IPlugin):
     def __init__(self):
@@ -14,7 +15,9 @@ class Fft_plugin(IPlugin):
         return "Fft"
     
     def icon(self) -> str:
-        return "./src/icons/dominios/icn_fft.png"
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        ruta = os.path.join(base_path, "src\icn_fft.png")
+        return ruta
     
     def category(self):
         return "Analysis"

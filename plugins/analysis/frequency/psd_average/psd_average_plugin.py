@@ -1,3 +1,4 @@
+import os
 from core.interfaces import IPlugin
 from PyQt5.QtWidgets import QWidget
 
@@ -11,10 +12,13 @@ class Psd_average_plugin(IPlugin):
 
     
     def name(self) -> str:
-        return "Psd_average"
+        return "Psd Average"
     
     def icon(self) -> str:
-        return "./src/icons/dominios/icn_Psd_average.png"
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        ruta = os.path.join(base_path, "src\icn_Psd_average.png")
+        return ruta
+    
     
     def category(self):
         return "Analysis"

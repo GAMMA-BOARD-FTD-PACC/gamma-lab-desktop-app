@@ -1,3 +1,4 @@
+import os
 from core.interfaces import IPlugin
 from PyQt5.QtWidgets import QWidget
 
@@ -11,10 +12,12 @@ class Relative_psd_plugin(IPlugin):
 
     
     def name(self) -> str:
-        return "Relative_psd"
+        return "Relative PSD"
     
     def icon(self) -> str:
-        return "./src/icons/dominios/icn_Relative_psd.png"
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        ruta = os.path.join(base_path, "src\icn_Relative_psd.png")
+        return ruta
     
     def category(self):
         return "Analysis"

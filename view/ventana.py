@@ -44,7 +44,7 @@ class MainWindow(QMainWindow):
         # Mostrar por defecto plugins de Home
         self.switch_section(self.current_section)
 
-
+    '''buttons section'''
     # Actualizar plugins al registrar uno nuevo
     def on_plugin_registered(self, name):
         plugin = self.kernel.get_plugin(name)
@@ -86,15 +86,16 @@ class MainWindow(QMainWindow):
         btn.clicked.connect(lambda _, n=name: self.on_button_click(n))
         contenedor_botones.addWidget(btn)
 
+    '''workspace area'''
 
     # Limpia el área de plugin y notifica al plugin anterior
     def clear_plugin_area(self):
-        # notificar hide del plugin anterior
-        if self.active_plugin and hasattr(self.active_plugin, "on_hide"):
-            try:
-                self.active_plugin.on_hide()
-            except Exception as e:
-                print("Error en on_hide del plugin:", e)
+        # # notificar hide del plugin anterior
+        # if self.active_plugin and hasattr(self.active_plugin, "on_hide"):
+        #     try:
+        #         self.active_plugin.on_hide()
+        #     except Exception as e:
+        #         print("Error en on_hide del plugin:", e)
 
         if self.active_plugin_widget:
             self.active_plugin_widget.setVisible(False)

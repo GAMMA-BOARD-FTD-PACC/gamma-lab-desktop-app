@@ -1,3 +1,4 @@
+import os
 from core.interfaces import IPlugin
 from PyQt5.QtWidgets import QWidget
 
@@ -14,7 +15,9 @@ class Psd_plugin(IPlugin):
         return "Psd"
     
     def icon(self) -> str:
-        return "./src/icons/dominios/icn_Psd.png"
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        ruta = os.path.join(base_path, "src\icn_Psd.png")
+        return ruta
     
     def category(self):
         return "Analysis"

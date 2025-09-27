@@ -21,7 +21,7 @@ class Plugin_home(IPlugin):
 
     def start(self, kernel):
         print("Iniciando Home")
-        self.mainwin = kernel.get_service("Home")        
+        self.mainwin = kernel.get_service("MainWindow")        
 
     def stop(self):
         print("Deteniendo UIPlugin")
