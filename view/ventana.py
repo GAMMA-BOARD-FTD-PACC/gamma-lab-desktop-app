@@ -88,15 +88,8 @@ class MainWindow(QMainWindow):
 
     '''workspace area'''
 
-    # Limpia el área de plugin y notifica al plugin anterior
+    # Clean workspace
     def clear_plugin_area(self):
-        # # notificar hide del plugin anterior
-        # if self.active_plugin and hasattr(self.active_plugin, "on_hide"):
-        #     try:
-        #         self.active_plugin.on_hide()
-        #     except Exception as e:
-        #         print("Error en on_hide del plugin:", e)
-
         if self.active_plugin_widget:
             self.active_plugin_widget.setVisible(False)
 
@@ -104,68 +97,53 @@ class MainWindow(QMainWindow):
         self.active_plugin = None
 
 
-    # Insertar la interfaz del plugin en el area de trabajo
+    # Intertar el widget de un plugin activo en el espacio de trabajo
     def show_plugin_widget(self, plugin):
         if plugin is None:
             return
 
-        # llamar start si existe y si no fue iniciado (opcional: plugin puede manejar repetidas llamadas)
-        try:
-            if hasattr(plugin, "start") and not getattr(plugin, "started", False):
+        # Iniciar plugin si aún no fue iniciado
+        if not getattr(plugin, "started", False):
+            try:
                 plugin.start(self.kernel)
                 plugin.started = True
-        except Exception as e:
-            print("Error iniciando plugin:", e)
+            except Exception as e:
+                print("Error iniciando plugin:", e)
 
-        
-        # si ya existe el widget, reutilizarlo
+        # Reutilizar si ya existe
         if plugin.name() in self.plugin_widgets:
             widget = self.plugin_widgets[plugin.name()]
         else:
-            # crear widget solo una vez
-            widget = plugin.get_widget(parent=self.plugin_area) if hasattr(plugin, "get_widget") else None
+            # Obtener widget desde plugin
+            try:
+                widget = plugin.get_widget(parent=self.plugin_area)
+            except Exception as e:
+                print("Error en get_widget del plugin:", e)
+                widget = None
 
+            # Si no retorna widget, crear placeholder
             if widget is None:
                 placeholder = QWidget(parent=self.plugin_area)
-                placeholder_layout = QVBoxLayout(placeholder)
-                lbl = QLabel(f"No hay interfaz para {plugin.name()}")
-                placeholder_layout.addWidget(lbl)
+                layout = QVBoxLayout(placeholder)
+                layout.addWidget(QLabel(f"No hay interfaz para {plugin.name()}"))
                 widget = placeholder
 
             widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             self.plugin_layout.addWidget(widget)
             self.plugin_widgets[plugin.name()] = widget
 
-        # ocultar plugin anterior y mostrar el nuevo
+        # Ocultar anterior y mostrar el nuevo
         self.clear_plugin_area()
         widget.setVisible(True)
         self.active_plugin_widget = widget
         self.active_plugin = plugin
 
-        # notificar plugin que se muestra
+        # Notificar que se muestra
         if hasattr(plugin, "on_show"):
             try:
                 plugin.on_show()
             except Exception as e:
                 print("Error en on_show del plugin:", e)
-
-
-            # obtener widget desde plugin (contrato get_widget)
-            widget = None
-            if hasattr(plugin, "get_widget"):
-                try:
-                    widget = plugin.get_widget(parent=self.plugin_area)
-                except Exception as e:
-                    print("Error obteniendo widget del plugin:", e)
-                    widget = None
-
-        # si no hay widget, crear placeholder
-        if widget is None:
-            placeholder = QWidget(parent=self.plugin_area)
-            placeholder_layout = QVBoxLayout(placeholder)
-            lbl = QLabel(f"No hay interfaz para {plugin.name()}")
-            placeholder_layout.addWidget(lbl)
-            widget = placeholder
 
                
     # Evento al presionar un botón de plugin: mostrar su interfaz y opcionalmente procesar

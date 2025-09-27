@@ -36,14 +36,6 @@ class Average_plugin(IPlugin):
                 pass
 
     def start(self, kernel):
-        """
-        Inicia el plugin Average.
-        
-        Se llama cuando el kernel inicia los plugins.
-        
-        :param kernel: Instancia del kernel
-        :type kernel: Kernel
-        """
         print("Iniciando Average")
         self.mainwin = kernel.get_service("MainWindow")
         if self.mainwin:
