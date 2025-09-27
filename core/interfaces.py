@@ -16,6 +16,11 @@ class IPlugin(ABC):
     def category(self) -> str:
         """Categoría del plugin: 'Home', 'Preprocessing', 'Analysis', etc."""
         pass
+    
+    @abstractmethod
+    def subcategory(self) -> str:
+        """Sub-categoría del plugin: time, frequency, etc."""
+        pass
 
     @abstractmethod
     def initialize(self, kernel):

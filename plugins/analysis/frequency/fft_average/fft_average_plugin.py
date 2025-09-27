@@ -22,7 +22,9 @@ class Fft_average_plugin(IPlugin):
     
     def category(self):
         return "Analysis"
-
+    
+    def subcategory(self):
+        return "Frequency"
     def initialize(self, kernel):
         print("Inicializando Fft_average")
 

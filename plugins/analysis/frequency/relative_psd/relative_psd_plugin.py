@@ -22,6 +22,9 @@ class Relative_psd_plugin(IPlugin):
     def category(self):
         return "Analysis"
 
+    def subcategory(self):
+        return "Frequency"
+
     def initialize(self, kernel):
         print("Inicializando Relative_psd")
 

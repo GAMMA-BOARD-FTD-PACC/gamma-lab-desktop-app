@@ -1,4 +1,5 @@
-from PyQt5.QtWidgets import QMainWindow, QHBoxLayout, QVBoxLayout, QWidget, QToolButton, QPushButton, QLabel, QSizePolicy
+from collections import defaultdict
+from PyQt5.QtWidgets import QMainWindow, QHBoxLayout, QVBoxLayout, QWidget, QToolButton, QGroupBox, QLabel, QSizePolicy
 from view.ventana_principal_ui import Ui_MainWindow 
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QSize, Qt
@@ -55,6 +56,7 @@ class MainWindow(QMainWindow):
     def switch_section(self, section):
         self.current_section = section
         contenedor_botones = self.ui.buttonContainer.layout()
+        subcategories = defaultdict(list)
 
         # Limpiar botones existentes
         while contenedor_botones.count():
@@ -62,15 +64,33 @@ class MainWindow(QMainWindow):
             widget = item.widget()
             if widget:
                 widget.deleteLater()
+        
+
 
         # Agregar solo los plugins de la sección actual
         for name in self.kernel.get_plugins_by_category(section):
+            plugin = self.kernel.get_plugin(name)
+            subcategory = plugin.subcategory()
+            subcategories[subcategory].append(name)
+
             self.add_plugin_button(name)
+        
+        # Crear secciones visuales por subcategoría
+        for subcat, plugins in subcategories.items():
+            group_box = QGroupBox(subcat)
+            group_box.setAlignment(Qt.AlignHCenter | Qt.AlignTop)  # nombre centrado arriba
+            group_layout = QHBoxLayout(group_box)
+            group_layout.setContentsMargins(0, 0, 0, 0)  # sin márgenes internos
+
+            for name in plugins:
+                btn = self.add_plugin_button(name)
+                group_layout.addWidget(btn)
+
+            contenedor_botones.addWidget(group_box)
 
 
     #Agregar un botón de plugin cuando hay el evento de agregar uno nuevo.
     def add_plugin_button(self, name):
-        contenedor_botones = self.ui.buttonContainer.layout()
         plugin = self.kernel.get_plugin(name)
         btn = QToolButton()
         btn.setText(plugin.name())
@@ -84,8 +104,7 @@ class MainWindow(QMainWindow):
             btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
 
         btn.clicked.connect(lambda _, n=name: self.on_button_click(n))
-        contenedor_botones.addWidget(btn)
-
+        return btn
     '''workspace area'''
 
     # Clean workspace

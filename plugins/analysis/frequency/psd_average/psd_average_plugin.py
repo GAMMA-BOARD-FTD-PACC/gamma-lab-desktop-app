@@ -23,6 +23,9 @@ class Psd_average_plugin(IPlugin):
     def category(self):
         return "Analysis"
 
+    def subcategory(self):
+        return "Frequency"
+
     def initialize(self, kernel):
         print("Inicializando Psd_average")
 

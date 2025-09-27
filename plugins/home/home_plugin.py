@@ -12,6 +12,9 @@ class Plugin_home(IPlugin):
     
     def category(self):
         return "Home"
+    
+    def subcategory(self):
+        return "Prueba"
 
     def initialize(self, kernel):
         print("Inicializando Home")

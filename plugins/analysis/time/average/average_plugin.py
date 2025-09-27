@@ -15,6 +15,9 @@ class Average_plugin(IPlugin):
     def name(self) -> str:
         return "Average"
     
+    def subcategory(self):
+        return "Time"
+    
     def icon(self) -> str:
         base_path = os.path.dirname(os.path.abspath(__file__))
         ruta = os.path.join(base_path, "src\icn_average.png")

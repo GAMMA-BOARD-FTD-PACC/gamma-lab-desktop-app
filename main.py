@@ -20,7 +20,7 @@ from plugins.analysis.frequency.psd_average.psd_average_plugin import Psd_averag
 
 def main():
     app = QApplication(sys.argv)
-    app.setStyleSheet("src/styles.qss")
+    app.setStyleSheet(loadStyleSheet())
 
     kernel = Kernel()
 
@@ -64,6 +64,9 @@ def main():
     sys.exit(app.exec_())
 
 
+def loadStyleSheet():
+    with open("src/styles.qss", "r") as f:
+        return f.read()
 
 if __name__ == "__main__":
     main()

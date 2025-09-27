@@ -17,6 +17,9 @@ class UIPlugin(IPlugin):
     
     def category(self):
         return "Home"
+    
+    def subcategory(self):
+        return "Prueba"
 
     def initialize(self, kernel):
         print("Inicializando UIPlugin")

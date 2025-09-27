@@ -21,6 +21,9 @@ class Erp_plugin(IPlugin):
     
     def category(self):
         return "Analysis"
+    
+    def subcategory(self):
+        return "Time"
 
     def initialize(self, kernel):
         print("Inicializando ERP")
