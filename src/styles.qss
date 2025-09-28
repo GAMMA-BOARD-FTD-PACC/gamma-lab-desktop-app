@@ -13,17 +13,17 @@ QPushButton {
     border: none;
     font-size: 12px;
     font-weight: light;
-    padding: 0px 0px;
+    padding: 5px 0px;
 }
 
 /* Hover */
 QPushButton:hover {
-    text-decoration: underline;
+    /* text-decoration: underline; */
+    font-weight: bold;
 }
 
 /* Pressed */
 QPushButton:pressed {
-    text-decoration: underline;
     font-weight: bold;
 }
 
@@ -51,14 +51,16 @@ QPushButton:checked {
     color: white;
     border: none;
     font-size: 12px;
-    padding: 5px 12px;
+    padding: 5px 5px;
 }
 
-#buttonContainer QToolButton :hover {
-    text-decoration: underline;
+#buttonContainer QToolButton:hover {
+    background-color: #2a59a0;
+    /* font-weight: bold; */
+    border-radius: 10px;
 }
 
-#buttonContainer QToolButton :checked {
+#buttonContainer QToolButton:checked {
     background-color: white;
     border-radius: 6px;
 }
@@ -69,7 +71,7 @@ QPushButton:checked {
     border: none;             
 
     color: white;
-    font-size: 14px;
+    font-size: 12px;
     /* font-weight: bold;  */
     padding: 0px 5px;  
     /* border-bottom: 1px solid #ffffff; */
