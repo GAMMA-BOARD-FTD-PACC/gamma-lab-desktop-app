@@ -3,11 +3,13 @@ import sys
 from PyQt5.QtWidgets import QApplication
 
 from core.kernel import Kernel
-from view.ventana import MainWindow
+from core.services.assets import AssetManager
+from app.view.ventana import MainWindow
 from plugins.ui_plugin import UIPlugin
 from plugins.home.home_plugin import Plugin_home
 from plugins.analysis.time.average.average_plugin import Average_plugin
 from plugins.analysis.time.erp.erp_plugin import Erp_plugin
+#from plugins.io.open_signal_plugin import OpenSignalPlugin
 
 #Frecuencia
 from plugins.analysis.frequency.fft.fft_plugin import Fft_plugin
@@ -24,7 +26,15 @@ def main():
 
     kernel = Kernel()
 
-
+    '''Core plugins'''
+    kernel.register_service("Assets", AssetManager(root="assets/icons"))
+    
+    '''IO plugins'''
+    ui_plugin = UIPlugin()
+    kernel.register_plugin("ui", ui_plugin)
+    #open_signal_plugin = OpenSignalPlugin()
+    #kernel.register_plugin("io.open_signal", open_signal_plugin)
+    
     '''Home plugins'''
     home_plugin = Plugin_home()
     ui_plugin = UIPlugin()
@@ -65,7 +75,7 @@ def main():
 
 
 def loadStyleSheet():
-    with open("src/styles.qss", "r") as f:
+    with open("assets/styles/styles.qss", "r") as f:
         return f.read()
 
 if __name__ == "__main__":
