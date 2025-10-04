@@ -4,8 +4,9 @@ from PyQt5.QtWidgets import QApplication
 
 from core.kernel import Kernel
 from core.services.assets import AssetManager
-from app.view.ventana import MainWindow
-from plugins.ui_plugin import UIPlugin
+from app.view.main_window import MainWindow
+from core.services.data_store import DataStore
+from core.services.fileio import FileIOService
 from plugins.home.home_plugin import Plugin_home
 from plugins.analysis.time.average.average_plugin import Average_plugin
 from plugins.analysis.time.erp.erp_plugin import Erp_plugin
@@ -17,6 +18,7 @@ from plugins.analysis.frequency.fft_average.fft_average_plugin import Fft_averag
 from plugins.analysis.frequency.psd.psd_plugin import Psd_plugin
 from plugins.analysis.frequency.relative_psd.relative_psd_plugin import Relative_psd_plugin
 from plugins.analysis.frequency.psd_average.psd_average_plugin import Psd_average_plugin
+from plugins.io.open_signal.open_signal_plugin import OpenSignalPlugin
 
 
 
@@ -28,19 +30,15 @@ def main():
 
     '''Core plugins'''
     kernel.register_service("Assets", AssetManager(root="assets/icons"))
-    
-    '''IO plugins'''
-    ui_plugin = UIPlugin()
-    kernel.register_plugin("ui", ui_plugin)
-    #open_signal_plugin = OpenSignalPlugin()
-    #kernel.register_plugin("io.open_signal", open_signal_plugin)
-    
+    kernel.register_service("DataStore", DataStore())
+    kernel.register_service("FileIO", FileIOService())
+
     '''Home plugins'''
     home_plugin = Plugin_home()
-    ui_plugin = UIPlugin()
+    open_signal_plugin = OpenSignalPlugin()
     
     kernel.register_plugin("home", home_plugin)
-    kernel.register_plugin("ui", ui_plugin)     #plugin para leer señal
+    kernel.register_plugin("OpenSignal", open_signal_plugin)     #plugin para leer señal
 
 
     '''Time plugins'''

@@ -1,6 +1,6 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-class Ui_OpenAbfSignal(QtWidgets.QWidget):
+class Ui_OpenSignal(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setupUi()
