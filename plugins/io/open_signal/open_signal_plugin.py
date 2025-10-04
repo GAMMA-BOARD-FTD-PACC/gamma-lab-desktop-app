@@ -1,7 +1,8 @@
 # ui_plugin.py
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QFileDialog, QPushButton
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
-import vtk, pyabf
+import vtk
+from pathlib import Path
 from core.interfaces import IPlugin
 from core.services.data_store import DataStore
 from core.services.fileio import FileIOService
@@ -47,7 +48,7 @@ class OpenSignalPlugin(IPlugin):
 
             # Botón abrir señal
             btn = QPushButton("Seleccionar archivo ABF", self.widget)
-            btn.clicked.connect(self.on_open_clicked)   # <-- usa el método que existe
+            btn.clicked.connect(self.on_open_clicked)
             layout.addWidget(btn)
 
             # VTK Widget
@@ -56,7 +57,6 @@ class OpenSignalPlugin(IPlugin):
 
             self.renwin = self.vtk_widget.GetRenderWindow()
             try:
-                # Inicializa ANTES de primer Render
                 self.vtk_widget.Initialize()
             except Exception:
                 pass
@@ -68,36 +68,60 @@ class OpenSignalPlugin(IPlugin):
 
     def on_open_clicked(self):
         fname, _ = QFileDialog.getOpenFileName(
-            self.widget, "Seleccionar archivo ABF", "", "ABF (*.abf);;Todos (*)"
+            self.widget,
+            "Seleccionar archivo de señal",
+            "",
+            "Señales (*.abf *.edf *.ebf *.mat);;Archivos ABF (*.abf);;Archivos EDF (*.edf);;Archivos EBF (*.ebf);;Archivos MAT (*.mat)"
         )
         if fname:
             self.load_and_render(fname)
             
     def load_and_render(self, path: str):
         fileio: FileIOService = self.kernel.get_service("FileIO")
-        ds: SignalDataset = fileio.load_abf(path)
+        if fileio is None:
+            fileio = FileIOService()
+            self.kernel.register_service("FileIO", fileio)
 
-        # guarda dataset para otros plugins
+        ext = Path(path).suffix.lower()
+        if ext == ".abf":
+            ds = fileio.load_abf(path)
+        elif ext == ".edf":
+            ds = fileio.load_edf(path)
+        else:
+            # Puedes mostrar un mensaje de error si lo deseas
+            if self.mainwin:
+                self.mainwin.statusBar().showMessage(f"Formato no soportado: {ext}", 4000)
+            return
+
+        # Guarda y pinta como antes
         store: DataStore = self.kernel.get_service("DataStore")
+        if store is None:
+            store = DataStore()
+            self.kernel.register_service("DataStore", store)
         store.set(self.ds_key, ds)
 
         self.render_dataset(ds)
-
         if self.mainwin:
-            self.mainwin.statusBar().showMessage(f"ABF cargado: {path}", 4000)
+            self.mainwin.statusBar().showMessage(f"Cargado: {path}", 4000)
 
 
     # render
     def render_dataset(self, ds: SignalDataset):
         self.renwin.GetRenderers().RemoveAllItems()
 
+        MIN_PLOT_HEIGHT_PX = 250  
+        h = max(1, self.vtk_widget.height())
+        avail_h = max(1, h - 8)
+        max_visible = max(1, avail_h // MIN_PLOT_HEIGHT_PX)
+        C_total = ds.signals.shape[0]
+        C = min(C_total, int(max_visible))
+        
         table = dataset_to_vtk_table(ds)
         colors = vtk.vtkNamedColors()
-        C = ds.signals.shape[0]
         
-        for ch in range(C):
-            vmin = float(C - (ch + 1)) / C
-            vmax = float(C - ch) / C
+        for idx, ch in enumerate(range(C)):
+            vmin = float(C - (idx + 1)) / C
+            vmax = float(C - idx) / C
 
             renderer = vtk.vtkRenderer()
             renderer.SetBackground(colors.GetColor3d("WhiteSmoke"))
@@ -116,8 +140,14 @@ class OpenSignalPlugin(IPlugin):
             chart.SetTitle(title)
 
             plot = chart.AddPlot(vtk.vtkChart.LINE)
-            plot.SetInputData(table, 0, ch + 1)  # 0=time, ch+1=col del canal
+            plot.SetInputData(table, 0, ch + 1) 
             plot.SetColor(*colors.GetColor4ub("Black"))
             plot.SetWidth(0.5)
 
+        if C_total > C and self.mainwin:
+                self.mainwin.statusBar().showMessage(
+                    f"Mostrando {C} de {C_total} canales (alto mínimo {MIN_PLOT_HEIGHT_PX}px).",
+                    5000
+                )
+        
         self.renwin.Render()
