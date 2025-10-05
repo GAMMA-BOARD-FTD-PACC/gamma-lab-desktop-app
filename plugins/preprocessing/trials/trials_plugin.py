@@ -1,5 +1,5 @@
 from PyQt5 import QtWidgets, QtCore
-from PyQt5.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QLabel, QSpinBox, QDoubleSpinBox, QPushButton, QFrame
+from PyQt5.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QLabel, QSpinBox, QDoubleSpinBox, QPushButton, QFrame, QMessageBox
 import vtk
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
@@ -18,19 +18,18 @@ class TrialsPlugin(IPlugin):
         self.ui = None
         self.params = {
             "channel": 0,
-            "threshold": 50.0,
-            "t0": -0.2,
-            "t1": 0.8,
-            "stim_count": None,   # puede ser int o None
-            "isi": None           # en segundos, float o None
+            "threshold": 0.8,
+            "t0": -0.05,
+            "t1": 4.0,
+            "stim_count": None,  
+            "isi": None          
         }
-        # UI
+
         self.widget: QWidget | None = None
         self.VtkViewer: QFrame | None = None
         self.vtk_widget: QVTKRenderWindowInteractor | None = None
         self.renwin = None
 
-        # Controles (mantienen EXACTOS los nombres pedidos)
         self.channelSpinBox: QSpinBox | None = None
         self.stimNumberSpinBox: QSpinBox | None = None
         self.thresholdDoubleSpinBox: QDoubleSpinBox | None = None
@@ -38,6 +37,9 @@ class TrialsPlugin(IPlugin):
         self.finalTimeDoubleSpinBox: QDoubleSpinBox | None = None
         self.interStimTimeDoubleSpinBox: QDoubleSpinBox | None = None
         self.Btn_generate_trials: QPushButton | None = None
+        
+        self.visible_trials = []
+        self.last_td = None
 
     def name(self): return "Trials"
     def category(self): return "Preprocessing"
@@ -54,17 +56,13 @@ class TrialsPlugin(IPlugin):
     
     def get_widget(self, parent=None):
         if self.widget is None:
-            # Crea la UI hecha con Qt Designer / clase programática Ui_Trials
             self.ui = Ui_Trials(parent)
-            self.widget = self.ui  # la propia Ui_Trials es un QWidget
+            self.widget = self.ui  
 
-            # Monta VTK dentro del frame de la UI
             self._ensure_vtk()
 
-            # Conexiones
             self.ui.Btn_generate_trials.clicked.connect(self._on_generate_clicked)
 
-            # Inicializa controles y llena rangos con la señal cargada
             self._init_controls()
             self._populate_from_raw()
         else:
@@ -105,7 +103,6 @@ class TrialsPlugin(IPlugin):
             print("[TrialsPlugin] _init_interactor error:", e)
 
     def _post_show_check(self):
-        # Útil para depurar si el formulario se está montando
         print("[TrialsPlugin] visible:",
               bool(self._root and self._root.isVisible()),
               "vtk:", bool(self.vtk_widget))
@@ -141,6 +138,7 @@ class TrialsPlugin(IPlugin):
     def _on_generate_clicked(self):
         self._run_generate()
 
+
     def _run_generate(self):
         store: DataStore = self.kernel.get_service("DataStore")
         ds: SignalDataset | None = store.get("raw", None)
@@ -153,29 +151,37 @@ class TrialsPlugin(IPlugin):
         th   = float(self.ui.thresholdDoubleSpinBox.value())
         t0   = float(self.ui.initialTimeDoubleSpinBox.value())
         t1   = float(self.ui.finalTimeDoubleSpinBox.value())
+        mode = self.ui.endModeCombo.currentData() or "fixed"
         stim = int(self.ui.stimNumberSpinBox.value())
         stim = None if stim <= 0 else stim
         isi  = float(self.ui.interStimTimeDoubleSpinBox.value())
         isi  = None if isi <= 0 else isi
 
+        if mode == "fixed" and not (t1 > t0):
+            QMessageBox.warning(self.widget, "Parámetros", "t1 debe ser mayor que t0.")
+            return
+        
         td: TrialDataset = cut_trials_single_channel(
-            ds=ds, channel=ch, threshold=th, t0=t0, t1=t1, stim_count=stim, isi=isi
+            ds=ds, channel=ch, threshold=th, t0=t0, t1=t1, end_mode=mode, stim_expected=stim, isi=isi
         )
 
-        # Guarda para otros plugins
         store.set("trials_dataset", td)
-        store.set("trials_matrix",  td.trials)    # (Ns, T)
-        store.set("trials_time",    td.time_rel)  # (Ns,)
+        store.set("trials_matrix",  td.trials)    
+        store.set("trials_time",    td.time_rel)  
         store.set("trials_meta", {
             "fs": td.sampling_rate,
             "channel_index": td.channel_index,
             "channel_name": td.channel_name,
             "unit": td.unit,
             "t0": td.t0, "t1": td.t1,
+            "mode" : mode,
             "onsets_s": td.onsets_s, "isi_s": td.isi_s,
             "source": td.source,
         })
 
+        self.last_td = td
+        T = td.trials.shape[1]
+        self.visible_trials = [0] if T > 0 else []
         # Render
         self._render_trials(td)
 
@@ -191,7 +197,6 @@ class TrialsPlugin(IPlugin):
         if not self.renwin:
             return
 
-        # Si la ventana aún no está mapeada, reprog. render (estable en Win32)
         if not self.renwin.GetMapped():
             QtCore.QTimer.singleShot(0, lambda: self._render_trials(td))
             return
@@ -214,11 +219,19 @@ class TrialsPlugin(IPlugin):
         scene.SetRenderer(renderer)
 
         Ns, T = td.trials.shape
-        MAX_VISIBLE = 20
-        for j in range(min(T, MAX_VISIBLE)):
+        
+        sel = sorted({i for i in self.visible_trials if 0 <= i < T})
+        if not sel and T > 0:
+            sel = [0] 
+
+        for idx in sel:
             plot = chart.AddPlot(vtk.vtkChart.LINE)
-            plot.SetInputData(table, 0, j + 1)  # 0=time, 1..T = trials
+            plot.SetInputData(table, 0, idx + 1)  # 0=time, (idx+1)=trial idx
             plot.SetWidth(0.5)
+
+        # Ejes de la gráfica
+        chart.GetAxis(0).SetTitle("Time (s)")
+        chart.GetAxis(1).SetTitle(td.unit or "Amplitude")
 
         try:
             self.renwin.Render()

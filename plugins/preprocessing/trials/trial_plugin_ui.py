@@ -48,7 +48,13 @@ class Ui_Trials(QtWidgets.QWidget):
         self.finalTimeLabel = QtWidgets.QLabel("Final Time", formWrap)
         self.finalTimeDoubleSpinBox = QtWidgets.QDoubleSpinBox(formWrap)
         formLay.addRow(self.finalTimeLabel, self.finalTimeDoubleSpinBox)
-
+                
+        self.endModeComboLabel = QtWidgets.QLabel("Trial End Mode", formWrap)
+        self.endModeCombo = QtWidgets.QComboBox(formWrap)
+        self.endModeCombo.addItem("Fixed window [t0, t1)", userData="fixed")
+        self.endModeCombo.addItem("Cut to the next stim", userData="until_next_onset")
+        formLay.addRow(self.endModeComboLabel, self.endModeCombo)
+        
         self.interStimTimeLabel = QtWidgets.QLabel("Inter Stim Time", formWrap)
         self.interStimTimeDoubleSpinBox = QtWidgets.QDoubleSpinBox(formWrap)
         formLay.addRow(self.interStimTimeLabel, self.interStimTimeDoubleSpinBox)
