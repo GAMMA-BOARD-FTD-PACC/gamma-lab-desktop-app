@@ -33,3 +33,23 @@ def dataset_to_vtk_table(ds: SignalDataset) -> vtk.vtkTable:
     table.SetNumberOfRows(N)
     ds.vtk_table = table
     return table
+
+def trials_matrix_to_vtk_table(time_rel: np.ndarray, trials: np.ndarray) -> vtk.vtkTable:
+    """
+    Crea una vtkTable: col 0 = 'time', cols 1..T = trial_j
+    trials: (Ns, T)
+    """
+    Ns, T = trials.shape
+    table = vtk.vtkTable()
+
+    arr_t = numpy_support.numpy_to_vtk(time_rel.astype(np.float64), deep=True)
+    arr_t.SetName("time")
+    table.AddColumn(arr_t)
+
+    for j in range(T):
+        arr = numpy_support.numpy_to_vtk(trials[:, j].astype(np.float64), deep=True)
+        arr.SetName(f"trial_{j+1}")
+        table.AddColumn(arr)
+
+    table.SetNumberOfRows(Ns)
+    return table
