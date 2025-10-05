@@ -1,7 +1,7 @@
 from collections import defaultdict
 import os
 from PyQt5.QtWidgets import QMainWindow, QHBoxLayout, QVBoxLayout, QWidget, QToolButton, QGroupBox, QLabel, QSizePolicy
-from view.ventana_principal_ui import Ui_MainWindow 
+from app.view.ventana_principal_ui import Ui_MainWindow 
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QSize, Qt
 

@@ -3,11 +3,14 @@ import sys
 from PyQt5.QtWidgets import QApplication
 
 from core.kernel import Kernel
-from view.ventana import MainWindow
-from plugins.ui_plugin import UIPlugin
+from core.services.assets import AssetManager
+from app.view.main_window import MainWindow
+from core.services.data_store import DataStore
+from core.services.fileio import FileIOService
 from plugins.home.home_plugin import Plugin_home
 from plugins.analysis.time.average.average_plugin import Average_plugin
 from plugins.analysis.time.erp.erp_plugin import Erp_plugin
+#from plugins.io.open_signal_plugin import OpenSignalPlugin
 
 #Frecuencia
 from plugins.analysis.frequency.fft.fft_plugin import Fft_plugin
@@ -15,6 +18,8 @@ from plugins.analysis.frequency.fft_average.fft_average_plugin import Fft_averag
 from plugins.analysis.frequency.psd.psd_plugin import Psd_plugin
 from plugins.analysis.frequency.relative_psd.relative_psd_plugin import Relative_psd_plugin
 from plugins.analysis.frequency.psd_average.psd_average_plugin import Psd_average_plugin
+from plugins.io.open_signal.open_signal_plugin import OpenSignalPlugin
+from plugins.preprocessing.trials.trials_plugin import TrialsPlugin
 
 
 
@@ -24,14 +29,20 @@ def main():
 
     kernel = Kernel()
 
+    '''Core plugins'''
+    kernel.register_service("Assets", AssetManager(root="assets/icons"))
+    kernel.register_service("DataStore", DataStore())
+    kernel.register_service("FileIO", FileIOService())
 
     '''Home plugins'''
     home_plugin = Plugin_home()
-    ui_plugin = UIPlugin()
+    open_signal_plugin = OpenSignalPlugin()
     
     kernel.register_plugin("home", home_plugin)
-    kernel.register_plugin("ui", ui_plugin)     #plugin para leer señal
+    kernel.register_plugin("OpenSignal", open_signal_plugin)     #plugin para leer señal
 
+    '''Preprocessing plugins'''
+    kernel.register_plugin("trials", TrialsPlugin())
 
     '''Time plugins'''
     time_average_plugin = Average_plugin() # plugin para tiempo avergae 
@@ -65,7 +76,7 @@ def main():
 
 
 def loadStyleSheet():
-    with open("src/styles.qss", "r") as f:
+    with open("assets/styles/styles.qss", "r") as f:
         return f.read()
 
 if __name__ == "__main__":
