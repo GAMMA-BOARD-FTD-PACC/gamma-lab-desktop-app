@@ -1,10 +1,11 @@
 # main.py
+from pathlib import Path
 import sys
 from PyQt5.QtWidgets import QApplication
 
 from core.kernel import Kernel
-from core.services.assets import AssetManager
 from app.view.main_window import MainWindow
+from core.plugins.manager import PluginManager
 from core.services.data_store import DataStore
 from core.services.fileio import FileIOService
 from plugins.home.home_plugin import Plugin_home
@@ -29,45 +30,23 @@ def main():
 
     kernel = Kernel()
 
-    '''Core plugins'''
-    kernel.register_service("Assets", AssetManager(root="assets/icons"))
+    # 1) Servicios core
     kernel.register_service("DataStore", DataStore())
     kernel.register_service("FileIO", FileIOService())
 
-    '''Home plugins'''
-    home_plugin = Plugin_home()
-    open_signal_plugin = OpenSignalPlugin()
-    
-    kernel.register_plugin("home", home_plugin)
-    kernel.register_plugin("OpenSignal", open_signal_plugin)     #plugin para leer señal
+    # 2) Descubrir e instanciar plugins
+    plugins_dir = Path(__file__).resolve().parent / "plugins"
+    pm = PluginManager(plugins_dir)
+    pm.load_all()
 
-    '''Preprocessing plugins'''
-    kernel.register_plugin("trials", TrialsPlugin())
+    # 3) Registrar plugins en el kernel POR NOMBRE (desde properties.yml)
+    for meta, plugin in pm.all():
+        try:
+            kernel.register_plugin(meta.name, plugin)
+        except Exception as e:
+            print(f"No se pudo registrar '{meta.name}':", e)
 
-    '''Time plugins'''
-    time_average_plugin = Average_plugin() # plugin para tiempo avergae 
-    time_erp_plugin = Erp_plugin() # plugin para ERP
-
-    kernel.register_plugin("time_erp", time_erp_plugin)
-    kernel.register_plugin("time_average", time_average_plugin)
-
-
-
-    '''Frequency plugins'''
-    frequency_fft_plugin = Fft_plugin()
-    frequency_fft_average_plugin = Fft_average_plugin()
-    frequency_psd_plugin = Psd_plugin()
-    frequency_relative_psd_plugin = Relative_psd_plugin()
-    frequency_psd_average_plugin = Psd_average_plugin()
-
-    kernel.register_plugin("frequency_fft", frequency_fft_plugin)
-    kernel.register_plugin("frequency_fft_average", frequency_fft_average_plugin)
-    kernel.register_plugin("frequency_psd", frequency_psd_plugin)
-    kernel.register_plugin("frequency_relative_psd", frequency_relative_psd_plugin)
-    kernel.register_plugin("frequency_psd_average", frequency_psd_average_plugin)
-
-
-    # Ventana principal 
+    # 4) Ventana principal (después de registrar plugins)
     main_win = MainWindow(kernel)
     kernel.register_service("MainWindow", main_win)
 
