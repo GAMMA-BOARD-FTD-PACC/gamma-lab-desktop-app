@@ -1,30 +1,17 @@
-from core.interfaces import IPlugin
+from core.plugins.interfaces import IPlugin
+from core.plugins.meta import PluginMeta
 from .average_plugin_ui import Ui_Form
 from PyQt5.QtWidgets import QWidget
 import os
 
 class Average_plugin(IPlugin):
-    def __init__(self):
+    def __init__(self, meta:PluginMeta):
+        super().__init__(meta)
         self.mainwin = None
         self.widget = None
         self.vtk_widget = None
         self.renwin = None
         self.started = False
-
-    
-    def name(self) -> str:
-        return "Average"
-    
-    def subcategory(self):
-        return "Time"
-    
-    def icon(self) -> str:
-        base_path = os.path.dirname(os.path.abspath(__file__))
-        ruta = os.path.join(base_path, "src\icn_average.png")
-        return ruta
-    
-    def category(self):
-        return "Analysis"
 
     def initialize(self, kernel):
         print("Inicializando Average")

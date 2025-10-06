@@ -1,20 +1,13 @@
-from core.interfaces import IPlugin
+from core.plugins.interfaces import IPlugin
+from core.plugins.meta import PluginMeta
 
 class Plugin_home(IPlugin):
-    def __init__(self):
+    def __init__(self, meta: PluginMeta):
+        super().__init__(meta)
         self.mainwin = None
         self.widget = None
         self.vtk_widget = None
         self.renwin = None
-    
-    def name(self) -> str:
-        return "Home"
-    
-    def category(self):
-        return "Home"
-    
-    def subcategory(self):
-        return "Prueba"
 
     def initialize(self, kernel):
         print("Inicializando Home")
