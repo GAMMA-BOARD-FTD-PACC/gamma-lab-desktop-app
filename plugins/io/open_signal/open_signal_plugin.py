@@ -3,7 +3,8 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout, QFileDialog, QPushButton
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 import vtk
 from pathlib import Path
-from core.interfaces import IPlugin
+from core.plugins.interfaces import IPlugin
+from core.plugins.meta import PluginMeta
 from core.services.data_store import DataStore
 from core.services.fileio import FileIOService
 from core.services.signal_dataset import SignalDataset
@@ -11,7 +12,8 @@ from core.vtk_adapters.adapters import dataset_to_vtk_table
 
 
 class OpenSignalPlugin(IPlugin):
-    def __init__(self):
+    def __init__(self, meta: PluginMeta):
+        super().__init__(meta)
         self.kernel = None
         self.mainwin = None
         self.widget = None
@@ -19,12 +21,8 @@ class OpenSignalPlugin(IPlugin):
         self.renwin = None
         self.ds_key = "raw"
 
-    def name(self) -> str: return "OpenSignalPlugin"
-    def category(self):     return "Home"
-    def subcategory(self):  return "io"
-
     def initialize(self, kernel):
-        print("Inicializando UIPlugin")
+        print(f"Inicializando {self.name()}") 
 
     def process(self, data: any):
         print(f"UIPlugin recibió datos: {data}")

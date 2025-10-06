@@ -3,7 +3,8 @@ from PyQt5.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QLab
 import vtk
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
-from core.interfaces import IPlugin
+from core.plugins.interfaces import IPlugin
+from core.plugins.meta import PluginMeta
 from core.services.data_store import DataStore
 from core.services.signal_dataset import SignalDataset
 from core.services.trial_dataset import TrialDataset
@@ -12,7 +13,8 @@ from core.vtk_adapters.adapters import trials_matrix_to_vtk_table
 from plugins.preprocessing.trials.trial_plugin_ui import Ui_Trials
 class TrialsPlugin(IPlugin):
 
-    def __init__(self):
+    def __init__(self, meta: PluginMeta):
+        super().__init__(meta)
         self.kernel = None
         self.mainwin = None
         self.ui = None
@@ -40,10 +42,6 @@ class TrialsPlugin(IPlugin):
         
         self.visible_trials = []
         self.last_td = None
-
-    def name(self): return "Trials"
-    def category(self): return "Preprocessing"
-    def subcategory(self): return "trials"
 
     def initialize(self, kernel): self.kernel = kernel
 

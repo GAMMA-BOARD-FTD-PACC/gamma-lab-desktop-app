@@ -1,26 +1,37 @@
 from abc import ABC, abstractmethod
 
+from core.plugins.meta import PluginMeta
+
 '''
 Aquí se definen las interfaces para los plugins y servicios, es decir,
 el contrato y sistema de comunicación entre los plugins y el kernel.
 '''
 
 class IPlugin(ABC):
-    @abstractmethod
+    
+    def __init__(self, meta: PluginMeta) -> None:
+        self.meta: PluginMeta = meta
+        self.started: bool = False 
+        
+    # ===== getters leen del YAML =====
     def name(self) -> str:
-        """Devuelve el nombre del plugin (utilizado para la representación en la UI del kernel)."""
-        pass
+        """Nombre para UI (desde properties.yml)."""
+        return self.meta.name
 
-    
-    @abstractmethod
     def category(self) -> str:
-        """Categoría del plugin: 'Home', 'Preprocessing', 'Analysis', etc."""
-        pass
-    
-    @abstractmethod
+        """Categoría del plugin (desde properties.yml)."""
+        return self.meta.category
+
     def subcategory(self) -> str:
-        """Sub-categoría del plugin: time, frequency, etc."""
-        pass
+        """Subcategoría del plugin (desde properties.yml)."""
+        return self.meta.subcategory
+
+    def icon(self) -> str:
+        """
+        Ruta absoluta del icono (dentro de la carpeta del plugin).
+        MainWindow espera una ruta para construir QIcon(icon_path).
+        """
+        return str(self.meta.icon_path())
 
     @abstractmethod
     def initialize(self, kernel):

@@ -23,8 +23,11 @@ class Kernel(QObject):
         self._plugins[name] = plugin
 
         #Veriricar que el plugin tenga el método start y arrancarlo
-        # if hasattr(plugin, 'initialize'):
-        #     plugin.start(self)
+        if hasattr(plugin, "initialize"):
+            try:
+                plugin.initialize(self)
+            except Exception as e:
+                print(f"Error inicializando plugin '{name}':", e)
 
         #emitir el evento de creación de un plugin
         self.plugin_registered.emit(name)

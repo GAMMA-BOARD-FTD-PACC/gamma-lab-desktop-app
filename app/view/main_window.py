@@ -15,16 +15,10 @@ class MainWindow(QMainWindow):
         #Registrar la ventana principal como un servicio en el kernel para que los plugins puedan acceder a ella.
         self.kernel.register_service("MainWindow", self)
 
-
+        self.setWindowIcon(QIcon("assets/logos/app-logo.png"))
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         self.showMaximized()
-
-        # base_path = os.path.dirname(os.path.abspath(__file__))
-        # ruta_logo = os.path.join(base_path, "\src\logo\logo-gammalab.png")
-
-        # print(ruta_logo)
-        # self.setWindowIcon(QIcon(ruta_logo))
 
         # Quitar márgenes y spacing del contenedor de botones
         self.ui.horizontalLayout_2.setContentsMargins(0, 0, 0, 10)
@@ -132,12 +126,14 @@ class MainWindow(QMainWindow):
         btn.setText(plugin.name())
         btn.setObjectName(f"btn_{name}")
 
-        #Si tiene ícono agregarlo
-        if plugin and hasattr(plugin, "icon"):
+        try:
             icon_path = plugin.icon()
-            btn.setIcon(QIcon(icon_path))
-            btn.setIconSize(QSize(48, 48))
-            btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+            if icon_path:
+                btn.setIcon(QIcon(icon_path))
+                btn.setIconSize(QSize(48, 48))
+                btn.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        except Exception as e:
+            print("Icono no disponible para plugin", name, "->", e)
 
         btn.clicked.connect(lambda _, n=name: self.on_button_click(n))
         return btn
