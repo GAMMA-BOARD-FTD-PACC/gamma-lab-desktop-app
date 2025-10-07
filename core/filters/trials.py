@@ -52,16 +52,19 @@ def cut_trials_single_channel(
     threshold: float,
     t0: float,                     # offset relativo al onset (negativo = pre-estímulo)
     t1: float,                     # solo se usa en "fixed"
-    stim_expected: Optional[int] = None,  # cantidad de estímulos "
-    isi: Optional[float] = None,           # separación mínima entre cruces (s)
+    stim_expected: Optional[int] = None,  # ahora: Nº de estímulos POR TRIAL
+    isi: Optional[float] = None,          # separación mínima entre cruces (s)
     end_mode: EndMode = "fixed",          # "fixed" | "until_next_onset"
 ) -> TrialDataset:
     """
     Corta trials usando |y| > threshold como trigger.
 
-    - fixed:             ventana fija [t0, t1) respecto a cada onset.
-    - until_next_onset:  desde (onset + t0) hasta el *siguiente onset* (o fin de señal).
-                         (Columnas con padding a la longitud máxima para mantener matriz rectangular).
+    - fixed:             ventana fija [t0, t1) respecto al PRIMER onset de cada grupo.
+    - until_next_onset:  desde (first_onset + t0) hasta el onset situado 'stim_expected'
+                         posiciones después (o fin de señal). Se hace padding para matriz rectangular.
+
+    NOTA: 'stim_expected' indica cuántos ESTÍMULOS hay por trial; el número de trials
+    se obtiene agrupando los onsets detectados en bloques consecutivos de tamaño 'stim_expected'.
     """
     fs = float(ds.sampling_rate)
     C, N = ds.signals.shape
@@ -70,13 +73,12 @@ def cut_trials_single_channel(
 
     y = ds.signals[channel].astype(np.float64, copy=False)
 
-    # ------------------------------------------------------------
-    # 1) DETECCIÓN de todos los onsets (equivalente a la ME del MATLAB)
-    # ------------------------------------------------------------
-    onsets_all = _detect_onsets_abs(y, fs, float(threshold), isi)  # índices (int)
-    K = len(onsets_all)  # # de estímulos detectados
+    # 1) Detección de onsets
+    onsets_all = _detect_onsets_abs(y, fs, float(threshold), isi)
+    K = len(onsets_all)
+    print(f"[DEBUG] Detectados {K} onsets en canal {channel}")
 
-    # Caso sin estímulos detectados: devolvemos la señal completa como 1 columna
+    # Caso sin onsets → 1 “trial” con toda la señal (comportamiento previo)
     if K == 0:
         trials = y.reshape(-1, 1)
         time_rel = np.arange(y.shape[0], dtype=np.float64) / fs
@@ -91,49 +93,65 @@ def cut_trials_single_channel(
             metadata={"end_mode": end_mode, "note": "sin_estímulos"},
         )
 
-    # ------------------------------------------------------------
-    # 2) SELECCIÓN según Stim Number (stim_expected)
-    #    >>> OJO: Aquí fijamos cuántos trials construir
-    # ------------------------------------------------------------
+    # 2) Agrupación por 'stim_expected' estímulos por trial
     if stim_expected is None or stim_expected <= 0:
-        T = K                       # usar todos los estímulos detectados
+        stim_per_trial = 1
     else:
-        T = min(stim_expected, K)   # usar hasta 'stim_expected' (si hay menos, se recorta)
+        stim_per_trial = int(stim_expected)
 
-    # Índices de onsets que sí se convertirán en columnas
-    sel_idx = list(range(T))
-    onsets_sel = [onsets_all[i] for i in sel_idx]  # inicios "reales" de cada trial
+    # Número de trials = grupos completos de 'stim_per_trial'
+    T = K // stim_per_trial
+    if T <= 0:
+        # No alcanza para formar ni un grupo completo → por consistencia, usar 1 trial desde el primer onset
+        stim_per_trial = 1
+        T = K
 
-    # ------------------------------------------------------------
-    # 3) CONSTRUCCIÓN de las columnas (dos modos)
-    # ------------------------------------------------------------
+    # Índices de inicio de cada trial (primer onset de cada grupo)
+    # p.ej., si stim_per_trial=3 y K=10 → starts=[0,3,6] (T=3) y el último onset queda suelto y se descarta
+    group_starts = [i * stim_per_trial for i in range(T)]
+    first_onsets = [onsets_all[s] for s in group_starts]  # primeros onsets por trial
+
+    # 3) Construcción de columnas según modo
     if end_mode == "until_next_onset":
-        # a) Para cada onset_i, el fin es el onset_{i+1}; para el último, fin = N
-        ends_all = [onsets_all[i + 1] if (i + 1) < K else N for i in range(K)]
-        # b) Offset inicial en muestras (permite pre-estímulo si t0 < 0)
+        # El fin de cada trial es el onset del siguiente GRUPO (s + stim_per_trial),
+        # o fin de la señal si no existe.
+        # También permitimos t0 negativo (pre-estímulo)
         n0 = int(round(t0 * fs))
-        # c) Longitud (en muestras) de cada trial seleccionado (varía por trial)
-        lengths = [max(0, ends_all[i] - (onsets_all[i] + n0)) for i in sel_idx]
+
+        # Longitud (en muestras) de cada trial (varía con la separación entre grupos)
+        lengths = []
+        for g in range(T):
+            start_idx = group_starts[g]
+            a_onset = onsets_all[start_idx]
+            # El "siguiente grupo" empieza en start_idx + stim_per_trial
+            next_group_idx = start_idx + stim_per_trial
+            b_onset = onsets_all[next_group_idx] if next_group_idx < K else N
+            length = max(0, b_onset - (a_onset + n0))
+            lengths.append(length)
+
         Ns = max(lengths) if lengths else 0
         if Ns <= 0:
-            Ns = 1  # evita matriz vacía
+            Ns = 1
 
         trials = np.zeros((Ns, T), dtype=np.float64)
-        for t, i in enumerate(sel_idx):
-            a = onsets_all[i] + n0
-            b = ends_all[i]
+        for tcol, start_idx in enumerate(group_starts):
+            a_onset = onsets_all[start_idx]
+            next_group_idx = start_idx + stim_per_trial
+            b_onset = onsets_all[next_group_idx] if next_group_idx < K else N
+
+            a = a_onset + n0
+            b = b_onset
             a_clip = max(a, 0)
             b_clip = min(b, N)
             if b_clip > a_clip:
                 seg = y[a_clip:b_clip]
-                start = a_clip - a  # padding si a<0 (mueve el inicio dentro de la columna)
-                trials[start:start + seg.shape[0], t] = seg
+                start = a_clip - a  # padding si a<0
+                trials[start:start + seg.shape[0], tcol] = seg
 
-        # Eje temporal relativo compartido (de t0 hasta t0+Ns/fs)
         time_rel = (np.arange(n0, n0 + Ns, dtype=np.int64) / fs).astype(np.float64)
         t1_report = float(time_rel[-1]) if time_rel.size else 0.0
 
-    else:  # end_mode == "fixed"
+    else:  # fixed
         if t1 <= t0:
             raise ValueError("En 'fixed' se requiere t1 > t0.")
         n0 = int(round(t0 * fs))
@@ -141,25 +159,27 @@ def cut_trials_single_channel(
         Ns = n1 - n0
 
         trials = np.zeros((Ns, T), dtype=np.float64)
-        for t, i in enumerate(sel_idx):
-            a = onsets_all[i] + n0
-            b = onsets_all[i] + n1
+        for tcol, start_idx in enumerate(group_starts):
+            a_onset = onsets_all[start_idx]
+            a = a_onset + n0
+            b = a_onset + n1
             a_clip = max(a, 0)
             b_clip = min(b, N)
             if b_clip > a_clip:
                 seg = y[a_clip:b_clip]
                 start = a_clip - a
-                trials[start:start + seg.shape[0], t] = seg
+                trials[start:start + seg.shape[0], tcol] = seg
 
         time_rel = (np.arange(n0, n1, dtype=np.int64) / fs).astype(np.float64)
         t1_report = float(time_rel[-1]) if time_rel.size else 0.0
 
-    # ------------------------------------------------------------
-    # 4) Salida coherente con TrialDataset
-    #    - onsets_s debe tener T elementos (uno por columna)
-    #    - isi_s se calcula SOLO entre los onsets seleccionados (no todos)
-    # ------------------------------------------------------------
-    onsets_s_sel = [i / fs for i in onsets_sel]
+    print(f"[DEBUG] stim_per_trial={stim_per_trial}, grupos(T)={T}")
+    print(f"[DEBUG] Matriz de trials generada con {trials.shape[1]} trials × {trials.shape[0]} muestras")
+
+    # 4) Metadatos coherentes
+    # onsets_s: usamos el PRIMER onset de cada trial como “timestamp” del trial
+    onsets_s_sel = [i / fs for i in first_onsets]
+    # isi entre trials (entre primeros onsets consecutivos)
     isi_s_sel = (np.diff(onsets_s_sel).tolist() if T > 1 else [])
 
     return TrialDataset(
@@ -171,14 +191,16 @@ def cut_trials_single_channel(
         t0=float(t0),
         t1=t1_report,
         time_rel=time_rel,
-        trials=trials,
-        onsets_s=onsets_s_sel,
+        trials=trials,                 # (Ns, T) = (muestras, trials)
+        onsets_s=onsets_s_sel,         # primer onset de cada trial
         isi_s=isi_s_sel,
         metadata={
             "end_mode": end_mode,
-            "stim_expected": (None if stim_expected is None or stim_expected <= 0 else int(stim_expected)),
+            "stim_per_trial": int(stim_per_trial),
             "stim_detected": int(K),
-            "note": ("stim_detected < stim_expected → faltan onsets"
-                     if (stim_expected and K < stim_expected) else "")
+            "trials_built": int(T),
+            "note": ("últimos onsets descartados por no completar grupo"
+                     if (K % stim_per_trial != 0) else "")
         },
     )
+
