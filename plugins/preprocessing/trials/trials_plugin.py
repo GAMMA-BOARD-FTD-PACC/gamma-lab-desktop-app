@@ -83,7 +83,7 @@ class TrialsPlugin(IPlugin):
 
         self.renwin = self.vtk_widget.GetRenderWindow()
         self.renwin.SetMultiSamples(0)
-        QtCore.QTimer.singleShot(0, self._init_interactor)
+        QtCore.QTimer.singleShot(50, self._init_interactor)
     
     def _populate_from_raw(self):
         store: DataStore = self.kernel.get_service("DataStore")
@@ -162,7 +162,12 @@ class TrialsPlugin(IPlugin):
         td: TrialDataset = cut_trials_single_channel(
             ds=ds, channel=ch, threshold=th, t0=t0, t1=t1, end_mode=mode, stim_expected=stim, isi=isi
         )
-
+        
+        
+        print(f"[DEBUG] TrialDataset generado → shape={td.trials.shape}, "
+          f"time_rel={td.time_rel.shape}, "
+          f"onsets={len(td.onsets_s)}")
+        
         store.set("trials_dataset", td)
         store.set("trials_matrix",  td.trials)    
         store.set("trials_time",    td.time_rel)  
