@@ -68,6 +68,7 @@ class TrialsPlugin(IPlugin):
 
         return self.widget
     
+
     def process(self, data: any):
         print(f"UIPlugin recibió datos: {data}")
         

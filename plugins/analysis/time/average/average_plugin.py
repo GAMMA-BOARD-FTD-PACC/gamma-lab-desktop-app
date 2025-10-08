@@ -12,6 +12,8 @@ class Average_plugin(IPlugin):
         self.vtk_widget = None
         self.renwin = None
         self.started = False
+        self.kernel = None
+
 
     def initialize(self, kernel):
         print("Inicializando Average")
@@ -42,8 +44,38 @@ class Average_plugin(IPlugin):
             self.ui = Ui_Form()
             self.ui.setupUi(self.widget)
 
-            self.ui.pushButton.clicked.connect(lambda: self.process("Average ejecutado"))
+            self.ui.pushButton.clicked.connect(self.print_datastore)
+
         else:
-            #reasignar el parent si el widget ya existe
             self.widget.setParent(parent)
+
         return self.widget
+ # ------------------------------------------------------
+    def print_datastore(self):
+        """Obtiene 'trials_dataset' del DataStore y muestra info de time/matrix."""
+
+        datastore = self.mainwin.kernel.get_service("DataStore")
+        if datastore is None:
+            print("⚠️ No se encontró el servicio DataStore.")
+            return
+
+        print("🧠 Contenido actual del DataStore:")
+        # Imprime todas las claves disponibles
+        for key in datastore._data.keys():
+            print(f"  {key}")
+
+        # Intentamos extraer trials_dataset
+        td = datastore.get("trials_dataset", None)
+        if td is None:
+            print("⚠️ No se encontró 'trials_dataset' en el DataStore")
+            return
+
+        # Extraemos time y matrix
+        if hasattr(td, "time_rel") and hasattr(td, "trials"):
+            t = td.time_rel
+            X = td.trials
+            print(f"✅ 'trials_dataset' encontrado:")
+            print(f"    Time shape: {t.shape}")
+            print(f"    Trials shape: {X.shape}")
+        else:
+            print("⚠️ 'trials_dataset' no tiene atributos 'time_rel' o 'trials'.")
