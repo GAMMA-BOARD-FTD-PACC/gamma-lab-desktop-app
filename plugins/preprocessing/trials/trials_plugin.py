@@ -83,7 +83,7 @@ class TrialsPlugin(IPlugin):
 
         self.renwin = self.vtk_widget.GetRenderWindow()
         self.renwin.SetMultiSamples(0)
-        QtCore.QTimer.singleShot(50, self._init_interactor)
+        QtCore.QTimer.singleShot(0, self._init_interactor)
     
     def _populate_from_raw(self):
         store: DataStore = self.kernel.get_service("DataStore")

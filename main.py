@@ -10,7 +10,8 @@ from core.services.data_store import DataStore
 from core.services.fileio import FileIOService
 from plugins.home.home_plugin import Plugin_home
 from plugins.analysis.time.average.average_plugin import Average_plugin
-
+from plugins.analysis.time.erp.erp_plugin import Erp_plugin
+#from plugins.io.open_signal_plugin import OpenSignalPlugin
 
 #Frecuencia
 from plugins.analysis.frequency.fft.fft_plugin import Fft_plugin
