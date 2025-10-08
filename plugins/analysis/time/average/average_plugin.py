@@ -1,6 +1,6 @@
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
-from .average_plugin_ui import Ui_Form
+from plugins.analysis.time.average.average_plugin_ui import Ui_Form
 from PyQt5.QtWidgets import QWidget
 import os
 
