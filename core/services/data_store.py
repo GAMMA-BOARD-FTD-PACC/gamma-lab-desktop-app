@@ -31,8 +31,8 @@ class DataStore:
 
 
     """
-        Agrega una nueva señal cruda sin sobrescribir otras.
-        Retorna la clave final usada (por ejemplo: 'raw_signal_2')
+        Agrega una nueva señal al DataStore usando el nombre del archivo como clave
+        Retorna la clave usada.
     """
 
     def add_signal(self, signal, key: str = None):

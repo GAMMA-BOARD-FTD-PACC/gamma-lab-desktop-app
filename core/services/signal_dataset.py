@@ -24,6 +24,7 @@ class SignalDataset:
 
     trials_dataset:List[TrialDataset] = field(default_factory=list)
 
+    #Agregar un trial_dataset a la lista de trials dataset
     def add_trial_dataset(self, trial: "TrialDataset"):
         if not isinstance(trial, TrialDataset):
             raise ValueError("trial debe ser de tipo TrialDataset")
