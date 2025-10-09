@@ -1,7 +1,7 @@
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
 from core.services.signal_dataset import SignalDataset
-from plugins.analysis.time.average.average_plugin_ui import Ui_Form
+from plugins.analysis.time.average.average_plugin_ui import Ui_Average
 from PyQt5.QtWidgets import QWidget
 import os
 
@@ -42,10 +42,10 @@ class Average_plugin(IPlugin):
     def get_widget(self, parent=None):
         if self.widget is None:
             self.widget = QWidget(parent)
-            self.ui = Ui_Form()
+            self.ui = Ui_Average()
             self.ui.setupUi(self.widget)
 
-            self.ui.pushButton.clicked.connect(self._load_dataset_from_store)
+            #self.ui.pushButton.clicked.connect(self._load_dataset_from_store)
 
         else:
             self.widget.setParent(parent)

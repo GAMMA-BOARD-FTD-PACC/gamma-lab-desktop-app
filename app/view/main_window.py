@@ -1,6 +1,6 @@
 from collections import defaultdict
 import os
-from PyQt5.QtWidgets import QMainWindow, QHBoxLayout, QVBoxLayout, QWidget, QToolButton, QGroupBox, QLabel, QSizePolicy
+from PyQt5.QtWidgets import QMainWindow, QMessageBox, QHBoxLayout, QVBoxLayout, QWidget, QToolButton, QGroupBox, QLabel, QSizePolicy
 from app.view.ventana_principal_ui import Ui_MainWindow 
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QSize, Qt
@@ -169,11 +169,23 @@ class MainWindow(QMainWindow):
             try:
                 widget = plugin.get_widget(parent=self.plugin_area)
             except Exception as e:
-                print("Error en get_widget del plugin:", e)
+                QMessageBox.critical(
+                    self,
+                    "Error al renderizar el plugin",
+                    f"Ocurrió un error al renderizar el widget del plugin '{plugin.name()}'.\n\nDetalles:\n{str(e)}"
+                )
+                print("[Main Window] Error en get_widget del plugin:", e)
                 widget = None
 
             # Si no retorna widget, crear placeholder
             if widget is None:
+                QMessageBox.critical(
+                    self,
+                    "Error al renderizar el plugin",
+                    f"No hay interfaz para el plugin '{plugin.name()}'."
+                )
+
+
                 placeholder = QWidget(parent=self.plugin_area)
                 layout = QVBoxLayout(placeholder)
                 layout.addWidget(QLabel(f"No hay interfaz para {plugin.name()}"))
