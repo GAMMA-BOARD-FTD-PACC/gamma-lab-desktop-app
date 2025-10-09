@@ -133,7 +133,7 @@ def cut_trials_single_channel(
         if Ns <= 0:
             Ns = 1
 
-        trials = np.zeros((Ns, T), dtype=np.float64)
+        trials = np.full((Ns, T), np.nan, dtype=np.float64)
         for tcol, start_idx in enumerate(group_starts):
             a_onset = onsets_all[start_idx]
             next_group_idx = start_idx + stim_per_trial
@@ -158,7 +158,7 @@ def cut_trials_single_channel(
         n1 = int(round(t1 * fs))
         Ns = n1 - n0
 
-        trials = np.zeros((Ns, T), dtype=np.float64)
+        trials = np.full((Ns, T), np.nan, dtype=np.float64)
         for tcol, start_idx in enumerate(group_starts):
             a_onset = onsets_all[start_idx]
             a = a_onset + n0

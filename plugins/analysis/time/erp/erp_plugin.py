@@ -4,10 +4,13 @@ from PyQt5.QtWidgets import QListWidgetItem
 import vtk
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 import numpy as np
+from vtkmodules.util import numpy_support
+from typing import Tuple
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
 from plugins.analysis.time.erp.erp_plugin_ui import Ui_ErpPlot
+from core.vtk_adapters.adapters import trials_matrix_to_vtk_table
 
 class Erp_plugin(IPlugin):
     def __init__(self, meta: PluginMeta):
@@ -245,6 +248,24 @@ class Erp_plugin(IPlugin):
             print(msg)
 
     # ========= Render VTK =========
+    
+    def cleanup_vtk(self):
+        """Libera correctamente los recursos de VTK antes de destruir el widget."""
+        try:
+            if self.vtk_widget:
+                print("[TrialsPlugin] Liberando recursos VTK...")
+                rw = self.vtk_widget.GetRenderWindow()
+                if rw:
+                    iren = rw.GetInteractor()
+                    if iren:
+                        iren.TerminateApp()
+                    rw.Finalize()
+                self.vtk_widget.SetRenderWindow(None)
+                self.vtk_widget = None
+                self.renwin = None
+        except Exception as e:
+            print("[TrialsPlugin] cleanup_vtk() error:", e)
+            
     def _render_butterfly(self, t: np.ndarray, sel: np.ndarray):
         """
         Dibuja líneas (1 por trial) con vtkChartXY.
@@ -254,32 +275,16 @@ class Erp_plugin(IPlugin):
         scene = self.view_top.GetScene()
         scene.ClearItems()
 
-        table = vtk.vtkTable()
-        # Columna X
-        arrX = vtk.vtkFloatArray()
-        arrX.SetName("time")
-        arrX.SetNumberOfValues(t.size)
-        for i, v in enumerate(t):
-            arrX.SetValue(i, float(v))
-        table.AddColumn(arrX)
-
-        # Columnas Yk
-        for k in range(sel.shape[0]):
-            arrY = vtk.vtkFloatArray()
-            arrY.SetName(f"trial_{k+1}")
-            arrY.SetNumberOfValues(sel.shape[1])
-            # cuidado: sel[k] es (T,)
-            for i, v in enumerate(sel[k]):
-                arrY.SetValue(i, float(v))
-            table.AddColumn(arrY)
+        table = trials_matrix_to_vtk_table(t, sel.T)
 
         chart = vtk.vtkChartXY()
         scene.AddItem(chart)
 
         # Un plot por columna Yk
-        for k in range(sel.shape[0]):
+        num_cols = table.GetNumberOfColumns()
+        for c in range(1, num_cols):
             plot = chart.AddPlot(vtk.vtkChart.LINE)
-            plot.SetInputData(table, 0, k + 1)  # 0 = X, (k+1) = Yk
+            plot.SetInputData(table, 0, c)
             plot.SetWidth(0.5)
 
         chart.GetAxis(vtk.vtkAxis.BOTTOM).SetTitle("Time (s)")
@@ -288,81 +293,142 @@ class Erp_plugin(IPlugin):
         self.view_top.GetRenderWindow().Render()
 
     def _render_heatmap(self, t: np.ndarray, sel: np.ndarray):
-        """
-        Heatmap VTK (trials x tiempo).
-        t: (T,), sel: (K, T) -> imagen width=T, height=K.
-        - Mantiene float (NaN válidos).
-        - NaN = transparente.
-        """
+        """Heatmap 2D con ejes correctos en tiempo"""
         assert self.view_bot is not None
-        ren = self.view_bot.GetRenderer()
-        ren.RemoveAllViewProps()
+        scene = self.view_bot.GetScene()
+        scene.ClearItems()
 
-        # --- datos ---
-        X = np.asarray(sel, dtype=np.float32)  # (K, T)
-        if X.ndim != 2:
-            return
+        # Datos
+        X = np.asarray(sel, dtype=np.float32)[::-1, :]  # (K, T)
         K, Tn = X.shape
-
-        # Opcional: trial 1 arriba (VTK usa origen abajo-izquierda)
-        X = X[::-1, :]
-
-        # Rango ignorando NaN
-        vmin = float(np.nanmin(X)) if np.isfinite(X).any() else 0.0
-        vmax = float(np.nanmax(X)) if np.isfinite(X).any() else 1.0
-        if not np.isfinite(vmax - vmin) or vmax <= vmin:
+        print(f"\n=== DEBUG HEATMAP ===")
+        print(f"Dimensiones originales: K={K} trials, Tn={Tn} samples")
+        
+        # CRÍTICO: Downsample si hay demasiadas muestras
+        MAX_SAMPLES = 2000  # Límite razonable para visualización
+        if Tn > MAX_SAMPLES:
+            factor = int(np.ceil(Tn / MAX_SAMPLES))
+            X = X[:, ::factor]
+            t = t[::factor]
+            Tn = X.shape[1]
+            print(f"DOWNSAMPLED por factor {factor}: nueva dimensión Tn={Tn}")
+        
+        print(f"Datos: min={np.nanmin(X):.3f}, max={np.nanmax(X):.3f}, mean={np.nanmean(X):.3f}")
+        
+        # Calcular rango para LUT (sobre datos originales)
+        finite = np.isfinite(X)
+        vmin = float(X[finite].min()) if finite.any() else 0.0
+        vmax = float(X[finite].max()) if finite.any() else 1.0
+        if vmax <= vmin:
             vmax = vmin + 1.0
-
-        # --- vtkImageData en FLOAT (1 componente) ---
+        
+        # Parámetros de tiempo
+        t0 = float(t[0]) if t.size > 0 else 0.0
+        t_end = float(t[-1]) if t.size > 0 else 1.0
+        dt = (t_end - t0) / Tn if Tn > 0 else 1.0
+        
+        print(f"Tiempo: t0={t0:.3f}s, t_end={t_end:.3f}s, dt={dt:.6f}s")
+        
+        # Crear imagen con SPACING y ORIGIN correctos
         img = vtk.vtkImageData()
         img.SetDimensions(Tn, K, 1)
-
-        # espaciamiento y origen con el tiempo (para que sea proporcional)
-        dt = float(np.mean(np.diff(t))) if t.size > 1 else 1.0
-        t0 = float(t[0]) if t.size > 0 else 0.0
-        img.SetSpacing(dt, 1.0, 1.0)
-        img.SetOrigin(t0, 0.0, 0.0)
-
+        img.SetSpacing(dt, 1.0, 1.0)      # dt en X para mapear a tiempo
+        img.SetOrigin(t0, 0.0, 0.0)       # Comienza en t0
         img.AllocateScalars(vtk.VTK_FLOAT, 1)
-        scal = vtk.vtkFloatArray.SafeDownCast(img.GetPointData().GetScalars())
-
-        # copiar fila por fila (x-fastest). Fila 0 de X será y=0 (abajo).
-        # Ya hicimos X[::-1,:], así que “trial 1” quedó arriba visualmente.
+        
+        # Escribir datos ORIGINALES (sin normalizar)
         for j in range(K):
-            row = X[j]
-            base = j * Tn
-            # escribir con posibles NaN (VTK los respeta si mapeamos colores)
             for i in range(Tn):
-                scal.SetTuple1(base + i, row[i])
-
-        # --- normalización y LUT ---
-        # mapea a RGBA respetando NaN
-        lut = vtk.vtkLookupTable()
-        lut.SetRange(vmin, vmax)
-        lut.SetNumberOfTableValues(256)
-        lut.Build()
-        # color para NaN: transparente
-        lut.SetNanColor(0.0, 0.0, 0.0, 0.0)
-        # (opcional) colores fuera de rango:
-        # lut.SetBelowRangeColor(0.0, 0.0, 0.0, 1.0); lut.UseBelowRangeColorOn()
-        # lut.SetAboveRangeColor(1.0, 1.0, 1.0, 1.0); lut.UseAboveRangeColorOn()
-
-        # shift/scale NO altera NaN
-        mapper_shift = vtk.vtkImageShiftScale()
-        mapper_shift.SetInputData(img)
-        mapper_shift.SetOutputScalarTypeToFloat()
-        mapper_shift.SetShift(0.0)  # dejamos el valor físico, la LUT tiene el rango
-
-        map2colors = vtk.vtkImageMapToColors()
-        map2colors.SetLookupTable(lut)
-        map2colors.PassAlphaToOutputOn()   # respeta alpha de la LUT (NaN=0)
-        map2colors.SetInputConnection(mapper_shift.GetOutputPort())
-        map2colors.Update()
-
-        actor = vtk.vtkImageActor()
-        actor.GetMapper().SetInputConnection(map2colors.GetOutputPort())
-        actor.GetProperty().SetInterpolationTypeToNearest()
-
-        ren.AddActor(actor)
-        ren.ResetCamera()
+                img.SetScalarComponentFromFloat(i, j, 0, 0, X[j, i])
+        
+        img.Modified()
+        
+        # Verificar
+        vtk_range = img.GetScalarRange()
+        print(f"VTK ScalarRange: {vtk_range}")
+        print(f"Image Spacing: {img.GetSpacing()}")
+        print(f"Image Origin: {img.GetOrigin()}")
+        
+        # Usar tu función de LUT
+        lut = self._build_lut("jet", vmin, vmax)  # Cambia a "viridis" si prefieres
+        print(f"LUT Range: {lut.GetRange()}")
+        
+        # Chart
+        chart = vtk.vtkChartHistogram2D()
+        chart.SetInputData(img, 0)
+        chart.SetTransferFunction(lut)
+        
+        # Configurar ejes - ahora deberían mostrar tiempo correctamente
+        ax_bottom = chart.GetAxis(vtk.vtkAxis.BOTTOM)
+        ax_left = chart.GetAxis(vtk.vtkAxis.LEFT)
+        
+        ax_bottom.SetTitle("Time (s)")
+        ax_left.SetTitle("Trials")
+        
+        # El chart debería respetar spacing/origin automáticamente
+        # pero lo forzamos por si acaso
+        ax_bottom.SetRange(t0, t_end)
+        ax_left.SetRange(0, K)
+        
+        # Añadir a escena
+        scene.AddItem(chart)
+        
+        print("Chart añadido a escena")
+        print("======================\n")
+        
+        # Render
         self.view_bot.GetRenderWindow().Render()
+
+
+
+# Helper mini para el LUT (puedes dejar solo uno y olvidarte del resto)
+    def _build_lut(self, mode: str, vmin: float, vmax: float) -> vtk.vtkScalarsToColors:
+        mode = (mode or "viridis").lower()
+        N = 256
+        bg = self.view_bot.GetRenderer().GetBackground()
+
+        def finalize(lut: vtk.vtkLookupTable) -> vtk.vtkLookupTable:
+            lut.SetRange(vmin, vmax)
+            lut.SetNumberOfTableValues(N)
+            lut.Build()
+            # Colores especiales -> fondo
+            lut.SetNanColor(*bg, 1.0)
+            lut.SetUseBelowRangeColor(True); lut.SetBelowRangeColor(*bg, 1.0)
+            lut.SetUseAboveRangeColor(True); lut.SetAboveRangeColor(*bg, 1.0)
+            return lut
+
+        if mode == "jet":
+            lut = vtk.vtkLookupTable()
+            lut = finalize(lut)
+            for i in range(N):
+                val = i / (N - 1)
+                if val < 0.25:
+                    r, g, b = 0, 4*val, 1
+                elif val < 0.5:
+                    r, g, b = 0, 1, 1 - 4*(val - 0.25)
+                elif val < 0.75:
+                    r, g, b = 4*(val - 0.5), 1, 0
+                else:
+                    r, g, b = 1, 1 - 4*(val - 0.75), 0
+                lut.SetTableValue(i, r, g, b, 1.0)
+            return lut
+
+        # viridis por defecto: samplear un CTF a LUT (para tener NaN/below/above)
+        ctf = vtk.vtkColorTransferFunction()
+        ctf.ClampingOn()
+        ctf.SetRange(vmin, vmax)
+        # Puntos (aprox) de viridis
+        ctf.AddRGBPoint(vmin,                 0.267, 0.005, 0.329)
+        ctf.AddRGBPoint((2*vmin+vmax)/3.0,    0.229, 0.322, 0.545)
+        ctf.AddRGBPoint((vmin+2*vmax)/3.0,    0.127, 0.566, 0.550)
+        ctf.AddRGBPoint(vmax,                 0.993, 0.906, 0.144)
+
+        lut = vtk.vtkLookupTable()
+        lut = finalize(lut)
+        # Muestrear el CTF en la LUT
+        for i in range(N):
+            s = i / (N - 1)
+            x = vmin + s * (vmax - vmin)
+            r, g, b = ctf.GetColor(x)
+            lut.SetTableValue(i, r, g, b, 1.0)
+        return lut
