@@ -44,38 +44,33 @@ class Average_plugin(IPlugin):
             self.ui = Ui_Form()
             self.ui.setupUi(self.widget)
 
-            self.ui.pushButton.clicked.connect(self.print_datastore)
+            self.ui.pushButton.clicked.connect(self._load_dataset_from_store)
 
         else:
             self.widget.setParent(parent)
 
         return self.widget
- # ------------------------------------------------------
-    def print_datastore(self):
-        """Obtiene 'trials_dataset' del DataStore y muestra info de time/matrix."""
+    
 
-        datastore = self.mainwin.kernel.get_service("DataStore")
-        if datastore is None:
-            print("⚠️ No se encontró el servicio DataStore.")
+    def _load_dataset_from_store(self):
+        """Busca 'trials_dataset' en el DataStore y extrae time y matrix."""
+        if not self.mainwin:
             return
 
-        print("🧠 Contenido actual del DataStore:")
-        # Imprime todas las claves disponibles
-        for key in datastore._data.keys():
-            print(f"  {key}")
-
-        # Intentamos extraer trials_dataset
-        td = datastore.get("trials_dataset", None)
-        if td is None:
-            print("⚠️ No se encontró 'trials_dataset' en el DataStore")
+        store = self.mainwin.kernel.get_service("DataStore")
+        if store is None:
+            print("[Average] No hay servicio de DataStore.")
             return
 
-        # Extraemos time y matrix
-        if hasattr(td, "time_rel") and hasattr(td, "trials"):
-            t = td.time_rel
-            X = td.trials
-            print(f"✅ 'trials_dataset' encontrado:")
-            print(f"    Time shape: {t.shape}")
-            print(f"    Trials shape: {X.shape}")
-        else:
-            print("⚠️ 'trials_dataset' no tiene atributos 'time_rel' o 'trials'.")
+        ds = store.get("trials_dataset", None)
+        if ds is None:
+            print("No se encontró 'trials_dataset' en DataStore")
+            return
+
+        print(f"Data store {store}")
+        
+        for key, value in store.items():
+            print(f"Clave: {key}")
+            print(f"Valor: {value}")
+
+        print(f"Ds {ds.trials}")

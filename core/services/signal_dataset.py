@@ -1,6 +1,13 @@
 from dataclasses import dataclass, field
 from typing import List, Dict, Any
 import numpy as np
+
+
+'''
+    En esta clase se guardan los datos puros transformados directamente de los archicos leídos
+    Es el formato general de señal cruda.
+    Contiene los metadatos como los datos generales de la señal. 
+'''
 @dataclass
 class SignalDataset:
     format: str                     # "abf"

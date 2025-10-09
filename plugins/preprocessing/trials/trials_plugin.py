@@ -170,6 +170,7 @@ class TrialsPlugin(IPlugin):
           f"onsets={len(td.onsets_s)}")
         
         store.set("trials_dataset", td)
+        '''
         store.set("trials_matrix",  td.trials)    
         store.set("trials_time",    td.time_rel)  
         store.set("trials_meta", {
@@ -182,6 +183,7 @@ class TrialsPlugin(IPlugin):
             "onsets_s": td.onsets_s, "isi_s": td.isi_s,
             "source": td.source,
         })
+        '''
 
         self.last_td = td
         T = td.trials.shape[1]
