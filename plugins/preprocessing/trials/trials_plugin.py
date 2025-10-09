@@ -1,5 +1,5 @@
 from PyQt5 import QtWidgets, QtCore
-from PyQt5.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QLabel, QSpinBox, QDoubleSpinBox, QPushButton, QFrame, QMessageBox
+from PyQt5.QtWidgets import QWidget, QComboBox, QVBoxLayout, QFormLayout, QLabel, QSpinBox, QDoubleSpinBox, QPushButton, QFrame, QMessageBox
 import vtk
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
@@ -32,6 +32,7 @@ class TrialsPlugin(IPlugin):
         self.vtk_widget: QVTKRenderWindowInteractor | None = None
         self.renwin = None
 
+        self.signalComboBox: QComboBox | None = None
         self.channelSpinBox: QSpinBox | None = None
         self.stimNumberSpinBox: QSpinBox | None = None
         self.thresholdDoubleSpinBox: QDoubleSpinBox | None = None
@@ -58,17 +59,21 @@ class TrialsPlugin(IPlugin):
             self.widget = self.ui  
 
             self._ensure_vtk()
-
             self.ui.Btn_generate_trials.clicked.connect(self._on_generate_clicked)
 
             self._init_controls()
             self._populate_from_raw()
+
         else:
             self.widget.setParent(parent)
 
+        self._populate_from_raw()
         return self.widget
     
+
     def process(self, data: any):
+        #Actualizar el combobox al cargar nuevas señales
+        self._populate_from_raw()
         print(f"UIPlugin recibió datos: {data}")
         
     def _ensure_vtk(self):
@@ -86,12 +91,45 @@ class TrialsPlugin(IPlugin):
         QtCore.QTimer.singleShot(0, self._init_interactor)
     
     def _populate_from_raw(self):
+        
+        """
+        Llena el combobox con las señales crudas disponibles en el DataStore.
+        Si no hay señales, se agrega un item "No hay señales cargadas".
+        Luego se ajustan los rangos del canal según la primera señal cargada.
+        """
+
         store: DataStore = self.kernel.get_service("DataStore")
-        ds: SignalDataset | None = store.get("raw", None)
-        if not ds:
+        if not store:
             return
-        C = ds.signals.shape[0]
-        self.channelSpinBox.setRange(0, max(0, C - 1))
+        
+        #Obtener las señales crudas del DataStore
+        all_signals =store.get_signals()
+        self.ui.signalComboBox.clear()
+
+        print(all_signals)
+
+        if not all_signals:
+            self.ui.signalComboBox.addItem("No hay señales cargadas", None)
+            return
+        
+        #llenar el combo box con las señales disponibles
+        for key, ds in all_signals.items():
+            label = f"{key}"
+            self.ui.signalComboBox.addItem(label, key)
+
+        self.ui.signalComboBox.setCurrentIndex(0)
+
+        ds: SignalDataset | None = store.get("raw", None)
+        
+         # Ajustar los rangos del canal según la primera señal
+        first_key = self.ui.signalComboBox.currentData()
+        if first_key:
+            ds = store.get(first_key)
+            if ds:
+                C = ds.signals.shape[0]
+                self.ui.channelSpinBox.setRange(0, max(0, C - 1))
+
+
     def _init_interactor(self):
         try:
             iren = self.renwin.GetInteractor()
@@ -106,8 +144,12 @@ class TrialsPlugin(IPlugin):
               "vtk:", bool(self.vtk_widget))
 
     def _init_controls(self):
+        self.ui.signalComboBox.setToolTip("Seleccionar la señal a procesar.")
+
         self.ui.channelSpinBox.setRange(0, 50)
         self.ui.channelSpinBox.setValue(self.params["channel"])
+        self.ui.channelSpinBox.setToolTip("Seleccionar el canal de la señal a procesar.")
+
 
         self.ui.thresholdDoubleSpinBox.setRange(0.0, 1e12)
         self.ui.thresholdDoubleSpinBox.setValue(self.params["threshold"])
@@ -124,14 +166,6 @@ class TrialsPlugin(IPlugin):
         self.ui.interStimTimeDoubleSpinBox.setRange(0.0, 3600.0)
         self.ui.interStimTimeDoubleSpinBox.setValue(self.params["isi"] or 0.0)
 
-    def _populate_from_raw(self):
-        store: DataStore = self.kernel.get_service("DataStore")
-        ds: SignalDataset | None = store.get("raw", None)
-        if not ds:
-            return
-        C = ds.signals.shape[0]
-        self.ui.channelSpinBox.setRange(0, max(0, C - 1))
-
     # ====== Acción UI ======
     def _on_generate_clicked(self):
         self._run_generate()
@@ -139,9 +173,15 @@ class TrialsPlugin(IPlugin):
 
     def _run_generate(self):
         store: DataStore = self.kernel.get_service("DataStore")
-        ds: SignalDataset | None = store.get("raw", None)
+        selected_key = self.ui.signalComboBox.currentData()
+        if not selected_key:
+            QMessageBox.warning(self.widget, "Selección", "No hay señal seleccionada.")
+            return
+
+        ds: SignalDataset | None = store.get(selected_key, None)
         if ds is None:
             if self.mainwin:
+                QMessageBox.warning(self.widget, "Error", f"No se encontró la señal '{selected_key}'.")
                 self.mainwin.statusBar().showMessage("No hay señal cargada ('raw')", 4000)
             return None
 
@@ -168,19 +208,8 @@ class TrialsPlugin(IPlugin):
           f"time_rel={td.time_rel.shape}, "
           f"onsets={len(td.onsets_s)}")
         
-        store.set("trials_dataset", td)
-        store.set("trials_matrix",  td.trials)    
-        store.set("trials_time",    td.time_rel)  
-        store.set("trials_meta", {
-            "fs": td.sampling_rate,
-            "channel_index": td.channel_index,
-            "channel_name": td.channel_name,
-            "unit": td.unit,
-            "t0": td.t0, "t1": td.t1,
-            "mode" : mode,
-            "onsets_s": td.onsets_s, "isi_s": td.isi_s,
-            "source": td.source,
-        })
+        #Agregar el trial generado a la señal cruda y al DataStore
+        ds.add_trial_dataset(td)
 
         self.last_td = td
         T = td.trials.shape[1]

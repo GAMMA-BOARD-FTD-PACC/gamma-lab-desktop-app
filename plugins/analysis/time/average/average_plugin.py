@@ -1,6 +1,7 @@
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
-from plugins.analysis.time.average.average_plugin_ui import Ui_Form
+from core.services.signal_dataset import SignalDataset
+from plugins.analysis.time.average.average_plugin_ui import Ui_Average
 from PyQt5.QtWidgets import QWidget
 import os
 
@@ -12,6 +13,8 @@ class Average_plugin(IPlugin):
         self.vtk_widget = None
         self.renwin = None
         self.started = False
+        self.kernel = None
+
 
     def initialize(self, kernel):
         print("Inicializando Average")
@@ -39,11 +42,46 @@ class Average_plugin(IPlugin):
     def get_widget(self, parent=None):
         if self.widget is None:
             self.widget = QWidget(parent)
-            self.ui = Ui_Form()
+            self.ui = Ui_Average()
             self.ui.setupUi(self.widget)
 
-            self.ui.pushButton.clicked.connect(lambda: self.process("Average ejecutado"))
+            #self.ui.pushButton.clicked.connect(self._load_dataset_from_store)
+
         else:
-            #reasignar el parent si el widget ya existe
             self.widget.setParent(parent)
+
         return self.widget
+    
+
+    def _load_dataset_from_store(self):
+        """Busca 'trials_dataset' en el DataStore y extrae time y matrix."""
+        if not self.mainwin:
+            return
+
+        store = self.mainwin.kernel.get_service("DataStore")
+        if store is None:
+            print("[Average] No hay servicio de DataStore.")
+            return
+        
+        # Intentar obtener el SignalDataset principal
+        signal_ds: SignalDataset | None = store.get("raw", None)
+        if signal_ds is None:
+            print("No se encontró 'raw' (SignalDataset) en el DataStore.")
+            return
+
+        if not signal_ds.trials_dataset:
+            print("El SignalDataset no tiene trials asociados.")
+            return
+
+        print(f"Se encontraron {len(signal_ds.trials_dataset)} TrialDataset asociados.\n")
+
+        # Recorrer y mostrar información de cada trial
+        for i, td in enumerate(signal_ds.trials_dataset, start=1):
+            print(f"── TrialDataset #{i} ──")
+            print(f"Canal: {td.channel_name} (índice {td.channel_index})")
+            print(f"Archivo origen: {td.source}")
+            print(f"Sampling rate: {td.sampling_rate} Hz")
+            print(f"Trials shape: {td.trials.shape}")
+            print(f"Time_rel shape: {td.time_rel.shape}")
+            print(f"Onsets: {len(td.onsets_s)} eventos\n")
+
