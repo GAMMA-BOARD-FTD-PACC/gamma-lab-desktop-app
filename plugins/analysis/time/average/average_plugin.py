@@ -1,5 +1,6 @@
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
+from core.services.signal_dataset import SignalDataset
 from plugins.analysis.time.average.average_plugin_ui import Ui_Form
 from PyQt5.QtWidgets import QWidget
 import os
@@ -61,16 +62,26 @@ class Average_plugin(IPlugin):
         if store is None:
             print("[Average] No hay servicio de DataStore.")
             return
-
-        ds = store.get("trials_dataset", None)
-        if ds is None:
-            print("No se encontró 'trials_dataset' en DataStore")
+        
+        # Intentar obtener el SignalDataset principal
+        signal_ds: SignalDataset | None = store.get("raw", None)
+        if signal_ds is None:
+            print("No se encontró 'raw' (SignalDataset) en el DataStore.")
             return
 
-        print(f"Data store {store}")
-        
-        for key, value in store.items():
-            print(f"Clave: {key}")
-            print(f"Valor: {value}")
+        if not signal_ds.trials_dataset:
+            print("El SignalDataset no tiene trials asociados.")
+            return
 
-        print(f"Ds {ds.trials}")
+        print(f"Se encontraron {len(signal_ds.trials_dataset)} TrialDataset asociados.\n")
+
+        # Recorrer y mostrar información de cada trial
+        for i, td in enumerate(signal_ds.trials_dataset, start=1):
+            print(f"── TrialDataset #{i} ──")
+            print(f"Canal: {td.channel_name} (índice {td.channel_index})")
+            print(f"Archivo origen: {td.source}")
+            print(f"Sampling rate: {td.sampling_rate} Hz")
+            print(f"Trials shape: {td.trials.shape}")
+            print(f"Time_rel shape: {td.time_rel.shape}")
+            print(f"Onsets: {len(td.onsets_s)} eventos\n")
+
