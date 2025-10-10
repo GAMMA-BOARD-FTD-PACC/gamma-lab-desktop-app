@@ -12,13 +12,12 @@ def _detect_onsets_abs(
     threshold: float,
     *,
     fs: float,
-    min_distance_s: Optional[float] = None,  # ← antirrebote (si None, no filtra)
+    min_distance_s: Optional[float] = None,  # antirrebote (si None, no filtra)
     debug: bool = True
 ) -> List[int]:
     """
     Detecta onsets (flancos ascendentes) donde |signal| pasa de <= umbral a > umbral.
-    Si 'min_distance_s' está definido, aplica antirrebote: descarta onsets a menos de
-    'min_distance_s' del último onset aceptado.
+    Con 'min_distance_s' aplica antirrebote temporal.
     Devuelve índices de muestra (enteros).
     """
     x = np.abs(signal.astype(np.float64, copy=False))
@@ -73,9 +72,16 @@ def cut_trials_single_channel(
     pad_value: float = np.nan,
     *,
     debounce_s: Optional[float] = None,
-    include_leading_segment: bool = True,   # ← NUEVO: incluir tramo [inicio → primer onset)
     debug: bool = True
 ) -> TrialDataset:
+    """
+    Corta trials usando |y| > threshold como trigger, con antirrebote temporal.
+    NO se agrega onset sintético al inicio: solo se usan onsets detectados.
+    - fixed:            ventana fija [t0, t1) respecto al PRIMER onset de cada grupo.
+    - until_next_onset: desde (first_onset + t0) hasta el primer onset del grupo siguiente
+                        (o fin de señal). Padding para rectangularizar.
+    - No se descarta el último grupo aunque esté incompleto (se rellena con 'pad_value').
+    """
     fs = float(ds.sampling_rate)
     C, N = ds.signals.shape
     if not (0 <= channel < C): raise ValueError(f"channel fuera de rango (C={C})")
@@ -85,6 +91,7 @@ def cut_trials_single_channel(
     y_trig = ds.signals[trig_ch].astype(np.float64, copy=False)
     y = ds.signals[channel].astype(np.float64, copy=False)
 
+    # antirrebote por defecto
     if debounce_s is None:
         debounce_s = 0.25 if (stim_expected is None or stim_expected == 1) else 0.01
 
@@ -92,33 +99,26 @@ def cut_trials_single_channel(
         print(f"\n[TRIALS] ==== INICIO ====")
         print(f"[TRIALS] fs={fs}Hz, N={N}, channel={channel}, trigger_channel={trig_ch}, "
               f"threshold={threshold}, t0={t0}, t1={t1}, end_mode='{end_mode}', "
-              f"stim_expected={stim_expected}, isi={isi}, pad={pad_value}, "
-              f"debounce_s={debounce_s}, include_leading_segment={include_leading_segment}")
+              f"stim_expected={stim_expected}, isi={isi}, pad={pad_value}, debounce_s={debounce_s}")
 
-    # 1) onsets con antirrebote
-    onsets_all = _detect_onsets_abs(y_trig, float(threshold), fs=fs,
-                                    min_distance_s=debounce_s, debug=debug)
-
-    # --- NUEVO: onset sintético en 0 para capturar el tramo inicial ---
-    prepended_zero = False
-    if include_leading_segment and (len(onsets_all) == 0 or onsets_all[0] > 0):
-        onsets_all = [0] + onsets_all
-        prepended_zero = True
-        if debug:
-            print("[TRIALS] (leading) Agregado onset sintético en 0 para cubrir el inicio de la señal.")
-
+    # 1) onsets con antirrebote (sin onset sintético)
+    onsets_all = _detect_onsets_abs(
+        y_trig, float(threshold), fs=fs, min_distance_s=debounce_s, debug=debug
+    )
     K = len(onsets_all)
     if debug:
-        print(f"[TRIALS] onsets totales (incluyendo sintético si aplica): {K}")
+        print(f"[TRIALS] Detectados {K} onsets en canal trigger {trig_ch}")
         if K:
-            print("[TRIALS] Tiempos primeros onsets (s):",
+            print("[TRIALS] Tiempos de los primeros onsets (s):",
                   [round(i/fs, 6) for i in onsets_all[:10]])
 
-    # Caso sin onsets (solo podría ocurrir si N<2 y include_leading_segment=False)
+    # Caso K==0 → 1 “trial” con toda la señal
     if K == 0:
         trials = y.reshape(-1, 1)
         time_rel = np.arange(y.shape[0], dtype=np.float64) / fs
         dur = time_rel[-1] if time_rel.size else 0.0
+        if debug:
+            print("[TRIALS] K=0 → devuelvo 1 trial con la señal completa.")
         return TrialDataset(
             source=ds.source_path, sampling_rate=fs,
             channel_index=channel,
@@ -126,12 +126,16 @@ def cut_trials_single_channel(
             unit=(ds.units[channel] if channel < len(ds.units) else ""),
             t0=0.0, t1=dur, time_rel=time_rel,
             trials=trials, onsets_s=[], isi_s=[],
-            metadata={"end_mode": end_mode, "stim_per_trial": int(stim_expected or 1),
-                      "stim_detected": 0, "trials_built": 1,
-                      "trigger_channel": int(trig_ch),
-                      "debounce_s": float(debounce_s) if debounce_s is not None else None,
-                      "leading_segment_included": False,
-                      "note": "sin_estímulos"},
+            metadata={
+                "end_mode": end_mode,
+                "stim_per_trial": int(stim_expected or 1),
+                "stim_detected": 0,
+                "trials_built": 1,
+                "trigger_channel": int(trig_ch),
+                "debounce_s": float(debounce_s) if debounce_s is not None else None,
+                "pad_value": float(pad_value),
+                "note": "sin_estímulos",
+            },
         )
 
     # 2) Agrupación por 'stim_expected' (no se descartan remanentes)
@@ -241,10 +245,8 @@ def cut_trials_single_channel(
             "trigger_channel": int(trig_ch),
             "debounce_s": float(debounce_s) if debounce_s is not None else None,
             "pad_value": float(pad_value),
-            "leading_segment_included": bool(prepended_zero),  # ← marca si se agregó onset 0
             "isi_detail_s": isi_detail_s,
             "isi_expected_s": (float(isi) if isi is not None else None),
-            "note": "incluye segmento inicial usando onset sintético en 0" if prepended_zero
-                    else "último grupo incluido con padding si quedó incompleto",
+            "note": "último grupo incluido con padding si quedó incompleto",
         },
     )

@@ -9,6 +9,8 @@ from typing import Tuple
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
+from core.services.signal_dataset import SignalDataset
+from core.services.trial_dataset import TrialDataset
 from plugins.analysis.time.erp.erp_plugin_ui import Ui_ErpPlot
 from core.vtk_adapters.adapters import trials_matrix_to_vtk_table
 
@@ -122,7 +124,7 @@ class Erp_plugin(IPlugin):
 
     # ========= Dataset =========
     def _load_dataset_from_store(self):
-        """Busca 'trials_dataset' en el DataStore y extrae time y matrix."""
+        """Busca la señal activa y toma el último TrialDataset que tenga."""
         if not self.mainwin:
             return
 
@@ -130,47 +132,66 @@ class Erp_plugin(IPlugin):
         if store is None:
             return
 
-        ds = store.get("trials_dataset", None)
-        if ds is None:
-            print("No se encontró 'trials_dataset' en DataStore")
+        sig: SignalDataset | None = store.get_active_signal()
+        if sig is None:
+            print("No hay señal activa en DataStore (set_active_signal faltante).")
             return
 
-        t, X = self._extract_trials_dataset(ds)
+        t, X, td = self._extract_trials_dataset(sig)
         if t is None or X is None:
-            print("No se pudieron extraer datos del TrialDataset")
+            print("La señal activa no tiene TrialDatasets disponibles.")
             return
 
-        print(f"ERP cargó dataset con {X.shape[0]} trials y {X.shape[1]} muestras")
+        # Guarda en el plugin
+        self.td = td
+        self.time = t.astype(float, copy=False)            # (Ns,)
+        self.matrix = X.astype(float, copy=False)          # (N_trials, Ns)
+        self.N_trials = int(self.matrix.shape[0])
 
-        self.time = t.astype(float, copy=False)
-        self.matrix = X.astype(float, copy=False)
-        self.N_trials = int(X.shape[0])
+        # Ajusta UI ligada a cantidad de trials y refresca lista
+        self._populate_trials_list()
+        print(f"ERP cargó TrialDataset: channel='{td.channel_name}', "
+            f"T={self.N_trials} trials, Ns={self.matrix.shape[1]}")
+        
 
     @staticmethod
-    def _extract_trials_dataset(ds):
+    def _extract_trials_dataset(sig: "SignalDataset") -> Tuple[np.ndarray, np.ndarray, "TrialDataset | None"]:
         """
-        Extrae los arreglos desde un TrialDataset.
-        Esperado: ds.time_rel (Ns,) y ds.trials (Ns, T)
+        Extrae (time_rel, trials) desde el último TrialDataset de la señal.
+        Devuelve:
+        t: (Ns,)
+        X: (N_trials, Ns)  <-- transpuesto para el ERP
+        td: TrialDataset   <-- referencia al TD usado
         """
-        if ds is None:
-            return None, None
+        # Asegurarse que la señal tenga trials
+        if sig is None or not hasattr(sig, "trials_dataset"):
+            return None, None, None
+        if not sig.trials_dataset:
+            return None, None, None
 
-        # Caso 1: TrialDataset con atributos
-        if hasattr(ds, "trials") and hasattr(ds, "time_rel"):
-            t = getattr(ds, "time_rel")
-            X = getattr(ds, "trials")
-            # Asegurarse de que trials esté orientado como (N_trials, N_samples)
-            if X.shape[0] == t.size:
-                X = X.T  # transponer si cada columna es un trial
-            return t, X
+        # Política simple: usar el ÚLTIMO trial creado
+        td = sig.trials_dataset[-1]
 
-        # Caso 2: dict (fallback)
-        if isinstance(ds, dict):
-            t = ds.get("time_rel") or ds.get("t") or ds.get("time")
-            X = ds.get("trials") or ds.get("data")
-            return t, X
+        # Estructura esperada del TD
+        if not hasattr(td, "time_rel") or not hasattr(td, "trials"):
+            return None, None, None
 
-        return None, None
+        t = td.time_rel
+        M = td.trials  # (Ns, T)
+
+        # ERP espera (N_trials, Ns)
+        if M.ndim != 2 or t.ndim != 1 or M.shape[0] != t.size:
+            # Intento de corrección básica
+            if M.T.shape[1] == t.size:
+                M = M.T
+                t = t
+            else:
+                print("Dimensiones incompatibles entre time_rel y trials.")
+                return None, None, None
+        else:
+            M = M.T  # (T, Ns)
+
+        return t, M, td
 
     
     # ========= Helpers UI =========
@@ -206,19 +227,24 @@ class Erp_plugin(IPlugin):
 
     # ========= Acciones =========
     def _on_plot_clicked(self):
+        # Asegurar dataset cargado
         if self.matrix is None or self.time is None:
             self._load_dataset_from_store()
             if self.matrix is None or self.time is None:
-                self._notify("No hay 'trials_dataset' en DataStore.")
+                self._notify("No hay 'trials_dataset' en la señal activa.")
                 return
+
+        # Por si cambió la cantidad de trials y la lista está desfasada
+        if self.ui.lstTrials.count() != self.N_trials:
+            self._populate_trials_list()
 
         idx = self._collect_selected_indices()
         if not idx:
             self._notify("No hay trials seleccionados.")
             return
 
-        # Slicing y render
-        sel = self.matrix[np.array(idx) - 1, :]  # indices 1-based → 0-based
+        # indices 1-based → 0-based
+        sel = self.matrix[np.array(idx) - 1, :]
         self._render_butterfly(self.time, sel)
         self._render_heatmap(self.time, sel)
         self._notify(f"ERP: {len(idx)} trials graficados.")
@@ -350,7 +376,7 @@ class Erp_plugin(IPlugin):
         print(f"Image Origin: {img.GetOrigin()}")
         
         # Usar tu función de LUT
-        lut = self._build_lut("jet", vmin, vmax)  # Cambia a "viridis" si prefieres
+        lut = self._build_lut("blue", vmin, vmax)  # Cambia a "viridis" si prefieres
         print(f"LUT Range: {lut.GetRange()}")
         
         # Chart
@@ -383,7 +409,7 @@ class Erp_plugin(IPlugin):
 
 # Helper mini para el LUT (puedes dejar solo uno y olvidarte del resto)
     def _build_lut(self, mode: str, vmin: float, vmax: float) -> vtk.vtkScalarsToColors:
-        mode = (mode or "viridis").lower()
+        mode = (mode or "blue").lower()
         N = 256
         bg = self.view_bot.GetRenderer().GetBackground()
 
@@ -391,10 +417,27 @@ class Erp_plugin(IPlugin):
             lut.SetRange(vmin, vmax)
             lut.SetNumberOfTableValues(N)
             lut.Build()
-            # Colores especiales -> fondo
             lut.SetNanColor(*bg, 1.0)
             lut.SetUseBelowRangeColor(True); lut.SetBelowRangeColor(*bg, 1.0)
             lut.SetUseAboveRangeColor(True); lut.SetAboveRangeColor(*bg, 1.0)
+            return lut
+
+        # === NUEVO: escala azul ===
+        if mode in ("blue", "blue_r"):
+            # claro→oscuro (o invertido si "blue_r")
+            # extremos (puedes ajustarlos a gusto):
+            light = (0.93, 0.97, 1.00)   # azul muy claro
+            dark  = (0.00, 0.10, 0.60)   # azul profundo
+            lut = vtk.vtkLookupTable()
+            lut = finalize(lut)
+            for i in range(N):
+                s = i / (N - 1)
+                if mode == "blue_r":
+                    s = 1.0 - s
+                r = light[0] + s * (dark[0] - light[0])
+                g = light[1] + s * (dark[1] - light[1])
+                b = light[2] + s * (dark[2] - light[2])
+                lut.SetTableValue(i, r, g, b, 1.0)
             return lut
 
         if mode == "jet":
@@ -413,11 +456,10 @@ class Erp_plugin(IPlugin):
                 lut.SetTableValue(i, r, g, b, 1.0)
             return lut
 
-        # viridis por defecto: samplear un CTF a LUT (para tener NaN/below/above)
+        # viridis por defecto
         ctf = vtk.vtkColorTransferFunction()
         ctf.ClampingOn()
         ctf.SetRange(vmin, vmax)
-        # Puntos (aprox) de viridis
         ctf.AddRGBPoint(vmin,                 0.267, 0.005, 0.329)
         ctf.AddRGBPoint((2*vmin+vmax)/3.0,    0.229, 0.322, 0.545)
         ctf.AddRGBPoint((vmin+2*vmax)/3.0,    0.127, 0.566, 0.550)
@@ -425,7 +467,6 @@ class Erp_plugin(IPlugin):
 
         lut = vtk.vtkLookupTable()
         lut = finalize(lut)
-        # Muestrear el CTF en la LUT
         for i in range(N):
             s = i / (N - 1)
             x = vmin + s * (vmax - vmin)
