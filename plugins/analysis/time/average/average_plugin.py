@@ -31,6 +31,8 @@ class Average_plugin(IPlugin):
             except Exception:
                 pass
 
+            
+
     def start(self, kernel):
         print("Iniciando Average")
         self.mainwin = kernel.get_service("MainWindow")
