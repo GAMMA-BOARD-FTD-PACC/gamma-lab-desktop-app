@@ -146,6 +146,9 @@ class OpenSignalPlugin(IPlugin):
             plot.SetInputData(table, 0, ch + 1) 
             plot.SetColor(*colors.GetColor4ub("Black"))
             plot.SetWidth(0.5)
+            
+            chart.GetAxis(0).SetTitle("Time (s)")
+            chart.GetAxis(1).SetTitle(ds.units[1] or "Amplitude")
 
         if C_total > C and self.mainwin:
                 self.mainwin.statusBar().showMessage(
