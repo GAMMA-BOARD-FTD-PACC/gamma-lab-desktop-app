@@ -21,6 +21,7 @@ class Average_plugin(IPlugin):
 
     def process(self, data: any):
         print(f"Average recibió datos: {data}")
+        self._load_dataset_from_store()
         if self.mainwin:
             # ejemplo: mostrar mensaje en statusBar (si existe)
             try:
@@ -54,7 +55,7 @@ class Average_plugin(IPlugin):
     
 
     def _load_dataset_from_store(self):
-        """Busca 'trials_dataset' en el DataStore y extrae time y matrix."""
+        """Carga el SignalDataset activo desde el DataStore y muestra sus TrialDataset asociados."""
         if not self.mainwin:
             return
 
@@ -62,21 +63,30 @@ class Average_plugin(IPlugin):
         if store is None:
             print("[Average] No hay servicio de DataStore.")
             return
+
+        # Obtener la señal activa
+        active_signal = store.get_active_signal()
+        if not active_signal:
+            print("[Average] No hay señal activa registrada en el DataStore.")
+            return
         
-        # Intentar obtener el SignalDataset principal
-        signal_ds: SignalDataset | None = store.get("raw", None)
-        if signal_ds is None:
-            print("No se encontró 'raw' (SignalDataset) en el DataStore.")
+        print(f"[Average] Señal activa: '{active_signal}'")
+        print(f"Formato: {active_signal.format}")
+        print(f"Archivo fuente: {active_signal.source_path}")
+        print(f"Sampling rate: {active_signal.sampling_rate} Hz")
+        print(f"Canales: {len(active_signal.channel_names)} → {active_signal.channel_names}")
+        print(f"Unidades: {active_signal.units}")
+        print(f"Dimensiones de signals: {active_signal.signals.shape}\n")
+
+        # Revisar si tiene trials asociados
+        if not hasattr(active_signal, "trials_dataset") or not active_signal.trials_dataset:
+            print("[Average] El SignalDataset no tiene TrialDataset asociados.")
             return
 
-        if not signal_ds.trials_dataset:
-            print("El SignalDataset no tiene trials asociados.")
-            return
+        print(f"Se encontraron {len(active_signal.trials_dataset)} TrialDataset asociados.\n")
 
-        print(f"Se encontraron {len(signal_ds.trials_dataset)} TrialDataset asociados.\n")
-
-        # Recorrer y mostrar información de cada trial
-        for i, td in enumerate(signal_ds.trials_dataset, start=1):
+        # Recorrer y mostrar información detallada de cada trial
+        for i, td in enumerate(active_signal.trials_dataset, start=1):
             print(f"── TrialDataset #{i} ──")
             print(f"Canal: {td.channel_name} (índice {td.channel_index})")
             print(f"Archivo origen: {td.source}")
@@ -84,4 +94,5 @@ class Average_plugin(IPlugin):
             print(f"Trials shape: {td.trials.shape}")
             print(f"Time_rel shape: {td.time_rel.shape}")
             print(f"Onsets: {len(td.onsets_s)} eventos\n")
+
 
