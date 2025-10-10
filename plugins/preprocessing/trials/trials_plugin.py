@@ -23,7 +23,7 @@ class TrialsPlugin(IPlugin):
             "threshold": 0.8,
             "t0": -0.05,
             "t1": 4.0,
-            "stim_count": None,  
+            "stim_count": 1,  
             "isi": None          
         }
 
