@@ -20,15 +20,15 @@ class MainWindow(QMainWindow):
         self.ui.setupUi(self)
         self.showMaximized()
 
-        # Quitar márgenes y spacing del contenedor de botones
-        self.ui.horizontalLayout_2.setContentsMargins(0, 0, 0, 10)
-        self.ui.horizontalLayout_2.setSpacing(0)
+        # # Quitar márgenes y spacing del contenedor de botones
+        # self.ui.horizontalLayout_2.setContentsMargins(0, 0, 0, 10)
+        # self.ui.horizontalLayout_2.setSpacing(0)
 
-        #layout principal
-        self.ui.verticalLayout_2.setContentsMargins(0, 0, 0, 0)
-        self.ui.verticalLayout_2.setSpacing(0)
+        # #layout principal
+        # self.ui.verticalLayout_2.setContentsMargins(0, 0, 0, 0)
+        # self.ui.verticalLayout_2.setSpacing(0)
 
-        self.ui.horizontalLayout.setContentsMargins(30, 10, 30, 0)
+        # self.ui.horizontalLayout.setContentsMargins(30, 10, 30, 0)
 
 
         self.current_section = "Home"
