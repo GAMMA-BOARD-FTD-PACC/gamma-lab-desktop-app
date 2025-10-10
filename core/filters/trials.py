@@ -1,4 +1,5 @@
 from typing import List, Optional, Literal
+import math
 import numpy as np
 from core.services.signal_dataset import SignalDataset
 from core.services.trial_dataset import TrialDataset
@@ -8,81 +9,116 @@ EndMode = Literal["fixed", "until_next_onset"]
 
 def _detect_onsets_abs(
     signal: np.ndarray,
-    fs: float,
     threshold: float,
-    min_distance_s: Optional[float],
+    *,
+    fs: float,
+    min_distance_s: Optional[float] = None,  # antirrebote (si None, no filtra)
+    debug: bool = True
 ) -> List[int]:
     """
-    Detecta onsets (inicios) donde |signal| pasa de <= umbral a > umbral.
-    Equivale a la "máquina de estados" del MATLAB pero vectorizado.
-
-    Devuelve índices de muestra (enteros) de cada onset.
+    Detecta onsets (flancos ascendentes) donde |signal| pasa de <= umbral a > umbral.
+    Con 'min_distance_s' aplica antirrebote temporal.
+    Devuelve índices de muestra (enteros).
     """
     x = np.abs(signal.astype(np.float64, copy=False))
     thr = float(threshold)
 
-    # Booleano: True donde la señal supera el umbral
     above = x > thr
     if above.size < 2:
+        if debug:
+            print("[Onsets] Señal muy corta (<2 muestras). No hay onsets.")
         return []
 
-    # Flanco ascendente: de False a True
-    rising = np.flatnonzero((~above[:-1]) & (above[1:])) + 1
-    if rising.size == 0:
-        return []
+    # flancos ascendentes
+    rising = (np.flatnonzero((~above[:-1]) & (above[1:])) + 1).astype(int)
 
-    # Si no pides separación mínima, devolvemos todos los flancos
-    if not min_distance_s or min_distance_s <= 0:
-        return rising.astype(int).tolist()
+    if min_distance_s is None or min_distance_s <= 0:
+        if debug:
+            print(f"[Onsets] Umbral={thr} → onsets K={rising.size} (SIN antirrebote)")
+            if rising.size:
+                print(f"[Onsets] Primeros onsets (muestras): {rising[:10].tolist()}")
+        return rising.tolist()
 
-    # De lo contrario, "filtrado" por distancia mínima entre onsets
+    # antirrebote
     min_dist = int(round(min_distance_s * fs))
-    picks = [int(rising[0])]
-    last = picks[0]
-    for idx in rising[1:]:
+    picked: List[int] = []
+    last = -10**12
+    for idx in rising:
         if idx - last >= min_dist:
-            picks.append(int(idx))
+            picked.append(int(idx))
             last = int(idx)
-    return picks
+        else:
+            if debug:
+                dt = (idx - last) / fs
+                print(f"[Onsets] descartado {idx} (Δt={dt:.6f}s < {min_distance_s}s)")
+
+    if debug:
+        print(f"[Onsets] Umbral={thr}, min_dist={min_dist} muestras ({min_distance_s}s) → K final={len(picked)}")
+        if picked:
+            print(f"[Onsets] Primeros onsets aceptados (muestras): {picked[:10]}")
+    return picked
 
 
 def cut_trials_single_channel(
     ds: SignalDataset,
     channel: int,
     threshold: float,
-    t0: float,                     # offset relativo al onset (negativo = pre-estímulo)
-    t1: float,                     # solo se usa en "fixed"
-    stim_expected: Optional[int] = None,  # ahora: Nº de estímulos POR TRIAL
-    isi: Optional[float] = None,          # separación mínima entre cruces (s)
-    end_mode: EndMode = "fixed",          # "fixed" | "until_next_onset"
+    t0: float,
+    t1: float,
+    stim_expected: Optional[int] = None,
+    isi: Optional[float] = None,
+    end_mode: EndMode = "fixed",
+    trigger_channel: Optional[int] = None,
+    pad_value: float = np.nan,
+    *,
+    debounce_s: Optional[float] = None,
+    debug: bool = True
 ) -> TrialDataset:
     """
-    Corta trials usando |y| > threshold como trigger.
-
-    - fixed:             ventana fija [t0, t1) respecto al PRIMER onset de cada grupo.
-    - until_next_onset:  desde (first_onset + t0) hasta el onset situado 'stim_expected'
-                         posiciones después (o fin de señal). Se hace padding para matriz rectangular.
-
-    NOTA: 'stim_expected' indica cuántos ESTÍMULOS hay por trial; el número de trials
-    se obtiene agrupando los onsets detectados en bloques consecutivos de tamaño 'stim_expected'.
+    Corta trials usando |y| > threshold como trigger, con antirrebote temporal.
+    NO se agrega onset sintético al inicio: solo se usan onsets detectados.
+    - fixed:            ventana fija [t0, t1) respecto al PRIMER onset de cada grupo.
+    - until_next_onset: desde (first_onset + t0) hasta el primer onset del grupo siguiente
+                        (o fin de señal). Padding para rectangularizar.
+    - No se descarta el último grupo aunque esté incompleto (se rellena con 'pad_value').
     """
     fs = float(ds.sampling_rate)
     C, N = ds.signals.shape
-    if not (0 <= channel < C):
-        raise ValueError(f"channel fuera de rango (C={C})")
+    if not (0 <= channel < C): raise ValueError(f"channel fuera de rango (C={C})")
+    trig_ch = channel if trigger_channel is None else trigger_channel
+    if not (0 <= trig_ch < C): raise ValueError(f"trigger_channel fuera de rango (C={C})")
 
+    y_trig = ds.signals[trig_ch].astype(np.float64, copy=False)
     y = ds.signals[channel].astype(np.float64, copy=False)
 
-    # 1) Detección de onsets
-    onsets_all = _detect_onsets_abs(y, fs, float(threshold), isi)
-    K = len(onsets_all)
-    print(f"[DEBUG] Detectados {K} onsets en canal {channel}")
+    # antirrebote por defecto
+    if debounce_s is None:
+        debounce_s = 0.25 if (stim_expected is None or stim_expected == 1) else 0.01
 
-    # Caso sin onsets → 1 “trial” con toda la señal (comportamiento previo)
+    if debug:
+        print(f"\n[TRIALS] ==== INICIO ====")
+        print(f"[TRIALS] fs={fs}Hz, N={N}, channel={channel}, trigger_channel={trig_ch}, "
+              f"threshold={threshold}, t0={t0}, t1={t1}, end_mode='{end_mode}', "
+              f"stim_expected={stim_expected}, isi={isi}, pad={pad_value}, debounce_s={debounce_s}")
+
+    # 1) onsets con antirrebote (sin onset sintético)
+    onsets_all = _detect_onsets_abs(
+        y_trig, float(threshold), fs=fs, min_distance_s=debounce_s, debug=debug
+    )
+    K = len(onsets_all)
+    if debug:
+        print(f"[TRIALS] Detectados {K} onsets en canal trigger {trig_ch}")
+        if K:
+            print("[TRIALS] Tiempos de los primeros onsets (s):",
+                  [round(i/fs, 6) for i in onsets_all[:10]])
+
+    # Caso K==0 → 1 “trial” con toda la señal
     if K == 0:
         trials = y.reshape(-1, 1)
         time_rel = np.arange(y.shape[0], dtype=np.float64) / fs
         dur = time_rel[-1] if time_rel.size else 0.0
+        if debug:
+            print("[TRIALS] K=0 → devuelvo 1 trial con la señal completa.")
         return TrialDataset(
             source=ds.source_path, sampling_rate=fs,
             channel_index=channel,
@@ -90,97 +126,104 @@ def cut_trials_single_channel(
             unit=(ds.units[channel] if channel < len(ds.units) else ""),
             t0=0.0, t1=dur, time_rel=time_rel,
             trials=trials, onsets_s=[], isi_s=[],
-            metadata={"end_mode": end_mode, "note": "sin_estímulos"},
+            metadata={
+                "end_mode": end_mode,
+                "stim_per_trial": int(stim_expected or 1),
+                "stim_detected": 0,
+                "trials_built": 1,
+                "trigger_channel": int(trig_ch),
+                "debounce_s": float(debounce_s) if debounce_s is not None else None,
+                "pad_value": float(pad_value),
+                "note": "sin_estímulos",
+            },
         )
 
-    # 2) Agrupación por 'stim_expected' estímulos por trial
-    if stim_expected is None or stim_expected <= 0:
-        stim_per_trial = 1
-    else:
-        stim_per_trial = int(stim_expected)
-
-    # Número de trials = grupos completos de 'stim_per_trial'
-    T = K // stim_per_trial
-    if T <= 0:
-        # No alcanza para formar ni un grupo completo → por consistencia, usar 1 trial desde el primer onset
-        stim_per_trial = 1
-        T = K
-
-    # Índices de inicio de cada trial (primer onset de cada grupo)
-    # p.ej., si stim_per_trial=3 y K=10 → starts=[0,3,6] (T=3) y el último onset queda suelto y se descarta
+    # 2) Agrupación por 'stim_expected' (no se descartan remanentes)
+    stim_per_trial = 1 if (stim_expected is None or stim_expected <= 0) else int(stim_expected)
+    T = int(math.ceil(K / stim_per_trial))
     group_starts = [i * stim_per_trial for i in range(T)]
-    first_onsets = [onsets_all[s] for s in group_starts]  # primeros onsets por trial
+    first_onsets = [onsets_all[s] for s in group_starts]
 
-    # 3) Construcción de columnas según modo
+    if debug:
+        print(f"[GROUP] stim_per_trial={stim_per_trial} → grupos(T)={T}")
+        for g in range(min(T, 10)):
+            a_idx = group_starts[g]
+            a_on  = onsets_all[a_idx]
+            last  = min(a_idx + stim_per_trial, K) - 1
+            b_on  = onsets_all[last]
+            print(f"  - Grupo {g}: [{a_idx}:{last}] first={a_on/fs:.6f}s, last={b_on/fs:.6f}s")
+
+    # 3) Construcción
     if end_mode == "until_next_onset":
-        # El fin de cada trial es el onset del siguiente GRUPO (s + stim_per_trial),
-        # o fin de la señal si no existe.
-        # También permitimos t0 negativo (pre-estímulo)
         n0 = int(round(t0 * fs))
-
-        # Longitud (en muestras) de cada trial (varía con la separación entre grupos)
         lengths = []
         for g in range(T):
             start_idx = group_starts[g]
             a_onset = onsets_all[start_idx]
-            # El "siguiente grupo" empieza en start_idx + stim_per_trial
-            next_group_idx = start_idx + stim_per_trial
-            b_onset = onsets_all[next_group_idx] if next_group_idx < K else N
-            length = max(0, b_onset - (a_onset + n0))
-            lengths.append(length)
+            next_group_start = start_idx + stim_per_trial
+            b_onset = onsets_all[next_group_start] if next_group_start < K else N
+            lengths.append(max(0, b_onset - (a_onset + n0)))
 
-        Ns = max(lengths) if lengths else 0
-        if Ns <= 0:
-            Ns = 1
+        Ns = max(lengths) if lengths else 1
+        Ns = max(Ns, 1)
+        trials = np.full((Ns, T), pad_value, dtype=np.float64)
 
-        trials = np.zeros((Ns, T), dtype=np.float64)
+        if debug:
+            print(f"[MODE until_next_onset] n0={n0} ({n0/fs:.6f}s), Ns(max)={Ns}")
         for tcol, start_idx in enumerate(group_starts):
             a_onset = onsets_all[start_idx]
-            next_group_idx = start_idx + stim_per_trial
-            b_onset = onsets_all[next_group_idx] if next_group_idx < K else N
-
-            a = a_onset + n0
-            b = b_onset
-            a_clip = max(a, 0)
-            b_clip = min(b, N)
+            next_group_start = start_idx + stim_per_trial
+            b_onset = onsets_all[next_group_start] if next_group_start < K else N
+            a = a_onset + n0; b = b_onset
+            a_clip = max(a, 0); b_clip = min(b, N)
             if b_clip > a_clip:
                 seg = y[a_clip:b_clip]
-                start = a_clip - a  # padding si a<0
+                start = a_clip - a
                 trials[start:start + seg.shape[0], tcol] = seg
+            if debug:
+                print(f"  [col {tcol}] a_on={a_onset/fs:.6f}s → clip [{a_clip},{b_clip}) len={max(0,b_clip-a_clip)}")
 
         time_rel = (np.arange(n0, n0 + Ns, dtype=np.int64) / fs).astype(np.float64)
         t1_report = float(time_rel[-1]) if time_rel.size else 0.0
 
     else:  # fixed
-        if t1 <= t0:
-            raise ValueError("En 'fixed' se requiere t1 > t0.")
-        n0 = int(round(t0 * fs))
-        n1 = int(round(t1 * fs))
-        Ns = n1 - n0
-
-        trials = np.zeros((Ns, T), dtype=np.float64)
+        if t1 <= t0: raise ValueError("En 'fixed' se requiere t1 > t0.")
+        n0 = int(round(t0 * fs)); n1 = int(round(t1 * fs)); Ns = n1 - n0
+        if Ns <= 0: raise ValueError("Ventana fija inválida: (t1 - t0) debe ser > 0.")
+        trials = np.full((Ns, T), pad_value, dtype=np.float64)
+        if debug:
+            print(f"[MODE fixed] n0={n0}({n0/fs:.6f}s), n1={n1}({n1/fs:.6f}s), Ns={Ns}")
         for tcol, start_idx in enumerate(group_starts):
             a_onset = onsets_all[start_idx]
-            a = a_onset + n0
-            b = a_onset + n1
-            a_clip = max(a, 0)
-            b_clip = min(b, N)
+            a = a_onset + n0; b = a_onset + n1
+            a_clip = max(a, 0); b_clip = min(b, N)
             if b_clip > a_clip:
                 seg = y[a_clip:b_clip]
                 start = a_clip - a
                 trials[start:start + seg.shape[0], tcol] = seg
-
+            if debug:
+                print(f"  [col {tcol}] a_on={a_onset/fs:.6f}s → clip [{a_clip},{b_clip}) len={max(0,b_clip-a_clip)}")
         time_rel = (np.arange(n0, n1, dtype=np.int64) / fs).astype(np.float64)
         t1_report = float(time_rel[-1]) if time_rel.size else 0.0
 
-    print(f"[DEBUG] stim_per_trial={stim_per_trial}, grupos(T)={T}")
-    print(f"[DEBUG] Matriz de trials generada con {trials.shape[1]} trials × {trials.shape[0]} muestras")
+    if debug:
+        print(f"[TRIALS] Matriz generada: {trials.shape[1]} trials × {trials.shape[0]} muestras")
 
-    # 4) Metadatos coherentes
-    # onsets_s: usamos el PRIMER onset de cada trial como “timestamp” del trial
+    # 4) ISI y metadatos
     onsets_s_sel = [i / fs for i in first_onsets]
-    # isi entre trials (entre primeros onsets consecutivos)
-    isi_s_sel = (np.diff(onsets_s_sel).tolist() if T > 1 else [])
+    isi_detail_s, isi_mean_s = [], []
+    for g in range(T):
+        start_idx = group_starts[g]; end_idx = min(start_idx + stim_per_trial, K)
+        grp = onsets_all[start_idx:end_idx]
+        if len(grp) >= 2:
+            deltas_s = np.diff(np.array(grp, dtype=np.float64)) / fs
+            isi_detail_s.append(deltas_s.tolist()); isi_mean_s.append(float(np.mean(deltas_s)))
+        else:
+            isi_detail_s.append([]); isi_mean_s.append(0.0)
+
+    if debug:
+        print(f"[ISI] isi_expected={isi}, isi_mean_por_trial (primeros 10): {isi_mean_s[:10]}")
+        print("[TRIALS] ==== FIN ====\n")
 
     return TrialDataset(
         source=ds.source_path,
@@ -191,16 +234,19 @@ def cut_trials_single_channel(
         t0=float(t0),
         t1=t1_report,
         time_rel=time_rel,
-        trials=trials,                 # (Ns, T) = (muestras, trials)
-        onsets_s=onsets_s_sel,         # primer onset de cada trial
-        isi_s=isi_s_sel,
+        trials=trials,
+        onsets_s=onsets_s_sel,
+        isi_s=isi_mean_s,
         metadata={
             "end_mode": end_mode,
             "stim_per_trial": int(stim_per_trial),
             "stim_detected": int(K),
             "trials_built": int(T),
-            "note": ("últimos onsets descartados por no completar grupo"
-                     if (K % stim_per_trial != 0) else "")
+            "trigger_channel": int(trig_ch),
+            "debounce_s": float(debounce_s) if debounce_s is not None else None,
+            "pad_value": float(pad_value),
+            "isi_detail_s": isi_detail_s,
+            "isi_expected_s": (float(isi) if isi is not None else None),
+            "note": "último grupo incluido con padding si quedó incompleto",
         },
     )
-
