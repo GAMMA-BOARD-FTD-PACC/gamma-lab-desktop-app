@@ -49,3 +49,38 @@ class DataStore:
     #Retorna todas las señales almacenadas que sean instancias de SignalDataset.
     def get_signals(self):
         return {k: v for k, v in self._data.items() if isinstance(v, SignalDataset)}
+    
+
+    def set_active_signal(self, key: str):
+        """
+        Define la señal activa usando la clave de una señal almacenada.
+        Lanza ValueError si la clave no existe o no corresponde a una señal.
+        """
+        if key not in self._data:
+            raise ValueError(f"La señal con clave '{key}' no existe en el DataStore.")
+        if not isinstance(self._data[key], SignalDataset):
+            raise ValueError(f"El elemento '{key}' no es una señal válida (SignalDataset).")
+
+        self._data["active_signal"] = key
+
+
+    #Retornar la señal activa (instancia de SignalDataset). - Devuelve None si no hay una activa definida.
+    def get_active_signal(self):
+        key = self._data.get("active_signal")
+        if key and key in self._data:
+            return self._data[key]
+        return None
+
+    #Retornar la clave del signal activo (string) o None si no hay.
+    def get_active_signal_key(self):
+        return self._data.get("active_signal")
+
+    #Eliminar la referencia a la señal activa (no borra la señal del DataStore).
+    def clear_active_signal(self):
+        if "active_signal" in self._data:
+            del self._data["active_signal"]
+    
+    #Verificar si una clave corresponde a la señal activa
+
+    def is_active_signal(self, key: str):
+        return self._data.get("active_signal") == key

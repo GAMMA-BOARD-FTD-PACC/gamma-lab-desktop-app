@@ -184,6 +184,13 @@ class TrialsPlugin(IPlugin):
                 QMessageBox.warning(self.widget, "Error", f"No se encontró la señal '{selected_key}'.")
                 self.mainwin.statusBar().showMessage("No hay señal cargada ('raw')", 4000)
             return None
+        
+        # Registrar la señal como la activa en el DataStore
+        try:
+            store.set_active_signal(selected_key)
+            print(f"[TrialsPlugin] Señal activa establecida: '{selected_key}'")
+        except ValueError as e:
+            print(f"[TrialsPlugin] No se pudo establecer la señal activa: {e}")
 
         ch   = int(self.ui.channelSpinBox.value())
         th   = float(self.ui.thresholdDoubleSpinBox.value())
