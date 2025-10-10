@@ -213,7 +213,7 @@ class TrialsPlugin(IPlugin):
 
         self.last_td = td
         T = td.trials.shape[1]
-        self.visible_trials = [0] if T > 0 else []
+        self.visible_trials = [1] if T > 0 else []
         # Render
         self._render_trials(td)
 
@@ -251,10 +251,10 @@ class TrialsPlugin(IPlugin):
         scene.SetRenderer(renderer)
 
         Ns, T = td.trials.shape
-        
+
         sel = sorted({i for i in self.visible_trials if 0 <= i < T})
-        if not sel and T > 0:
-            sel = [0] 
+        if not sel:
+            sel = [1] if T > 1 else ([0] if T == 1 else [])
 
         for idx in sel:
             plot = chart.AddPlot(vtk.vtkChart.LINE)
