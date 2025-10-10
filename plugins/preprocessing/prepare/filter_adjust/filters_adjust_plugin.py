@@ -9,6 +9,7 @@ import vtk
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 from vtkmodules.vtkImagingFourier import vtkImageButterworthHighPass
 from vtkmodules.vtkCommonDataModel import vtkImageData
+import numpy as np
 
 class FiltersAdjustPlugin(IPlugin):
 
@@ -137,25 +138,34 @@ class FiltersAdjustPlugin(IPlugin):
             QMessageBox.warning(self.widget, "Error", "Parámetros inválidos")
             return
 
-        # Obtener la señal activa del DataStore
+        # Obtener el servicio de DataSotre
         store = self.kernel.get_service("DataStore")
         if not store:
             QMessageBox.warning(self.widget, "Error", "No se encontró el DataStore.")
             return
 
-        signals = store.get_signals()
-        if not signals:
+        active_signal = store.get_active_signal()
+        if not active_signal:
             QMessageBox.warning(self.widget, "Error", "No hay señales cargadas.")
             return
+        
+        if not active_signal.trials_dataset:
+            QMessageBox.warning(self.widget, "Error", "Esta señal no tiene TrialDataset asociado.")
+            return
 
-        key = next(iter(signals))
-        ds = signals[key]
-        print(f"[FiltersAdjustPlugin] Señal seleccionada: {key}")
+        # Tomar el primer TrialDataset (por ahora)
+        td = active_signal.trials_dataset[0]
+
+        print(f"[FiltersAdjustPlugin] TrialDataset activo: {td.channel_name}, "
+              f"Fs={td.sampling_rate} Hz, shape={td.trials.shape}")
+
 
         # Obtener el primer canal de la señal
-        channel_idx = 0
-        signal = ds.signals[channel_idx, :].astype(float)
-        fs = ds.sampling_rate or 1000.0
+
+        signal = np.mean(td.trials, axis=1).astype(float)
+        fs = td.sampling_rate or 1000.0
+
+        #signal = ds.signals[channel_idx, :].astype(float)
 
         # === Convertir señal a vtkImageData (2 componentes) ===
         img = vtk.vtkImageData()

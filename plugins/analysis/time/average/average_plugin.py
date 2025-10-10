@@ -2,7 +2,7 @@ from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
 from core.services.signal_dataset import SignalDataset
 from plugins.analysis.time.average.average_plugin_ui import Ui_Average
-from PyQt5.QtWidgets import QWidget, QVBoxLayout
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QMessageBox
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 import vtk
 import numpy as np
@@ -78,7 +78,7 @@ class Average_plugin(IPlugin):
 
         store = self.mainwin.kernel.get_service("DataStore")
         if store is None:
-            print("[Average] No hay servicio de DataStore.")
+            QMessageBox.warning(self.widget, "Error", "No se encontró el DataStore.")
             return
 
         # Obtener la señal activa
