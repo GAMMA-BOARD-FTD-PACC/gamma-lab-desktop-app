@@ -29,10 +29,10 @@ class Ui_Trials(QtWidgets.QWidget):
         formLay.setFieldGrowthPolicy(QtWidgets.QFormLayout.ExpandingFieldsGrow)
         formLay.setLabelAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
 
-        # Combobox para elegir la señal
-        self.signalLabel = QtWidgets.QLabel("Signal", formWrap)
-        self.signalComboBox = QtWidgets.QComboBox(formWrap)
-        formLay.addRow(self.signalLabel, self.signalComboBox)
+        # # Combobox para elegir la señal
+        # self.signalLabel = QtWidgets.QLabel("Signal", formWrap)
+        # self.signalComboBox = QtWidgets.QComboBox(formWrap)
+        # formLay.addRow(self.signalLabel, self.signalComboBox)
 
         self.channelLabel = QtWidgets.QLabel("Channel", formWrap)
         self.channelSpinBox = QtWidgets.QSpinBox(formWrap)
