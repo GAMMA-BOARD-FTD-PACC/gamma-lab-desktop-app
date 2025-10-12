@@ -103,6 +103,12 @@ class OpenSignalPlugin(IPlugin):
         key = store.add_signal(ds, file_name)
         print(f"[OpenSignal] Guardado en DataStore: {key}")
 
+        #emitir evento de registro de señal
+        self.kernel.emit_event("signal_added", {"key": key})
+
+        if store.get_active_signal_key() is None:
+            store.set_active_signal(key)
+
         self.render_dataset(ds)
         if self.mainwin:
             self.mainwin.statusBar().showMessage(f"Cargado: {path}", 4000)

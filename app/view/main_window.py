@@ -2,10 +2,8 @@ from collections import defaultdict
 import os
 from PyQt5.QtWidgets import QMainWindow, QMessageBox, QHBoxLayout, QVBoxLayout, QWidget, QToolButton, QGroupBox, QLabel, QSizePolicy
 from app.view.ventana_principal_ui import Ui_MainWindow 
-from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import QSize, Qt
-
-
+from PyQt5.QtGui import QIcon, QPixmap
+from PyQt5.QtCore import QSize, Qt, QPropertyAnimation, QEasingCurve
 
 class MainWindow(QMainWindow):
     def __init__(self, kernel):
@@ -20,16 +18,7 @@ class MainWindow(QMainWindow):
         self.ui.setupUi(self)
         self.showMaximized()
 
-        # # Quitar márgenes y spacing del contenedor de botones
-        # self.ui.horizontalLayout_2.setContentsMargins(0, 0, 0, 10)
-        # self.ui.horizontalLayout_2.setSpacing(0)
-
-        # #layout principal
-        # self.ui.verticalLayout_2.setContentsMargins(0, 0, 0, 0)
-        # self.ui.verticalLayout_2.setSpacing(0)
-
-        # self.ui.horizontalLayout.setContentsMargins(30, 10, 30, 0)
-
+        self.kernel.event.connect(self.on_kernel_event)
 
         self.current_section = "Home"
         self.active_plugin = None #Plugin activo actualmente
@@ -38,6 +27,9 @@ class MainWindow(QMainWindow):
 
         #area de trabajo
         self.plugin_area = self.ui.workspace
+
+        # Inicializar funcionalidades de la barra lateral
+        self.setup_sidebar_functionality()
 
         if not self.plugin_area.layout():
             self.plugin_layout = QVBoxLayout(self.plugin_area)
@@ -222,3 +214,139 @@ class MainWindow(QMainWindow):
                     print("Error en process del plugin:", e)
         else:
             print("Plugin no encontrado:", name)
+
+
+
+    '''Barra lateral'''
+
+    def on_kernel_event(self, topic: str, payload: object):
+        """
+        Escucha eventos emitidos por el Kernel.
+        """
+        if topic == "signal_added":
+            print(f"Nueva señal añadida: {payload}")
+            self.update_signal_list()
+
+    def setup_sidebar_functionality(self):
+        """Inicializa y conecta todas las funciones de la barra lateral."""
+        # Collapse de la barra lateral
+        self.ui.collapse_explorer_btn.clicked.connect(self.toggle_sidebar_collapse)
+        self.ui.collapse_explorer_btn.setIcon(QIcon("assets/icons/home/icn_collapse.png"))
+
+        self.update_signal_list()
+        # Selección de señal
+        self.ui.selected_signal_comboBox.currentIndexChanged.connect(self.on_signal_selected)
+
+        # Secciones futuras
+        self.setup_explorer_section()
+        self.setup_calculus_section()
+        self.setup_results_section()
+
+
+    # Comprimir y expandir la barra lateral
+    def toggle_sidebar_collapse(self):
+        """Colapsa o expande el panel lateral izquierdo con íconos y animación."""
+        sidebar = self.ui.widget_3
+        current_width = sidebar.width()
+
+        # --- Si está expandida ---
+        if current_width > 0:
+            self._last_sidebar_width = current_width
+
+            # Animación de colapso suave
+            self._sidebar_animation = QPropertyAnimation(sidebar, b"maximumWidth")
+            self._sidebar_animation.setDuration(250)
+            self._sidebar_animation.setStartValue(current_width)
+            self._sidebar_animation.setEndValue(0)
+            self._sidebar_animation.setEasingCurve(QEasingCurve.InOutCubic)
+            self._sidebar_animation.start()
+
+            self.ui.collapse_explorer_btn.setIcon(QIcon("assets/icons/home/icn_expand.png"))
+
+
+        # --- Si está colapsada ---
+        else:
+            width = getattr(self, "_last_sidebar_width", 250)
+
+            # Animación de expansión
+            self._sidebar_animation = QPropertyAnimation(sidebar, b"maximumWidth")
+            self._sidebar_animation.setDuration(250)
+            self._sidebar_animation.setStartValue(0)
+            self._sidebar_animation.setEndValue(width)
+            self._sidebar_animation.setEasingCurve(QEasingCurve.InOutCubic)
+            self._sidebar_animation.start()
+
+            # Cambiar ícono de nuevo
+            self.ui.collapse_explorer_btn.setIcon(QIcon("assets/icons/home/icn_collapse.png"))
+    
+    def on_signal_selected(self):
+        """
+        Se ejecuta cuando el usuario cambia la señal seleccionada en el comboBox.
+        Actualiza la señal activa en el DataStore.
+        """
+        datastore = self.kernel.get_service("DataStore")
+        if not datastore:
+            print("⚠️ No se encontró el servicio DataStore.")
+            return
+
+        selected_key = self.ui.selected_signal_comboBox.currentText()
+        if not selected_key:
+            print("No hay señal seleccionada.")
+            return
+
+        try:
+            datastore.set_active_signal(selected_key)
+            print(f"[Main Window] Señal activa cambiada a: {selected_key}")
+        except ValueError as e:
+            print(f"[Main Window] Error al cambiar señal activa: {e}")
+
+
+    def update_signal_list(self):
+        """Maneja la selección de una señal del comboBox."""
+
+        datastore = self.kernel.get_service("DataStore")
+        if not datastore:
+            print("No se encontró el servicio DataStore.")
+            return
+        
+        signals = datastore.get_signals()
+        active_signal_key = datastore.get_active_signal_key()
+
+        #limpiar combo
+        self.ui.selected_signal_comboBox.blockSignals(True)
+        self.ui.selected_signal_comboBox.clear()
+
+        for key in signals.keys():
+            self.ui.selected_signal_comboBox.addItem(key)
+
+        # Seleccionar la señal activa si hay
+        if active_signal_key and active_signal_key in signals:
+            index = self.ui.selected_signal_comboBox.findText(active_signal_key)
+            if index >= 0:
+                self.ui.selected_signal_comboBox.setCurrentIndex(index)
+
+        self.ui.selected_signal_comboBox.blockSignals(False)
+
+
+
+        # selected_signal = self.ui.selected_signal_comboBox.currentText()
+        # if selected_signal:
+        #     print(f"Señal seleccionada: {selected_signal}")
+        #     # Aquí podrías notificar al kernel o cargar la señal seleccionada
+        # else:
+        #     print("No hay señal seleccionada.")
+        pass
+
+
+    # === FUNCIONES FUTURAS (placeholder con pass) ===
+    def setup_explorer_section(self):
+        """Inicializa la sección de explorador (por ahora vacía)."""
+        pass
+
+    def setup_calculus_section(self):
+        """Inicializa la sección de cálculos (por ahora vacía)."""
+        pass
+
+    def setup_results_section(self):
+        """Inicializa la sección de resultados (por ahora vacía)."""
+        pass
