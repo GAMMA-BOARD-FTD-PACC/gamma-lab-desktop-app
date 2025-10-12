@@ -32,7 +32,6 @@ class TrialsPlugin(IPlugin):
         self.vtk_widget: QVTKRenderWindowInteractor | None = None
         self.renwin = None
 
-        self.signalComboBox: QComboBox | None = None
         self.channelSpinBox: QSpinBox | None = None
         self.stimNumberSpinBox: QSpinBox | None = None
         self.thresholdDoubleSpinBox: QDoubleSpinBox | None = None
@@ -62,18 +61,14 @@ class TrialsPlugin(IPlugin):
             self.ui.Btn_generate_trials.clicked.connect(self._on_generate_clicked)
 
             self._init_controls()
-            self._populate_from_raw()
 
         else:
             self.widget.setParent(parent)
 
-        self._populate_from_raw()
         return self.widget
     
 
     def process(self, data: any):
-        #Actualizar el combobox al cargar nuevas señales
-        self._populate_from_raw()
         print(f"UIPlugin recibió datos: {data}")
         
     def _ensure_vtk(self):
@@ -90,44 +85,17 @@ class TrialsPlugin(IPlugin):
         self.renwin.SetMultiSamples(0)
         QtCore.QTimer.singleShot(0, self._init_interactor)
     
-    def _populate_from_raw(self):
-        
-        """
-        Llena el combobox con las señales crudas disponibles en el DataStore.
-        Si no hay señales, se agrega un item "No hay señales cargadas".
-        Luego se ajustan los rangos del canal según la primera señal cargada.
-        """
+    def _populate_from_raw(self, ds=None):
 
-        store: DataStore = self.kernel.get_service("DataStore")
-        if not store:
-            return
-        
-        #Obtener las señales crudas del DataStore
-        all_signals =store.get_signals()
-        self.ui.signalComboBox.clear()
 
-        print(all_signals)
+        # Ajustar el rango del selector de canales según la cantidad de canales de la señal
+        num_channels = ds.signals.shape[0]
+        self.ui.channelSpinBox.setRange(0, max(0, num_channels - 1))
 
-        if not all_signals:
-            self.ui.signalComboBox.addItem("No hay señales cargadas", None)
-            return
-        
-        #llenar el combo box con las señales disponibles
-        for key, ds in all_signals.items():
-            label = f"{key}"
-            self.ui.signalComboBox.addItem(label, key)
-
-        self.ui.signalComboBox.setCurrentIndex(0)
-
-        ds: SignalDataset | None = store.get("raw", None)
-        
-         # Ajustar los rangos del canal según la primera señal
-        first_key = self.ui.signalComboBox.currentData()
-        if first_key:
-            ds = store.get(first_key)
-            if ds:
-                C = ds.signals.shape[0]
-                self.ui.channelSpinBox.setRange(0, max(0, C - 1))
+        # Mantener el valor actual si es válido, o reiniciar a 0
+        current_value = self.ui.channelSpinBox.value()
+        if current_value >= num_channels:
+            self.ui.channelSpinBox.setValue(0)
 
 
     def _init_interactor(self):
@@ -144,7 +112,6 @@ class TrialsPlugin(IPlugin):
               "vtk:", bool(self.vtk_widget))
 
     def _init_controls(self):
-        self.ui.signalComboBox.setToolTip("Seleccionar la señal a procesar.")
 
         self.ui.channelSpinBox.setRange(0, 50)
         self.ui.channelSpinBox.setValue(self.params["channel"])
@@ -173,24 +140,19 @@ class TrialsPlugin(IPlugin):
 
     def _run_generate(self):
         store: DataStore = self.kernel.get_service("DataStore")
-        selected_key = self.ui.signalComboBox.currentData()
-        if not selected_key:
-            QMessageBox.warning(self.widget, "Selección", "No hay señal seleccionada.")
+        if store is None:
+            QMessageBox.warning(self.widget, "Error", "No se encontró el DataStore.")
+            return
+        
+
+        # Obtener la señal activa
+        ds = store.get_active_signal()
+        print(f"[TrialsPlugin] Señal activa: {ds}")
+        if not ds:
+            QMessageBox.warning(self.widget, "Selección", "No hay señal en el data store.")
             return
 
-        ds: SignalDataset | None = store.get(selected_key, None)
-        if ds is None:
-            if self.mainwin:
-                QMessageBox.warning(self.widget, "Error", f"No se encontró la señal '{selected_key}'.")
-                self.mainwin.statusBar().showMessage("No hay señal cargada ('raw')", 4000)
-            return None
-        
-        # Registrar la señal como la activa en el DataStore
-        try:
-            store.set_active_signal(selected_key)
-            print(f"[TrialsPlugin] Señal activa establecida: '{selected_key}'")
-        except ValueError as e:
-            print(f"[TrialsPlugin] No se pudo establecer la señal activa: {e}")
+        self._populate_from_raw(ds)
 
         ch   = int(self.ui.channelSpinBox.value())
         th   = float(self.ui.thresholdDoubleSpinBox.value())

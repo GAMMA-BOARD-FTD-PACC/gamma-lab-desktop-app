@@ -133,6 +133,7 @@ class Erp_plugin(IPlugin):
             return
 
         sig: SignalDataset | None = store.get_active_signal()
+        print(f"[ERP] Señal activa: {sig}")
         if sig is None:
             print("No hay señal activa en DataStore (set_active_signal faltante).")
             return
