@@ -97,7 +97,7 @@ class Fft_average_plugin(IPlugin):
             freq, mag_avg, fs_eff = self._compute_fft_average(X, fs, target_fs, per_trial = per_trial)
 
             # 4) Plot
-            self._plot_fft_average(freq, mag_avg, ch_name, lo, hi)
+            self._plot_fft_average(freq, mag_avg, ch_name, lo, hi, fs_eff)
             self._notify(f"FFT listo: fs_eff={fs_eff:.2f} Hz, {freq.size} bins, trials={mag_avg.shape[1]}")
 
     def _sync_range(self):
@@ -226,7 +226,7 @@ class Fft_average_plugin(IPlugin):
         return freq, mag_out, fs_eff
 
     # ====== Plot en VTK ======
-    def _plot_fft_average(self, freq: np.ndarray, mag: np.ndarray, ch_name: str, lo: float, hi: float):
+    def _plot_fft_average(self, freq: np.ndarray, mag: np.ndarray, ch_name: str, lo: float, hi: float, fs_eff: float):
         """
         Construye vtkTable usando trials_matrix_to_vtk_table(freq, mag)
         y dibuja líneas una por trial. Aplica filtro [lo, hi].
@@ -234,8 +234,12 @@ class Fft_average_plugin(IPlugin):
         if self.vtk_view is None:
             self._ensure_vtk()
 
-        # Filtro de rango de frecuencias
+        hi = min(hi, fs_eff/2.0)
+        lo = max(lo, 0.0)
+        if lo >= hi:
+            self._notify("Rango de frecuencias vacío tras ajustar al Nyquist."); return
         sel = (freq >= lo) & (freq <= hi)
+        self._log(f"Plot bins: {sel.sum()} de {freq.size}")
         freq_v = freq[sel]
         mag_v  = mag[sel, :]  # (Nf_sel, T)
 
