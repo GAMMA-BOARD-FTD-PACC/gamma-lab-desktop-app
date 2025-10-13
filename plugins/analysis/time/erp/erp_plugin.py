@@ -1,6 +1,6 @@
 import os
 from PyQt5 import QtWidgets, QtCore
-from PyQt5.QtWidgets import QListWidgetItem
+from PyQt5.QtWidgets import QListWidgetItem, QMessageBox
 import vtk
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 import numpy as np
@@ -30,10 +30,6 @@ class Erp_plugin(IPlugin):
         self.vtk_bot: QVTKRenderWindowInteractor | None = None
         self.view_top: vtk.vtkContextView | None = None
         self.view_bot: vtk.vtkContextView | None = None
-        
-        self.time: np.ndarray | None = None            # (T,)
-        self.matrix: np.ndarray | None = None          # (N_trials, T)
-        self.N_trials: int = 0
 
     def initialize(self, kernel):
         self.kernel = kernel
@@ -64,11 +60,24 @@ class Erp_plugin(IPlugin):
             self.widget = self.ui
             self.ensure_vtk()
             self._wire_ui()
-            self._populate_trials_list()
         else:
             self.widget.setParent(parent)
         return self.widget
 
+    # ----------------- logging/helpers -----------------
+    def _log(self, *args):
+        print("[ERP]", *args)
+
+    def _notify(self, msg: str):
+        try:
+            if self.mainwin:
+                self.mainwin.statusBar().showMessage(msg, 3000)
+                return
+        except Exception:
+            pass
+        self._log(msg)
+    
+    # ===== VTK =====
     def ensure_vtk(self):
         # Top (butterfly)
         self.vtk_top = QVTKRenderWindowInteractor(self.ui.butterflyPlot)
@@ -102,100 +111,76 @@ class Erp_plugin(IPlugin):
         self.ui.spnFrom.valueChanged.connect(self._sync_range)
         self.ui.spnTo.valueChanged.connect(self._sync_range)
         self.ui.txtFilter.textChanged.connect(self._apply_filter)
-        
-    def _populate_trials_list(self):
-        # Si aún no hay dataset cargado, no sabemos N: no llenamos lista
-        if self.N_trials <= 0:
-            return
-
-        self.ui.spnSingleTrial.setMaximum(self.N_trials)
-        self.ui.spnFrom.setMaximum(self.N_trials)
-        self.ui.spnTo.setMaximum(self.N_trials)
-        if self.ui.spnTo.value() == 0:
-            self.ui.spnTo.setValue(self.N_trials)
-
-        self.ui.lstTrials.clear()
-        for i in range(1, self.N_trials + 1):
-            it = QListWidgetItem(f"Trial-{i}")
-            it.setFlags(it.flags() | QtCore.Qt.ItemIsUserCheckable)
-            it.setCheckState(QtCore.Qt.Checked)
-            it.setData(QtCore.Qt.UserRole, f"trial-{i}".lower())
-            self.ui.lstTrials.addItem(it)
 
     # ========= Dataset =========
-    def _load_dataset_from_store(self):
-        """Busca la señal activa y toma el último TrialDataset que tenga."""
+    def _load_trials_from_store(self):
+        """
+        Busca la señal activa en el DataStore y retorna el último TrialDataset:
+        X:  np.ndarray (Ns, T)  matriz de trials (columnas = trials)
+        """
         if not self.mainwin:
-            return
+            return None, None, None
 
         store = self.mainwin.kernel.get_service("DataStore")
         if store is None:
-            return
+            QMessageBox.warning(self.widget, "Error", "No se encontró el DataStore.")
+            return None, None, None
 
         sig: SignalDataset | None = store.get_active_signal()
-        print(f"[ERP] Señal activa: {sig}")
         if sig is None:
-            print("No hay señal activa en DataStore (set_active_signal faltante).")
-            return
-
-        t, X, td = self._extract_trials_dataset(sig)
-        if t is None or X is None:
-            print("La señal activa no tiene TrialDatasets disponibles.")
-            return
-
-        # Guarda en el plugin
-        self.td = td
-        self.time = t.astype(float, copy=False)            # (Ns,)
-        self.matrix = X.astype(float, copy=False)          # (N_trials, Ns)
-        self.N_trials = int(self.matrix.shape[0])
-
-        # Ajusta UI ligada a cantidad de trials y refresca lista
-        self._populate_trials_list()
-        print(f"ERP cargó TrialDataset: channel='{td.channel_name}', "
-            f"T={self.N_trials} trials, Ns={self.matrix.shape[1]}")
-        
-
-    @staticmethod
-    def _extract_trials_dataset(sig: "SignalDataset") -> Tuple[np.ndarray, np.ndarray, "TrialDataset | None"]:
-        """
-        Extrae (time_rel, trials) desde el último TrialDataset de la señal.
-        Devuelve:
-        t: (Ns,)
-        X: (N_trials, Ns)  <-- transpuesto para el ERP
-        td: TrialDataset   <-- referencia al TD usado
-        """
-        # Asegurarse que la señal tenga trials
-        if sig is None or not hasattr(sig, "trials_dataset"):
-            return None, None, None
-        if not sig.trials_dataset:
+            QMessageBox.warning(self.widget, "Sin señal activa", "No hay una señal activa seleccionada.")
             return None, None, None
 
-        # Política simple: usar el ÚLTIMO trial creado
-        td = sig.trials_dataset[-1]
+        if not getattr(sig, "trials_dataset", None) or len(sig.trials_dataset) == 0:
+            QMessageBox.warning(self.widget, "Sin trials", "La señal activa no tiene TrialDatasets.")
+            return None, None, None
 
-        # Estructura esperada del TD
+        td: TrialDataset = sig.trials_dataset[-1]  # último TD
         if not hasattr(td, "time_rel") or not hasattr(td, "trials"):
+            QMessageBox.warning(self.widget, "Trials incompletos",
+                                "El TrialDataset no contiene 'time_rel' o 'trials'.")
             return None, None, None
 
-        t = td.time_rel
-        M = td.trials  # (Ns, T)
+        t = np.asarray(td.time_rel, dtype=float)           # (Ns,)
+        M = np.asarray(td.trials, dtype=float)             # (Ns, T)
 
-        # ERP espera (N_trials, Ns)
-        if M.ndim != 2 or t.ndim != 1 or M.shape[0] != t.size:
-            # Intento de corrección básica
-            if M.T.shape[1] == t.size:
-                M = M.T
-                t = t
-            else:
-                print("Dimensiones incompatibles entre time_rel y trials.")
-                return None, None, None
-        else:
+        if M.ndim != 2 or t.ndim != 1:
+            QMessageBox.warning(self.widget, "Dimensiones inválidas",
+                                "El TrialDataset tiene dimensiones no válidas.")
+            return None, None, None
+
+        if M.shape[0] == t.size:
             M = M.T  # (T, Ns)
+        elif M.shape[1] == t.size:
+            pass     # ya está como (T, Ns)
+        else:
+            QMessageBox.warning(self.widget, "Inconsistencia",
+                                "time_rel no coincide con trials.")
+            return None, None, None
 
         return t, M, td
-
-    
+            
     # ========= Helpers UI =========
+    def _collect_selected_indices(self, n_trials: int) -> list[int]:
+        """Devuelve índices (1-based) según modo de selección."""
+        if self.ui.chkSelectAll.isChecked():
+            return list(range(1, n_trials + 1))
+        if self.ui.chkSingleTrial.isChecked():
+            return [min(max(1, self.ui.spnSingleTrial.value()), n_trials)]
+        if self.ui.chkUseRange.isChecked():
+            a = min(max(1, self.ui.spnFrom.value()), n_trials)
+            b = min(max(1, self.ui.spnTo.value()), n_trials)
+            if a > b:
+                a, b = b, a
+            return list(range(a, b + 1))
+        # Manual (lista)
+        out: list[int] = []
+        for i in range(self.ui.lstTrials.count()):
+            it = self.ui.lstTrials.item(i)
+            if it.checkState() == QtCore.Qt.Checked:
+                out.append(i + 1)
+        return out
+    
     def _sync_range(self):
         if self.ui.spnFrom.value() > self.ui.spnTo.value():
             self.ui.spnTo.setValue(self.ui.spnFrom.value())
@@ -228,51 +213,47 @@ class Erp_plugin(IPlugin):
 
     # ========= Acciones =========
     def _on_plot_clicked(self):
-        # Asegurar dataset cargado
-        if self.matrix is None or self.time is None:
-            self._load_dataset_from_store()
-            if self.matrix is None or self.time is None:
-                self._notify("No hay 'trials_dataset' en la señal activa.")
-                return
+        t, M, td = self._load_trials_from_store()
+        if t is None or M is None:
+            self._notify("No se encontró TrialDataset.")
+            return
 
-        # Por si cambió la cantidad de trials y la lista está desfasada
-        if self.ui.lstTrials.count() != self.N_trials:
-            self._populate_trials_list()
+        n_trials, n_samples = M.shape
+        self._ensure_trials_list(n_trials)
 
-        idx = self._collect_selected_indices()
+        # 2) recolectar selección
+        idx = self._collect_selected_indices(n_trials)
         if not idx:
             self._notify("No hay trials seleccionados.")
             return
 
         # indices 1-based → 0-based
-        sel = self.matrix[np.array(idx) - 1, :]
-        self._render_butterfly(self.time, sel)
-        self._render_heatmap(self.time, sel)
-        self._notify(f"ERP: {len(idx)} trials graficados.")
+        sel = M[np.array(idx) - 1, :]  # (K, Ns)
 
-    def _collect_selected_indices(self) -> list[int]:
-        """Devuelve índices (1-based) según modo de selección."""
-        if self.ui.chkSelectAll.isChecked():
-            return list(range(1, self.N_trials + 1))
-        if self.ui.chkSingleTrial.isChecked():
-            return [self.ui.spnSingleTrial.value()]
-        if self.ui.chkUseRange.isChecked():
-            a, b = self.ui.spnFrom.value(), self.ui.spnTo.value()
-            return list(range(a, b + 1))
-        # manual vía lista
-        out: list[int] = []
-        for i in range(self.ui.lstTrials.count()):
-            it = self.ui.lstTrials.item(i)
-            if it.checkState() == QtCore.Qt.Checked:
-                out.append(i + 1)
-        return out
+        # 3) render
+        self._render_butterfly(t, sel)
+        self._render_heatmap(t, sel)
 
-    def _notify(self, msg: str):
-        try:
-            if self.mainwin:
-                self.mainwin.statusBar().showMessage(msg, 3000)
-        except Exception:
-            print(msg)
+        ch_name = getattr(td, "channel_name", "")
+        self._notify(f"ERP: {len(idx)} trials graficados. Canal: {ch_name}")
+
+    def _ensure_trials_list(self, n_trials: int):
+        """Reconstruye la lista si está vacía o desfasada."""
+        if self.ui.lstTrials.count() == n_trials and n_trials > 0:
+            return
+        self.ui.lstTrials.clear()
+        self.ui.spnSingleTrial.setMaximum(max(1, n_trials))
+        self.ui.spnFrom.setMaximum(max(1, n_trials))
+        self.ui.spnTo.setMaximum(max(1, n_trials))
+        if self.ui.spnTo.value() == 0:
+            self.ui.spnTo.setValue(n_trials)
+
+        for i in range(1, n_trials + 1):
+            it = QListWidgetItem(f"Trial-{i}")
+            it.setFlags(it.flags() | QtCore.Qt.ItemIsUserCheckable)
+            it.setCheckState(QtCore.Qt.Checked)
+            it.setData(QtCore.Qt.UserRole, f"trial-{i}".lower())
+            self.ui.lstTrials.addItem(it)
 
     # ========= Render VTK =========
     
@@ -344,10 +325,15 @@ class Erp_plugin(IPlugin):
         
         # Calcular rango para LUT (sobre datos originales)
         finite = np.isfinite(X)
-        vmin = float(X[finite].min()) if finite.any() else 0.0
-        vmax = float(X[finite].max()) if finite.any() else 1.0
-        if vmax <= vmin:
-            vmax = vmin + 1.0
+        if finite.any():
+            p2, p98 = np.nanpercentile(X[finite], (2, 98))
+            if p98 <= p2:
+                vmin = float(X[finite].min())
+                vmax = float(X[finite].max()) if float(X[finite].max()) > vmin else (vmin + 1.0)
+            else:
+                vmin, vmax = float(p2), float(p98)
+        else:
+            vmin, vmax = 0.0, 1.0
         
         # Parámetros de tiempo
         t0 = float(t[0]) if t.size > 0 else 0.0
@@ -423,16 +409,37 @@ class Erp_plugin(IPlugin):
             lut.SetUseAboveRangeColor(True); lut.SetAboveRangeColor(*bg, 1.0)
             return lut
 
-        # === NUEVO: escala azul ===
-        if mode in ("blue", "blue_r"):
-            # claro→oscuro (o invertido si "blue_r")
-            # extremos (puedes ajustarlos a gusto):
-            light = (0.93, 0.97, 1.00)   # azul muy claro
-            dark  = (0.00, 0.10, 0.60)   # azul profundo
+        # === Divergente: azul -> blanco -> rojo, con gamma (más agresivo)
+        if mode in ("blue_red", "br"):
+            gamma = 0.6  # <1 = más contraste en zonas bajas
             lut = vtk.vtkLookupTable()
             lut = finalize(lut)
             for i in range(N):
-                s = i / (N - 1)
+                s = (i / (N - 1)) ** gamma  # curva no lineal
+                if s < 0.5:
+                    # azul (0,0.1,0.6) -> blanco (1,1,1)
+                    k = s / 0.5
+                    r = k*1.0 + (1-k)*0.00
+                    g = k*1.0 + (1-k)*0.10
+                    b = k*1.0 + (1-k)*0.60
+                else:
+                    # blanco (1,1,1) -> rojo (0.8,0.0,0.0)
+                    k = (s - 0.5) / 0.5
+                    r = k*0.80 + (1-k)*1.0
+                    g = k*0.00 + (1-k)*1.0
+                    b = k*0.00 + (1-k)*1.0
+                lut.SetTableValue(i, r, g, b, 1.0)
+            return lut
+
+        # === Azul monocroma con gamma (más agresivo que antes)
+        if mode in ("blue", "blue_r"):
+            light = (0.93, 0.97, 1.00)
+            dark  = (0.00, 0.10, 0.60)
+            gamma = 0.6  # <1 = sube contraste
+            lut = vtk.vtkLookupTable()
+            lut = finalize(lut)
+            for i in range(N):
+                s = (i / (N - 1)) ** gamma
                 if mode == "blue_r":
                     s = 1.0 - s
                 r = light[0] + s * (dark[0] - light[0])
@@ -442,22 +449,11 @@ class Erp_plugin(IPlugin):
             return lut
 
         if mode == "jet":
-            lut = vtk.vtkLookupTable()
-            lut = finalize(lut)
-            for i in range(N):
-                val = i / (N - 1)
-                if val < 0.25:
-                    r, g, b = 0, 4*val, 1
-                elif val < 0.5:
-                    r, g, b = 0, 1, 1 - 4*(val - 0.25)
-                elif val < 0.75:
-                    r, g, b = 4*(val - 0.5), 1, 0
-                else:
-                    r, g, b = 1, 1 - 4*(val - 0.75), 0
-                lut.SetTableValue(i, r, g, b, 1.0)
+            # (tu jet actual) ...
+            ...
             return lut
 
-        # viridis por defecto
+        # viridis por defecto (puedes también aplicar gamma aquí si quieres)
         ctf = vtk.vtkColorTransferFunction()
         ctf.ClampingOn()
         ctf.SetRange(vmin, vmax)
@@ -468,8 +464,9 @@ class Erp_plugin(IPlugin):
 
         lut = vtk.vtkLookupTable()
         lut = finalize(lut)
+        gamma = 0.8  # un poco más agresivo
         for i in range(N):
-            s = i / (N - 1)
+            s = (i / (N - 1)) ** gamma
             x = vmin + s * (vmax - vmin)
             r, g, b = ctf.GetColor(x)
             lut.SetTableValue(i, r, g, b, 1.0)
