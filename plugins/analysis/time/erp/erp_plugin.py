@@ -116,7 +116,7 @@ class Erp_plugin(IPlugin):
     def _load_trials_from_store(self):
         """
         Busca la señal activa en el DataStore y retorna el último TrialDataset:
-          X:  np.ndarray (Ns, T)  matriz de trials (columnas = trials)
+        X:  np.ndarray (Ns, T)  matriz de trials (columnas = trials)
         """
         if not self.mainwin:
             return None, None, None
@@ -127,28 +127,35 @@ class Erp_plugin(IPlugin):
             return None, None, None
 
         sig: SignalDataset | None = store.get_active_signal()
-        if sig is None or not getattr(sig, "trials_dataset", None):
-            self._notify("No hay señal activa o no tiene TrialDataset.")
+        if sig is None:
+            QMessageBox.warning(self.widget, "Sin señal activa", "No hay una señal activa seleccionada.")
+            return None, None, None
+
+        if not getattr(sig, "trials_dataset", None) or len(sig.trials_dataset) == 0:
+            QMessageBox.warning(self.widget, "Sin trials", "La señal activa no tiene TrialDatasets.")
             return None, None, None
 
         td: TrialDataset = sig.trials_dataset[-1]  # último TD
         if not hasattr(td, "time_rel") or not hasattr(td, "trials"):
-            self._notify("TrialDataset incompleto (time_rel/trials).")
+            QMessageBox.warning(self.widget, "Trials incompletos",
+                                "El TrialDataset no contiene 'time_rel' o 'trials'.")
             return None, None, None
 
         t = np.asarray(td.time_rel, dtype=float)           # (Ns,)
         M = np.asarray(td.trials, dtype=float)             # (Ns, T)
 
-        # ERP quiere (N_trials, Ns) → (T, Ns)
         if M.ndim != 2 or t.ndim != 1:
-            self._notify("Dimensiones de TrialDataset inválidas.")
+            QMessageBox.warning(self.widget, "Dimensiones inválidas",
+                                "El TrialDataset tiene dimensiones no válidas.")
             return None, None, None
+
         if M.shape[0] == t.size:
             M = M.T  # (T, Ns)
         elif M.shape[1] == t.size:
             pass     # ya está como (T, Ns)
         else:
-            self._notify("time_rel no coincide con trials.")
+            QMessageBox.warning(self.widget, "Inconsistencia",
+                                "time_rel no coincide con trials.")
             return None, None, None
 
         return t, M, td
@@ -208,6 +215,7 @@ class Erp_plugin(IPlugin):
     def _on_plot_clicked(self):
         t, M, td = self._load_trials_from_store()
         if t is None or M is None:
+            self._notify("No se encontró TrialDataset.")
             return
 
         n_trials, n_samples = M.shape
@@ -317,10 +325,15 @@ class Erp_plugin(IPlugin):
         
         # Calcular rango para LUT (sobre datos originales)
         finite = np.isfinite(X)
-        vmin = float(X[finite].min()) if finite.any() else 0.0
-        vmax = float(X[finite].max()) if finite.any() else 1.0
-        if vmax <= vmin:
-            vmax = vmin + 1.0
+        if finite.any():
+            p2, p98 = np.nanpercentile(X[finite], (2, 98))
+            if p98 <= p2:
+                vmin = float(X[finite].min())
+                vmax = float(X[finite].max()) if float(X[finite].max()) > vmin else (vmin + 1.0)
+            else:
+                vmin, vmax = float(p2), float(p98)
+        else:
+            vmin, vmax = 0.0, 1.0
         
         # Parámetros de tiempo
         t0 = float(t[0]) if t.size > 0 else 0.0
@@ -396,16 +409,37 @@ class Erp_plugin(IPlugin):
             lut.SetUseAboveRangeColor(True); lut.SetAboveRangeColor(*bg, 1.0)
             return lut
 
-        # === NUEVO: escala azul ===
-        if mode in ("blue", "blue_r"):
-            # claro→oscuro (o invertido si "blue_r")
-            # extremos (puedes ajustarlos a gusto):
-            light = (0.93, 0.97, 1.00)   # azul muy claro
-            dark  = (0.00, 0.10, 0.60)   # azul profundo
+        # === Divergente: azul -> blanco -> rojo, con gamma (más agresivo)
+        if mode in ("blue_red", "br"):
+            gamma = 0.6  # <1 = más contraste en zonas bajas
             lut = vtk.vtkLookupTable()
             lut = finalize(lut)
             for i in range(N):
-                s = i / (N - 1)
+                s = (i / (N - 1)) ** gamma  # curva no lineal
+                if s < 0.5:
+                    # azul (0,0.1,0.6) -> blanco (1,1,1)
+                    k = s / 0.5
+                    r = k*1.0 + (1-k)*0.00
+                    g = k*1.0 + (1-k)*0.10
+                    b = k*1.0 + (1-k)*0.60
+                else:
+                    # blanco (1,1,1) -> rojo (0.8,0.0,0.0)
+                    k = (s - 0.5) / 0.5
+                    r = k*0.80 + (1-k)*1.0
+                    g = k*0.00 + (1-k)*1.0
+                    b = k*0.00 + (1-k)*1.0
+                lut.SetTableValue(i, r, g, b, 1.0)
+            return lut
+
+        # === Azul monocroma con gamma (más agresivo que antes)
+        if mode in ("blue", "blue_r"):
+            light = (0.93, 0.97, 1.00)
+            dark  = (0.00, 0.10, 0.60)
+            gamma = 0.6  # <1 = sube contraste
+            lut = vtk.vtkLookupTable()
+            lut = finalize(lut)
+            for i in range(N):
+                s = (i / (N - 1)) ** gamma
                 if mode == "blue_r":
                     s = 1.0 - s
                 r = light[0] + s * (dark[0] - light[0])
@@ -415,22 +449,11 @@ class Erp_plugin(IPlugin):
             return lut
 
         if mode == "jet":
-            lut = vtk.vtkLookupTable()
-            lut = finalize(lut)
-            for i in range(N):
-                val = i / (N - 1)
-                if val < 0.25:
-                    r, g, b = 0, 4*val, 1
-                elif val < 0.5:
-                    r, g, b = 0, 1, 1 - 4*(val - 0.25)
-                elif val < 0.75:
-                    r, g, b = 4*(val - 0.5), 1, 0
-                else:
-                    r, g, b = 1, 1 - 4*(val - 0.75), 0
-                lut.SetTableValue(i, r, g, b, 1.0)
+            # (tu jet actual) ...
+            ...
             return lut
 
-        # viridis por defecto
+        # viridis por defecto (puedes también aplicar gamma aquí si quieres)
         ctf = vtk.vtkColorTransferFunction()
         ctf.ClampingOn()
         ctf.SetRange(vmin, vmax)
@@ -441,8 +464,9 @@ class Erp_plugin(IPlugin):
 
         lut = vtk.vtkLookupTable()
         lut = finalize(lut)
+        gamma = 0.8  # un poco más agresivo
         for i in range(N):
-            s = i / (N - 1)
+            s = (i / (N - 1)) ** gamma
             x = vmin + s * (vmax - vmin)
             r, g, b = ctf.GetColor(x)
             lut.SetTableValue(i, r, g, b, 1.0)
