@@ -46,7 +46,6 @@ class Ui_Trials(QtWidgets.QWidget):
         self.sep0.setFrameShadow(QtWidgets.QFrame.Sunken)
         self.vbox.addWidget(self.sep0)
 
-        # Reutilizamos esta fuente para subtítulos
         _f_sub = self.lblParameters.font()
         _f_sub.setPointSize(_f_sub.pointSize() - 2)
         _f_sub.setBold(True)
@@ -68,9 +67,10 @@ class Ui_Trials(QtWidgets.QWidget):
 
         self.channelLabel = QtWidgets.QLabel(self.panel)
         self.channelLabel.setText("Name")
-        self.channelSpinBox = QtWidgets.QSpinBox(self.panel)   # se mantiene el nombre
+        self.channelComboBox = QtWidgets.QComboBox(self.panel) 
+        self.channelComboBox.setObjectName("channelComboBox") # se mantiene el nombre
         self.formChannel.setWidget(0, QtWidgets.QFormLayout.LabelRole, self.channelLabel)
-        self.formChannel.setWidget(0, QtWidgets.QFormLayout.FieldRole, self.channelSpinBox)
+        self.formChannel.setWidget(0, QtWidgets.QFormLayout.FieldRole, self.channelComboBox)
 
         self.vbox.addLayout(self.formChannel)
 
