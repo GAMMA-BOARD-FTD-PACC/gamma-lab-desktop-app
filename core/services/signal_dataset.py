@@ -32,13 +32,10 @@ class SignalDataset:
             raise ValueError("trial debe ser de tipo TrialDataset")
         self.trials_dataset.append(trial)
 
-def get_active_trials(self) -> List["TrialDataset"]:
-    """
-    Retorna los TrialDataset activos (no descartados), con búsqueda O(n).
-    """
-    discarded = set(self.discarded_trials)
-    return [
-        trial
-        for i, trial in enumerate(self.trials_dataset)
-        if i not in discarded
-    ]
+    def get_active_trials(self) -> List["TrialDataset"]:
+        """Retorna los trials activos (no descartados) en O(n)."""
+        return [
+            trial
+            for i, trial in enumerate(self.trials_dataset)
+            if i not in self.discarded_trials
+        ]
