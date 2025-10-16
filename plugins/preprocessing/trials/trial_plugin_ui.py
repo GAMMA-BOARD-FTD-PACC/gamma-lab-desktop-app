@@ -178,6 +178,45 @@ class Ui_Trials(QtWidgets.QWidget):
 
         self.vbox.addLayout(self.formTime)
 
+        # ===== Subtítulo: Trials =====
+        self.lblTrialsTitle = QtWidgets.QLabel(self.panel)
+        self.lblTrialsTitle.setFont(_f_sub)
+        self.lblTrialsTitle.setText("Trials")
+        self.vbox.addWidget(self.lblTrialsTitle)
+
+        self.sep5 = QtWidgets.QFrame(self.panel)
+        self.sep5.setFrameShape(QtWidgets.QFrame.HLine)
+        self.sep5.setFrameShadow(QtWidgets.QFrame.Plain)
+        self.vbox.addWidget(self.sep5)
+
+        #==== Botones de navegación de trials ====
+        self.trialNavLayout = QtWidgets.QHBoxLayout()
+
+        self.Btn_prev_trial = QtWidgets.QPushButton(self.panel)
+        self.Btn_prev_trial.setText("Anterior")
+        self.Btn_prev_trial.setMinimumHeight(32)
+        self.trialNavLayout.addWidget(self.Btn_prev_trial)
+
+        self.Btn_next_trial = QtWidgets.QPushButton(self.panel)
+        self.Btn_next_trial.setText("Siguiente")
+        self.Btn_next_trial.setMinimumHeight(32)
+        self.trialNavLayout.addWidget(self.Btn_next_trial)
+
+        self.Btn_discard_trial = QtWidgets.QPushButton(self.panel)
+        self.Btn_discard_trial.setText("Discard")
+        self.Btn_discard_trial.setMinimumHeight(32)
+        self.trialNavLayout.addWidget(self.Btn_discard_trial)
+
+        # Agregar el layout horizontal a la caja vertical principal
+        self.vbox.addLayout(self.trialNavLayout)
+
+        #label para numero de trial revisado
+        self.currentTrialLabel = QtWidgets.QLabel(self.panel)
+        self.currentTrialLabel.setText("Trial actual: -")
+        self.currentTrialLabel.setAlignment(QtCore.Qt.AlignCenter)
+        self.currentTrialLabel.setStyleSheet("font-weight: bold; padding: 4px;")
+        self.vbox.addWidget(self.currentTrialLabel)
+
         # ===== Spacer & Actions =====
         self.vbox.addStretch(1)
 

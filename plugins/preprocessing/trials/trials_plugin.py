@@ -57,8 +57,10 @@ class TrialsPlugin(IPlugin):
     def stop(self):
         self._log("stop")
 
-    def process(self):
-        self._log("process")
+    def process(self, data: any):
+        self._log(f"process{data}")
+        self._populate_channels_once()
+
     # -------------- UI ---------------------
     def get_widget(self, parent=None):
         if self.widget is None:
@@ -72,6 +74,9 @@ class TrialsPlugin(IPlugin):
 
             self._populate_channels_once()
 
+            #Botones para navegar entre trials
+            self.ui.Btn_prev_trial.clicked.connect(lambda: self.navigate_trial(-1))
+            self.ui.Btn_next_trial.clicked.connect(lambda: self.navigate_trial(1))
         else:
             self.widget.setParent(parent)
 
@@ -225,18 +230,118 @@ class TrialsPlugin(IPlugin):
 
         try:
             ds.add_trial_dataset(td)
+            ds.discarded_trials.clear()
         except Exception as e:
             self._log("add_trial_dataset warning:", e)
 
+        #Se muestra solo el primer trial
         self.last_td = td
-        T = td.trials.shape[1]
-        self.visible_trials = [1] if T > 0 else []
-        self._render_trials(td)
+        self.navigate_trial(0)
 
         if self.mainwin:
             self.mainwin.statusBar().showMessage(
                 f"Trials: T={td.trials.shape[1]}, Ns={td.trials.shape[0]}, canal='{td.channel_name}'",
                 4000
+            )
+
+    # -------------- Navegación entre trials ----------------------
+    def navigate_trial(self, direction: int):
+        """
+        Muestra el siguiente o anterior trial según 'direction'.
+        direction = +1 → siguiente
+        direction = -1 → anterior
+        """
+        if not self.last_td:
+            QMessageBox.information(self.widget, "Navegación", "No hay trials cargados.")
+            return
+
+        td = self.last_td
+        sd = self._get_active_signal()
+        
+        _, T = td.trials.shape
+        if T == 0:
+            QMessageBox.information(self.widget, "Navegación", "No hay trials disponibles.")
+            return
+
+        if not self.visible_trials:
+            self.visible_trials = [0]
+
+        current = self.visible_trials[0]
+        new_idx = (current + direction) % T  # navegación circular
+        self.visible_trials = [new_idx]
+
+        self._log(f"Navegando trial {new_idx + 1}/{T}")
+        self._render_trials(td)
+
+        # Actualizar el label del trial actual
+        if new_idx in sd.discarded_trials:
+            self.ui.currentTrialLabel.setText(f"Trial actual: {new_idx + 1} (descartado)/{T}")
+            self.ui.currentTrialLabel.setStyleSheet("color: red; font-weight: bold;")
+            self.ui.Btn_discard_trial.setText("Include")
+        else:
+            self.ui.currentTrialLabel.setText(f"Trial actual: {new_idx + 1}/{T}")
+            self.ui.currentTrialLabel.setStyleSheet("color: black; font-weight: bold;")
+            self.ui.Btn_discard_trial.setText("Discard")
+
+            # Conectar solo una vez
+            try:
+                self.ui.Btn_discard_trial.clicked.disconnect()
+            except Exception:
+                pass
+            self.ui.Btn_discard_trial.clicked.connect(lambda _, idx=new_idx: self._on_discard_trial(idx))
+
+
+        # Feedback en barra de estado
+        if self.mainwin:
+            self.mainwin.statusBar().showMessage(
+                f"Trial {new_idx + 1} de {T}", 2000
+            )
+
+
+    def _on_discard_trial(self, index: int):
+
+        ds = self._get_active_signal()
+
+        """Alterna el estado de descarte del trial actual (añadir o remover de la lista del SignalDataset)."""
+        if not self.last_td:
+            QMessageBox.information(self.widget, "Descartar Trial", "No hay trials cargados.")
+            return
+        
+        if not ds:
+            QMessageBox.warning(self.widget, "Descartar Trial", "No se encontró la señal activa.")
+            return
+      
+        if not self.visible_trials:
+            QMessageBox.information(self.widget, "Descartar Trial", "No hay trial seleccionado.")
+            return
+
+        # current = self.visible_trials[0]
+
+
+        # Alternar descarte / inclusión
+        if index in ds.discarded_trials:
+            # ➕ Incluir nuevamente
+            ds.discarded_trials.discard(index)
+            self._log(f"Trial {index + 1} incluido nuevamente.")
+            self.ui.currentTrialLabel.setText(f"Trial actual: {index + 1}")
+            self.ui.currentTrialLabel.setStyleSheet("color: black; font-weight: bold;")
+            self.ui.Btn_discard_trial.setText("🗑️ Discard Trial")
+            QMessageBox.information(
+                self.widget,
+                "Trial incluido",
+                f"El trial {index + 1} ha sido incluido nuevamente."
+            )
+        else:
+            # 🚫 Marcar como descartado
+            ds.discarded_trials.add(index)
+            self._log(f"Trial {index + 1} marcado como descartado.")
+            self.ui.currentTrialLabel.setText(f"Trial actual: {index + 1} (descartado)")
+            self.ui.currentTrialLabel.setStyleSheet("color: red; font-weight: bold;")
+            self.ui.Btn_discard_trial.setText("Include")
+            QMessageBox.information(
+                self.widget,
+                "Trial descartado",
+                f"El trial {index + 1} ha sido descartado y no se tendrá en cuenta."
             )
 
     # -------------- Render ----------------------

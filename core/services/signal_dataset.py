@@ -24,8 +24,21 @@ class SignalDataset:
 
     trials_dataset:List[TrialDataset] = field(default_factory=list)
 
+    discarded_trials: set[int] = field(default_factory=set)
+
     #Agregar un trial_dataset a la lista de trials dataset
     def add_trial_dataset(self, trial: "TrialDataset"):
         if not isinstance(trial, TrialDataset):
             raise ValueError("trial debe ser de tipo TrialDataset")
-        self.trials_dataset.append(trial)               
+        self.trials_dataset.append(trial)
+
+def get_active_trials(self) -> List["TrialDataset"]:
+    """
+    Retorna los TrialDataset activos (no descartados), con búsqueda O(n).
+    """
+    discarded = set(self.discarded_trials)
+    return [
+        trial
+        for i, trial in enumerate(self.trials_dataset)
+        if i not in discarded
+    ]
