@@ -20,11 +20,11 @@ class Ui_Trials(QtWidgets.QWidget):
         self._root.addWidget(self.splitter)
 
         # ----- Left: VTK viewer frame (keep name) -----
-        self.VtkViewer = QtWidgets.QFrame(self.splitter)
-        self.VtkViewer.setObjectName("VtkViewer")
-        self.VtkViewer.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.VtkViewer.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.VtkViewer.setMinimumWidth(520)
+        self.plotArea = QtWidgets.QFrame(self.splitter)
+        self.plotArea.setObjectName("plotArea")
+        self.plotArea.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        self.plotArea.setFrameShadow(QtWidgets.QFrame.Raised)
+        self.plotArea.setMinimumWidth(520)
 
         # ----- Right: Parameters panel -----
         self.panel = QtWidgets.QWidget(self.splitter)
@@ -168,8 +168,9 @@ class Ui_Trials(QtWidgets.QWidget):
         self.endModeComboLabel = QtWidgets.QLabel(self.panel)
         self.endModeComboLabel.setText("Trial End Mode")
         self.endModeCombo = QtWidgets.QComboBox(self.panel)
-        self.endModeCombo.addItem("Fixed window", userData="fixed")
         self.endModeCombo.addItem("Cut to the next stim", userData="until_next_onset")
+        self.endModeCombo.addItem("Fixed window", userData="fixed")
+        
 
         self.formTime.addRow(self.initialTimeLabel, self.initialTimeDoubleSpinBox)
         self.formTime.addRow(self.finalTimeLabel, self.finalTimeDoubleSpinBox)

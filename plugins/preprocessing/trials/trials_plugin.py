@@ -31,9 +31,9 @@ class TrialsPlugin(IPlugin):
         }
 
         self.widget: QWidget | None = None
-        self.VtkViewer: QFrame | None = None
-        self.vtk_widget: QVTKRenderWindowInteractor | None = None
-        self.renwin = None
+        self.vtk_interactor: QVTKRenderWindowInteractor | None = None
+        self.vtk_view: vtk.vtkContextView | None = None
+        self.chart: vtk.vtkChartXY | None = None
 
         self.visible_trials = []
         self.last_td: TrialDataset | None = None
@@ -78,27 +78,23 @@ class TrialsPlugin(IPlugin):
         return self.widget
 
     def _ensure_vtk(self):
-        self._log("_ensure_vtk")
-        frame = self.ui.VtkViewer
-        if frame.layout() is None:
-            frame.setLayout(QVBoxLayout(frame))
-            frame.layout().setContentsMargins(0, 0, 0, 0)
+        self._log("ensure_vtk(): enter")
+        
+        self.vtk_interactor = QVTKRenderWindowInteractor(self.ui.plotArea)
+        self.ui.plotArea.setLayout(QtWidgets.QVBoxLayout())
+        self.ui.plotArea.layout().setContentsMargins(0, 0, 0, 0)
+        self.ui.plotArea.layout().addWidget(self.vtk_interactor)
+        self._log("ensure_vtk(): interactor embebido")
 
-        self.vtk_widget = QVTKRenderWindowInteractor(frame)
-        frame.layout().addWidget(self.vtk_widget)
+        self.vtk_view = vtk.vtkContextView()
+        self.vtk_view.SetRenderWindow(self.vtk_interactor.GetRenderWindow())
+        self.vtk_view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
 
-        self.renwin = self.vtk_widget.GetRenderWindow()
-        self.renwin.SetMultiSamples(0)
-        QtCore.QTimer.singleShot(0, self._init_interactor)
-
-    def _init_interactor(self):
-        self._log("_init_interactor")
         try:
-            iren = self.renwin.GetInteractor()
-            if iren and not iren.GetInitialized():
-                iren.Initialize()
-        except Exception as e:
-            self._log("_init_interactor error:", e)
+            self.vtk_interactor.Initialize()
+        except Exception:
+            pass
+        self._log("ensure_vtk(): scheduled init")
 
     def _init_controls(self):
         self._log("_init_controls: set defaults")
@@ -242,31 +238,20 @@ class TrialsPlugin(IPlugin):
     # -------------- Render ----------------------
     def _render_trials(self, td: TrialDataset):
         self._log("_render_trials: enter")
-        if not self.renwin:
-            self._log("  sin render window")
+        
+        if self.vtk_view is None:
+            self._log("  vtk_view no inicializado → ensure_vtk()")
+            self._ensure_vtk()
+        if self.vtk_view is None:
+            self._log("  sin VTK view, abort")
             return
-
-        if not self.renwin.GetMapped():
-            self._log("  RW no mapeada aún → retry")
-            QtCore.QTimer.singleShot(0, lambda: self._render_trials(td))
-            return
-
-        self.renwin.GetRenderers().RemoveAllItems()
 
         table = trials_matrix_to_vtk_table(td.time_rel, td.trials)
-        colors = vtk.vtkNamedColors()
-
-        renderer = vtk.vtkRenderer()
-        renderer.SetBackground(colors.GetColor3d("WhiteSmoke"))
-        self.renwin.AddRenderer(renderer)
-
-        chart = vtk.vtkChartXY()
-        scene = vtk.vtkContextScene()
-        actor = vtk.vtkContextActor()
-        scene.AddItem(chart)
-        actor.SetScene(scene)
-        renderer.AddActor(actor)
-        scene.SetRenderer(renderer)
+        
+        scene = self.vtk_view.GetScene()
+        scene.ClearItems()
+        self.chart = vtk.vtkChartXY()
+        scene.AddItem(self.chart)
 
         Ns, T = td.trials.shape
         sel = sorted({i for i in self.visible_trials if 0 <= i < T})
@@ -274,15 +259,23 @@ class TrialsPlugin(IPlugin):
             sel = [1] if T > 1 else ([0] if T == 1 else [])
 
         for idx in sel:
-            plot = chart.AddPlot(vtk.vtkChart.LINE)
-            plot.SetInputData(table, 0, idx + 1)  # 0=time, (idx+1)=trial idx
-            plot.SetWidth(0.5)
+            plot = self.chart.AddPlot(vtk.vtkChart.LINE)
+            plot.SetInputData(table, 0, idx + 1)
+            plot.SetWidth(1.0)
+            plot.SetLabel(f"Trial {idx+1}")
 
-        chart.GetAxis(0).SetTitle("Time (s)")
-        chart.GetAxis(1).SetTitle(td.unit or "Amplitude")
-
+        ax_b = self.chart.GetAxis(vtk.vtkAxis.BOTTOM)
+        ax_l = self.chart.GetAxis(vtk.vtkAxis.LEFT)
+        ax_b.SetGridVisible(True); ax_l.SetGridVisible(True)
+        ax_b.SetTitle("Time (s)")
+        ax_l.SetTitle(td.unit or "Amplitude")
+        
+        ch_name = getattr(td, "channel_name", "") or "channel"
+        trials_txt = ", ".join(str(i+1) for i in sel)
+        self.chart.SetTitle(f"Trial {trials_txt} — {ch_name}")
+        
         try:
-            self.renwin.Render()
-            self._log("  render OK")
+            self.vtk_view.GetRenderWindow().Render()
+            self._log("  render OK (ContextView interactivo)")
         except Exception as e:
             self._log("Render error:", e)
