@@ -90,8 +90,6 @@ QPushButton:checked {
 QScrollArea { 
     border: none;
     background: #E8E8E8;
-    color: #2E60A9;
-
 }
 
 

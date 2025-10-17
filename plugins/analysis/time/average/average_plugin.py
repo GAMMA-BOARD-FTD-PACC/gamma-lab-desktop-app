@@ -52,13 +52,6 @@ class Average_plugin(IPlugin):
             self.ui.setupUi(self.widget)
             self.ensure_vtk()
 
-            # Crear el VTK interactor dentro del contenedor del .ui
-            vtk_layout = QVBoxLayout(self.ui.VTK_render_Qwidget)
-            vtk_layout.setContentsMargins(0, 0, 0, 0)
-
-            self.vtk_widget = QVTKRenderWindowInteractor(self.ui.VTK_render_Qwidget)
-            vtk_layout.addWidget(self.vtk_widget)
-
             # Conectar botón “Calculate Average”
             self.ui.mainActionButton.clicked.connect(self._on_calculate_average)
 
@@ -92,21 +85,38 @@ class Average_plugin(IPlugin):
         """Carga el SignalDataset activo desde el DataStore y muestra sus TrialDataset asociados."""
 
         active_signal = self._get_active_signal()        
-        # if not active_signal.trials_dataset:
-        #     print("[Average] Esta señal no tiene TrialDataset asociado.")
-        #     return
-    
-        #Tomar el trial # 0 para prácticidad
-        td = active_signal.get_active_trials()[0]
+        if active_signal is None:
+            QMessageBox.warning(self.widget, "Error", "No hay señal activa para calcular el promedio.")
+            return
+        
+        trials = active_signal.get_active_trials()
+        print(trials)
+        if not trials:
+            QMessageBox.warning(self.widget, "Error", "La señal activa no tiene trials registrados.")
+            return
 
-        #calcular el promedio por muestras
-        av_data = np.mean(td.trials, axis=1)
-        t = td.time_rel
+        
+        # Verificar que todos los trials tengan la misma longitud temporal
+        Ns_ref = trials[0].trials.shape[0]
+        if not all(td.trials.shape[0] == Ns_ref for td in trials):
+            QMessageBox.warning(self.widget, "Error", "Los TrialDataset no tienen la misma longitud temporal.")
+            return
 
-        print(f"[Average] Promedio calculado → shape: {av_data.shape}")
+        # Concatenar todos los trials (por columnas)
+        all_trials = np.concatenate([td.trials for td in trials], axis=1)
+
+        # Calcular el promedio por muestra
+        av_data = np.mean(all_trials, axis=1)
+
+        # Usar el eje de tiempo del primero (todos deben ser iguales)
+        t = trials[0].time_rel
+        channel_name = trials[0].channel_name
+        unit = trials[0].unit
+
+        print(f"[Average] Promedio calculado → shape: {av_data.shape} (de {len(trials)} TrialDataset)")
 
         # Render en VTK
-        self.render_average(t, av_data, td.channel_name, td.unit)
+        self.render_average(t, av_data, channel_name, unit)
 
     def render_average(self, t, av_data, channel_name=None, unit=None):
         """
