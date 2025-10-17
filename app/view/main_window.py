@@ -209,7 +209,7 @@ class MainWindow(QMainWindow):
             self.show_plugin_widget(plugin)
             if hasattr(plugin, "process"):
                 try:
-                    plugin.process("Hola desde MainWindow")
+                    plugin.process("Ventana abierta")
                 except Exception as e:
                     print("Error en process del plugin:", e)
         else:
