@@ -84,3 +84,109 @@ QPushButton:checked {
     subcontrol-position: bottom center; /* título centrado arriba */
 
 }
+
+
+
+QScrollArea { 
+    border: none;
+    background: #E8E8E8;
+    color: #2E60A9;
+
+}
+
+
+
+/* scrollbar */
+QScrollBar:vertical {
+    background: transparent;
+    width: 8px;
+    margin: 2px 0;
+    border-radius: 4px;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #a267a4ff;
+    border-radius: 4px;
+    min-height: 20px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #a24b7eca;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0;
+    background: none;
+    border: none;
+}
+
+QScrollBar:horizontal {
+    background: transparent;
+    height: 8px;
+    margin: 0 2px;
+    border-radius: 4px;
+}
+
+QScrollBar::handle:horizontal {
+    background-color: #a267a4ff;
+    border-radius: 4px;
+    min-width: 20px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background-color:  #a24b7eca;
+}
+
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal {
+    width: 0;
+    background: none;
+    border: none;
+}
+
+
+/* Estilos de botones de trials */
+#trialNavButton {
+    background-color: #ffffff;
+    color: #2E60A9;
+    border: 1px solid #2E60A9;
+    border-radius: 8px;
+    font-size: 12px;
+    padding: 6px 10px;
+}
+
+#trialNavButton:hover {
+    border: 1.5px solid #2E60A9;
+    background-color: #a2c2f3;
+    color: #2E60A9;
+}
+
+#trialNavButton:pressed {
+    border: 1.5px solid #2E60A9;
+    background-color: #244c8b;
+    color: white;
+}
+
+/* Botón principal (Generate Trials) */
+#mainActionButton {
+    background-color: transparent;
+    color: #EE5D3E;
+    border: 1px solid #EE5D3E;
+    border-radius: 8px;
+    font-weight: bold;
+    font-size: 13px;
+    padding: 8px 12px;
+}
+
+#mainActionButton:hover {
+    background-color: #FFE6E0;
+    color: #EE5D3E;
+    border: 2px solid #EE5D3E;
+}
+
+#mainActionButton:pressed {
+    background-color: #EE5D3E;
+    color: #FFFFFF;
+    border: 1.5px solid #EE5D3E;
+}

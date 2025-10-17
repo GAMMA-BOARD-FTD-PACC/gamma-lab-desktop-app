@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>682</width>
+    <width>768</width>
     <height>454</height>
    </rect>
   </property>
@@ -153,7 +153,7 @@
           <widget class="QWidget" name="widget" native="true"/>
          </item>
          <item>
-          <widget class="QPushButton" name="pushButton">
+          <widget class="QPushButton" name="mainActionButton">
            <property name="text">
             <string>Calculate Average</string>
            </property>

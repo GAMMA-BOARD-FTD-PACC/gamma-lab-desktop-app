@@ -60,7 +60,7 @@ class Average_plugin(IPlugin):
             vtk_layout.addWidget(self.vtk_widget)
 
             # Conectar botón “Calculate Average”
-            self.ui.pushButton.clicked.connect(self._on_calculate_average)
+            self.ui.mainActionButton.clicked.connect(self._on_calculate_average)
 
         else:
             self.widget.setParent(parent)
