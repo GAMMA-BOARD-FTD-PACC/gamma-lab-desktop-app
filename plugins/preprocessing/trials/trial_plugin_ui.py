@@ -241,7 +241,9 @@ class Ui_Trials(QtWidgets.QWidget):
         self.vbox.addWidget(self.Btn_generate_trials)
 
         # Tamaños por defecto del splitter
-        self.splitter.setSizes([560, 350])
+        self.splitter.setStretchFactor(0, 1)  # El VtkViewer (izquierda) se expande
+        self.splitter.setStretchFactor(1, 0)  # El panel derecho ocupa solo su tamaño mínimo
+
 
         self.retranslateUi()
 

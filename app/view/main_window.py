@@ -228,9 +228,11 @@ class MainWindow(QMainWindow):
             self.update_signal_list()
 
     def setup_sidebar_functionality(self):
+        sidebar = self.ui.widget_3
+        sidebar.setMaximumWidth(250)
         """Inicializa y conecta todas las funciones de la barra lateral."""
         # Collapse de la barra lateral
-        self.ui.collapse_explorer_btn.clicked.connect(self.toggle_sidebar_collapse)
+        self.ui.collapse_explorer_btn.clicked.connect(lambda: self.toggle_sidebar_collapse(sidebar))
         self.ui.collapse_explorer_btn.setIcon(QIcon("assets/icons/home/icn_collapse.png"))
 
         self.update_signal_list()
@@ -242,18 +244,18 @@ class MainWindow(QMainWindow):
         self.setup_calculus_section()
         self.setup_results_section()
 
-
     # Comprimir y expandir la barra lateral
-    def toggle_sidebar_collapse(self):
-        """Colapsa o expande el panel lateral izquierdo con íconos y animación."""
-        sidebar = self.ui.widget_3
+    def toggle_sidebar_collapse(self, sidebar):
+        
         current_width = sidebar.width()
 
-        # --- Si está expandida ---
         if current_width > 0:
             self._last_sidebar_width = current_width
 
-            # Animación de colapso suave
+            # Permitir colapso total
+            sidebar.setMinimumWidth(0)
+
+            # Animación de colapso
             self._sidebar_animation = QPropertyAnimation(sidebar, b"maximumWidth")
             self._sidebar_animation.setDuration(250)
             self._sidebar_animation.setStartValue(current_width)
@@ -263,10 +265,11 @@ class MainWindow(QMainWindow):
 
             self.ui.collapse_explorer_btn.setIcon(QIcon("assets/icons/home/icn_expand.png"))
 
-
-        # --- Si está colapsada ---
         else:
             width = getattr(self, "_last_sidebar_width", 250)
+
+            # Restaurar ancho y límite mínimo
+            sidebar.setMinimumWidth(100)
 
             # Animación de expansión
             self._sidebar_animation = QPropertyAnimation(sidebar, b"maximumWidth")
@@ -276,9 +279,9 @@ class MainWindow(QMainWindow):
             self._sidebar_animation.setEasingCurve(QEasingCurve.InOutCubic)
             self._sidebar_animation.start()
 
-            # Cambiar ícono de nuevo
             self.ui.collapse_explorer_btn.setIcon(QIcon("assets/icons/home/icn_collapse.png"))
-    
+
+
     def on_signal_selected(self):
         """
         Se ejecuta cuando el usuario cambia la señal seleccionada en el comboBox.
