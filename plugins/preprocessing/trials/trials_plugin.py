@@ -27,7 +27,7 @@ class TrialsPlugin(IPlugin):
             "t0": -0.05,
             "t1": 4.0,
             "stim_count": 1,
-            "isi": None
+            "inter_stim_time": 0.0
         }
 
         self.widget: QWidget | None = None
@@ -111,7 +111,7 @@ class TrialsPlugin(IPlugin):
         self.ui.stimNumberSpinBox.setValue(self.params["stim_count"] or 0)
 
         self.ui.interStimTimeDoubleSpinBox.setRange(0.0, 3600.0)
-        self.ui.interStimTimeDoubleSpinBox.setValue(self.params["isi"] or 0.0)
+        self.ui.interStimTimeDoubleSpinBox.setValue(self.params["inter_stim_time"] or 0.0)
 
     def _get_active_signal(self) -> SignalDataset | None:
         """Devuelve la señal activa"""
@@ -195,21 +195,21 @@ class TrialsPlugin(IPlugin):
         mode = self.ui.endModeCombo.currentData() or "fixed"
         stim = int(self.ui.stimNumberSpinBox.value())
         stim = None if stim <= 0 else stim
-        isi  = float(self.ui.interStimTimeDoubleSpinBox.value())
-        isi  = None if isi <= 0 else isi
+        inter_stim_time  = float(self.ui.interStimTimeDoubleSpinBox.value())
+        inter_stim_time  = None if inter_stim_time <= 0 else inter_stim_time
 
         if mode == "fixed" and not (t1 > t0):
             QMessageBox.warning(self.widget, "Parámetros", "t1 debe ser mayor que t0.")
             return
 
         self._log("params →", dict(channel=int(ch), threshold=th, t0=t0, t1=t1,
-                                end_mode=mode, stim_expected=stim, isi=isi))
+                                end_mode=mode, stim_expected=stim, inter_stim_time=inter_stim_time))
 
         # Ejecutar corte
         try:
             td: TrialDataset = cut_trials_single_channel(
                 ds=ds, channel=int(ch), threshold=th, t0=t0, t1=t1,
-                end_mode=mode, stim_expected=stim, isi=isi
+                end_mode=mode, stim_expected=stim, inter_stim_time=inter_stim_time
             )
         except Exception as e:
             self._log("cut_trials_single_channel error:", e)
