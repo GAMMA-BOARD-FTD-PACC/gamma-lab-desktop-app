@@ -26,11 +26,22 @@ class Ui_Trials(QtWidgets.QWidget):
         self.plotArea.setFrameShadow(QtWidgets.QFrame.Raised)
         self.plotArea.setMinimumWidth(520)
 
-        # ----- Right: Parameters panel -----
-        self.panel = QtWidgets.QWidget(self.splitter)
+        # ----- Right: Parameters panel con scroll -----
+        self.scrollArea = QtWidgets.QScrollArea(self.splitter)
+        self.scrollArea.setWidgetResizable(True)  # Se ajusta al tamaño disponible
+        self.scrollArea.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.scrollArea.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+
+
+        # Contenedor interno del scroll
+        self.panel = QtWidgets.QWidget()
         self.vbox = QtWidgets.QVBoxLayout(self.panel)
-        self.vbox.setContentsMargins(8, 8, 8, 8)
+        self.vbox.setContentsMargins(8, 0, 8, 0)
         self.vbox.setSpacing(12)
+
+        # Asignar el panel como contenido del scroll
+        self.scrollArea.setWidget(self.panel)
+
 
         # ===== Header: Parameters =====
         self.lblParameters = QtWidgets.QLabel(self.panel)
@@ -179,16 +190,61 @@ class Ui_Trials(QtWidgets.QWidget):
 
         self.vbox.addLayout(self.formTime)
 
+        # ===== Subtítulo: Trials =====
+        self.lblTrialsTitle = QtWidgets.QLabel(self.panel)
+        self.lblTrialsTitle.setFont(_f_sub)
+        self.lblTrialsTitle.setText("Trials")
+        self.vbox.addWidget(self.lblTrialsTitle)
+
+        self.sep5 = QtWidgets.QFrame(self.panel)
+        self.sep5.setFrameShape(QtWidgets.QFrame.HLine)
+        self.sep5.setFrameShadow(QtWidgets.QFrame.Plain)
+        self.vbox.addWidget(self.sep5)
+
+        #==== Botones de navegación de trials ====
+        self.trialNavLayout = QtWidgets.QHBoxLayout()
+
+        self.Btn_prev_trial = QtWidgets.QPushButton(self.panel)
+        self.Btn_prev_trial.setObjectName("trialNavButton")
+        self.Btn_prev_trial.setText("Previous")
+        self.Btn_prev_trial.setMinimumHeight(32)
+        self.trialNavLayout.addWidget(self.Btn_prev_trial)
+
+        self.Btn_next_trial = QtWidgets.QPushButton(self.panel)
+        self.Btn_next_trial.setObjectName("trialNavButton")
+        self.Btn_next_trial.setText("Next")
+        self.Btn_next_trial.setMinimumHeight(32)
+        self.trialNavLayout.addWidget(self.Btn_next_trial)
+
+        self.Btn_discard_trial = QtWidgets.QPushButton(self.panel)
+        self.Btn_discard_trial.setObjectName("trialNavButton")
+        self.Btn_discard_trial.setText("Discard")
+        self.Btn_discard_trial.setMinimumHeight(32)
+        self.trialNavLayout.addWidget(self.Btn_discard_trial)
+
+        # Agregar el layout horizontal a la caja vertical principal
+        self.vbox.addLayout(self.trialNavLayout)
+
+        #label para numero de trial revisado
+        self.currentTrialLabel = QtWidgets.QLabel(self.panel)
+        self.currentTrialLabel.setText("Current Trial : -")
+        self.currentTrialLabel.setAlignment(QtCore.Qt.AlignCenter)
+        self.currentTrialLabel.setStyleSheet("font-weight: bold; padding: 4px;")
+        self.vbox.addWidget(self.currentTrialLabel)
+
         # ===== Spacer & Actions =====
         self.vbox.addStretch(1)
 
         self.Btn_generate_trials = QtWidgets.QPushButton(self.panel)
+        self.Btn_generate_trials.setObjectName("mainActionButton")
         self.Btn_generate_trials.setText("Generate Trials")
         self.Btn_generate_trials.setMinimumHeight(36)
         self.vbox.addWidget(self.Btn_generate_trials)
 
         # Tamaños por defecto del splitter
-        self.splitter.setSizes([560, 350])
+        self.splitter.setStretchFactor(0, 1)  # El VtkViewer (izquierda) se expande
+        self.splitter.setStretchFactor(1, 0)  # El panel derecho ocupa solo su tamaño mínimo
+
 
         self.retranslateUi()
 

@@ -99,8 +99,7 @@ class OpenSignalPlugin(IPlugin):
             self.kernel.register_service("DataStore", store)
         
         #usar el método de datastore para almacenar una señal cruda
-        file_name = Path(path).name
-        key = store.add_signal(ds, file_name)
+        key = store.add_signal(ds, ds.name)
         print(f"[OpenSignal] Guardado en DataStore: {key}")
 
         #emitir evento de registro de señal

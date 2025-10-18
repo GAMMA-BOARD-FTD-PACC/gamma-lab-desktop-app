@@ -1,3 +1,4 @@
+from pathlib import Path
 from .signal_dataset import SignalDataset
 import numpy as np
 import pyabf
@@ -36,6 +37,7 @@ class FileIOService:
         print("ABF procesado correctamente")
 
         ds = SignalDataset(
+            name=Path(file_path).name,
             format="abf",
             source_path=file_path,
             sampling_rate=sampling_rate,
@@ -108,6 +110,7 @@ class FileIOService:
             print(f"Sampling rate (común): {sampling_rate} Hz")
 
             ds = SignalDataset(
+                name=Path(file_path).name,
                 format="edf",
                 source_path=file_path,
                 sampling_rate=sampling_rate,
