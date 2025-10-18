@@ -28,7 +28,7 @@ class TrialsPlugin(IPlugin):
             "t0": -0.05,
             "t1": 4.0,
             "stim_count": 1,
-            "inter_stim_time": 0.0
+            "inter_stim_time": 0.1
         }
 
         self.widget: QWidget | None = None
@@ -116,9 +116,46 @@ class TrialsPlugin(IPlugin):
         self.ui.stimNumberSpinBox.setRange(0, 1_000_000)
         self.ui.stimNumberSpinBox.setValue(self.params["stim_count"] or 0)
 
-        self.ui.interStimTimeDoubleSpinBox.setRange(0.0, 3600.0)
+        self.ui.interStimTimeDoubleSpinBox.setDecimals(6)
+        self.ui.interStimTimeDoubleSpinBox.setSingleStep(0.01)
         self.ui.interStimTimeDoubleSpinBox.setValue(self.params["inter_stim_time"] or 0.0)
+        
+        self.ui.stimNumberSpinBox.valueChanged.connect(self._on_stim_count_changed)
+        self._apply_interstim_ui_rules(self.ui.stimNumberSpinBox.value())
 
+    
+    def _on_stim_count_changed(self, val: int):
+        """Callback cuando cambia el número de estímulos: aplica reglas al campo de ISI."""
+        try:
+            self._apply_interstim_ui_rules(int(val))
+        except Exception as e:
+            self._log("_on_stim_count_changed error:", e)
+        
+    def _apply_interstim_ui_rules(self, stim_count: int):
+        """
+        - stim_count <= 1: deshabilitar ISI y ponerlo en 0.0
+        - stim_count >= 2: habilitar ISI, exigir > 0 (mínimo sugerido 1 ms)
+        """
+        isi = self.ui.interStimTimeDoubleSpinBox
+
+        if stim_count is None or stim_count <= 1:
+            isi.blockSignals(True)
+            isi.setEnabled(False)
+            isi.setMinimum(0.0)
+            isi.setValue(0.0)
+            isi.setToolTip("Inter-stim time no aplica cuando hay 0 ó 1 estímulo por trial.")
+            isi.blockSignals(False)
+            return
+
+        # stim_count >= 2
+        isi.blockSignals(True)
+        isi.setEnabled(True)
+        isi.setMinimum(0.001)
+        if isi.value() <= 0.0:
+            isi.setValue(0.1)
+        isi.setToolTip("Tiempo entre estímulos (s). Debe ser > 0 cuando hay ≥2 estímulos por trial.")
+        isi.blockSignals(False)
+        
     def _get_active_signal(self) -> SignalDataset | None:
         """Devuelve la señal activa"""
         try:
@@ -160,8 +197,7 @@ class TrialsPlugin(IPlugin):
         cb.setCurrentIndex(0 if names else -1)
         cb.blockSignals(False)
 
-        self._log("channelComboBox poblado:", cb.count(), "items",
-                "ejemplo:", names[:5])
+        #self._log("channelComboBox poblado:", cb.count(), "items",       "ejemplo:", names[:5])
 
 
     def _populate_channels_once(self):
@@ -174,7 +210,7 @@ class TrialsPlugin(IPlugin):
     
     # -------------- Acciones UI -----------------
     def _on_generate_clicked(self):
-        self._log("_on_generate_clicked")
+        #self._log("_on_generate_clicked")
 
         ds = self._get_active_signal()
         if ds is None:
@@ -223,7 +259,7 @@ class TrialsPlugin(IPlugin):
                                 f"Falló la generación de trials:\n{e}")
             return
 
-        self._log("TD listo:", td.trials.shape, td.time_rel.shape, "onsets:", len(td.onsets_s))
+        #self._log("TD listo:", td.trials.shape, td.time_rel.shape, "onsets:", len(td.onsets_s))
 
         try:
             ds.add_trial_dataset(td)
@@ -268,7 +304,7 @@ class TrialsPlugin(IPlugin):
         new_idx = (current + direction) % T  # navegación circular
         self.visible_trials = [new_idx]
 
-        self._log(f"Navegando trial {new_idx + 1}/{T}")
+        #self._log(f"Navegando trial {new_idx + 1}/{T}")
         self._render_trials(td)
 
         self._update_trial_ui(sd, new_idx, T, None)

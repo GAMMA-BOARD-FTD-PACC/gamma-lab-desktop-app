@@ -82,7 +82,7 @@ def debug_onsets_intervals(
     threshold: float,
     fs: Optional[float] = None,
     show_examples: int = 10,
-    debug: bool = True,
+    debug: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Diagnóstico: detecta TODOS los onsets crudos (sin debounce),
