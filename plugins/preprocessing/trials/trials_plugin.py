@@ -28,13 +28,13 @@ class TrialsPlugin(IPlugin):
             "t0": -0.05,
             "t1": 4.0,
             "stim_count": 1,
-            "isi": None
+            "inter_stim_time": 0.1
         }
 
         self.widget: QWidget | None = None
-        self.VtkViewer: QFrame | None = None
-        self.vtk_widget: QVTKRenderWindowInteractor | None = None
-        self.renwin = None
+        self.vtk_interactor: QVTKRenderWindowInteractor | None = None
+        self.vtk_view: vtk.vtkContextView | None = None
+        self.chart: vtk.vtkChartXY | None = None
 
         self.visible_trials = []
         self.last_td: TrialDataset | None = None
@@ -84,27 +84,23 @@ class TrialsPlugin(IPlugin):
         return self.widget
 
     def _ensure_vtk(self):
-        self._log("_ensure_vtk")
-        frame = self.ui.VtkViewer
-        if frame.layout() is None:
-            frame.setLayout(QVBoxLayout(frame))
-            frame.layout().setContentsMargins(0, 0, 0, 0)
+        self._log("ensure_vtk(): enter")
+        
+        self.vtk_interactor = QVTKRenderWindowInteractor(self.ui.plotArea)
+        self.ui.plotArea.setLayout(QtWidgets.QVBoxLayout())
+        self.ui.plotArea.layout().setContentsMargins(0, 0, 0, 0)
+        self.ui.plotArea.layout().addWidget(self.vtk_interactor)
+        self._log("ensure_vtk(): interactor embebido")
 
-        self.vtk_widget = QVTKRenderWindowInteractor(frame)
-        frame.layout().addWidget(self.vtk_widget)
+        self.vtk_view = vtk.vtkContextView()
+        self.vtk_view.SetRenderWindow(self.vtk_interactor.GetRenderWindow())
+        self.vtk_view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
 
-        self.renwin = self.vtk_widget.GetRenderWindow()
-        self.renwin.SetMultiSamples(0)
-        QtCore.QTimer.singleShot(0, self._init_interactor)
-
-    def _init_interactor(self):
-        self._log("_init_interactor")
         try:
-            iren = self.renwin.GetInteractor()
-            if iren and not iren.GetInitialized():
-                iren.Initialize()
-        except Exception as e:
-            self._log("_init_interactor error:", e)
+            self.vtk_interactor.Initialize()
+        except Exception:
+            pass
+        self._log("ensure_vtk(): scheduled init")
 
     def _init_controls(self):
         self._log("_init_controls: set defaults")
@@ -120,9 +116,46 @@ class TrialsPlugin(IPlugin):
         self.ui.stimNumberSpinBox.setRange(0, 1_000_000)
         self.ui.stimNumberSpinBox.setValue(self.params["stim_count"] or 0)
 
-        self.ui.interStimTimeDoubleSpinBox.setRange(0.0, 3600.0)
-        self.ui.interStimTimeDoubleSpinBox.setValue(self.params["isi"] or 0.0)
+        self.ui.interStimTimeDoubleSpinBox.setDecimals(6)
+        self.ui.interStimTimeDoubleSpinBox.setSingleStep(0.01)
+        self.ui.interStimTimeDoubleSpinBox.setValue(self.params["inter_stim_time"] or 0.0)
+        
+        self.ui.stimNumberSpinBox.valueChanged.connect(self._on_stim_count_changed)
+        self._apply_interstim_ui_rules(self.ui.stimNumberSpinBox.value())
 
+    
+    def _on_stim_count_changed(self, val: int):
+        """Callback cuando cambia el número de estímulos: aplica reglas al campo de ISI."""
+        try:
+            self._apply_interstim_ui_rules(int(val))
+        except Exception as e:
+            self._log("_on_stim_count_changed error:", e)
+        
+    def _apply_interstim_ui_rules(self, stim_count: int):
+        """
+        - stim_count <= 1: deshabilitar ISI y ponerlo en 0.0
+        - stim_count >= 2: habilitar ISI, exigir > 0 (mínimo sugerido 1 ms)
+        """
+        isi = self.ui.interStimTimeDoubleSpinBox
+
+        if stim_count is None or stim_count <= 1:
+            isi.blockSignals(True)
+            isi.setEnabled(False)
+            isi.setMinimum(0.0)
+            isi.setValue(0.0)
+            isi.setToolTip("Inter-stim time no aplica cuando hay 0 ó 1 estímulo por trial.")
+            isi.blockSignals(False)
+            return
+
+        # stim_count >= 2
+        isi.blockSignals(True)
+        isi.setEnabled(True)
+        isi.setMinimum(0.001)
+        if isi.value() <= 0.0:
+            isi.setValue(0.1)
+        isi.setToolTip("Tiempo entre estímulos (s). Debe ser > 0 cuando hay ≥2 estímulos por trial.")
+        isi.blockSignals(False)
+        
     def _get_active_signal(self) -> SignalDataset | None:
         """Devuelve la señal activa"""
         try:
@@ -164,8 +197,7 @@ class TrialsPlugin(IPlugin):
         cb.setCurrentIndex(0 if names else -1)
         cb.blockSignals(False)
 
-        self._log("channelComboBox poblado:", cb.count(), "items",
-                "ejemplo:", names[:5])
+        #self._log("channelComboBox poblado:", cb.count(), "items",       "ejemplo:", names[:5])
 
 
     def _populate_channels_once(self):
@@ -178,7 +210,7 @@ class TrialsPlugin(IPlugin):
     
     # -------------- Acciones UI -----------------
     def _on_generate_clicked(self):
-        self._log("_on_generate_clicked")
+        #self._log("_on_generate_clicked")
 
         ds = self._get_active_signal()
         if ds is None:
@@ -205,21 +237,21 @@ class TrialsPlugin(IPlugin):
         mode = self.ui.endModeCombo.currentData() or "fixed"
         stim = int(self.ui.stimNumberSpinBox.value())
         stim = None if stim <= 0 else stim
-        isi  = float(self.ui.interStimTimeDoubleSpinBox.value())
-        isi  = None if isi <= 0 else isi
+        inter_stim_time  = float(self.ui.interStimTimeDoubleSpinBox.value())
+        inter_stim_time  = None if inter_stim_time <= 0 else inter_stim_time
 
         if mode == "fixed" and not (t1 > t0):
             QMessageBox.warning(self.widget, "Parámetros", "t1 debe ser mayor que t0.")
             return
 
         self._log("params →", dict(channel=int(ch), threshold=th, t0=t0, t1=t1,
-                                end_mode=mode, stim_expected=stim, isi=isi))
+                                end_mode=mode, stim_expected=stim, inter_stim_time=inter_stim_time))
 
         # Ejecutar corte
         try:
             td: TrialDataset = cut_trials_single_channel(
                 ds=ds, channel=int(ch), threshold=th, t0=t0, t1=t1,
-                end_mode=mode, stim_expected=stim, isi=isi
+                end_mode=mode, stim_expected=stim, inter_stim_time=inter_stim_time
             )
         except Exception as e:
             self._log("cut_trials_single_channel error:", e)
@@ -227,7 +259,7 @@ class TrialsPlugin(IPlugin):
                                 f"Falló la generación de trials:\n{e}")
             return
 
-        self._log("TD listo:", td.trials.shape, td.time_rel.shape, "onsets:", len(td.onsets_s))
+        #self._log("TD listo:", td.trials.shape, td.time_rel.shape, "onsets:", len(td.onsets_s))
 
         try:
             ds.add_trial_dataset(td)
@@ -272,7 +304,7 @@ class TrialsPlugin(IPlugin):
         new_idx = (current + direction) % T  # navegación circular
         self.visible_trials = [new_idx]
 
-        self._log(f"Navegando trial {new_idx + 1}/{T}")
+        #self._log(f"Navegando trial {new_idx + 1}/{T}")
         self._render_trials(td)
 
         self._update_trial_ui(sd, new_idx, T, None)
@@ -354,31 +386,20 @@ class TrialsPlugin(IPlugin):
     # -------------- Render ----------------------
     def _render_trials(self, td: TrialDataset):
         self._log("_render_trials: enter")
-        if not self.renwin:
-            self._log("  sin render window")
+        
+        if self.vtk_view is None:
+            self._log("  vtk_view no inicializado → ensure_vtk()")
+            self._ensure_vtk()
+        if self.vtk_view is None:
+            self._log("  sin VTK view, abort")
             return
-
-        if not self.renwin.GetMapped():
-            self._log("  RW no mapeada aún → retry")
-            QtCore.QTimer.singleShot(0, lambda: self._render_trials(td))
-            return
-
-        self.renwin.GetRenderers().RemoveAllItems()
 
         table = trials_matrix_to_vtk_table(td.time_rel, td.trials)
-        colors = vtk.vtkNamedColors()
-
-        renderer = vtk.vtkRenderer()
-        renderer.SetBackground(colors.GetColor3d("WhiteSmoke"))
-        self.renwin.AddRenderer(renderer)
-
-        chart = vtk.vtkChartXY()
-        scene = vtk.vtkContextScene()
-        actor = vtk.vtkContextActor()
-        scene.AddItem(chart)
-        actor.SetScene(scene)
-        renderer.AddActor(actor)
-        scene.SetRenderer(renderer)
+        
+        scene = self.vtk_view.GetScene()
+        scene.ClearItems()
+        self.chart = vtk.vtkChartXY()
+        scene.AddItem(self.chart)
 
         Ns, T = td.trials.shape
         sel = sorted({i for i in self.visible_trials if 0 <= i < T})
@@ -386,15 +407,23 @@ class TrialsPlugin(IPlugin):
             sel = [1] if T > 1 else ([0] if T == 1 else [])
 
         for idx in sel:
-            plot = chart.AddPlot(vtk.vtkChart.LINE)
-            plot.SetInputData(table, 0, idx + 1)  # 0=time, (idx+1)=trial idx
-            plot.SetWidth(0.5)
+            plot = self.chart.AddPlot(vtk.vtkChart.LINE)
+            plot.SetInputData(table, 0, idx + 1)
+            plot.SetWidth(1.0)
+            plot.SetLabel(f"Trial {idx+1}")
 
-        chart.GetAxis(0).SetTitle("Time (s)")
-        chart.GetAxis(1).SetTitle(td.unit or "Amplitude")
-
+        ax_b = self.chart.GetAxis(vtk.vtkAxis.BOTTOM)
+        ax_l = self.chart.GetAxis(vtk.vtkAxis.LEFT)
+        ax_b.SetGridVisible(True); ax_l.SetGridVisible(True)
+        ax_b.SetTitle("Time (s)")
+        ax_l.SetTitle(td.unit or "Amplitude")
+        
+        ch_name = getattr(td, "channel_name", "") or "channel"
+        trials_txt = ", ".join(str(i+1) for i in sel)
+        self.chart.SetTitle(f"Trial {trials_txt} — {ch_name}")
+        
         try:
-            self.renwin.Render()
-            self._log("  render OK")
+            self.vtk_view.GetRenderWindow().Render()
+            self._log("  render OK (ContextView interactivo)")
         except Exception as e:
             self._log("Render error:", e)
