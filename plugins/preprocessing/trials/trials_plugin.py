@@ -1,3 +1,4 @@
+from pathlib import Path
 import sys
 from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtWidgets import QWidget, QComboBox, QVBoxLayout, QFormLayout, QLabel, QSpinBox, QDoubleSpinBox, QPushButton, QFrame, QMessageBox
@@ -230,7 +231,8 @@ class TrialsPlugin(IPlugin):
 
         try:
             ds.add_trial_dataset(td)
-            ds.discarded_trials.clear()
+            ds.clear_discarded_trials()
+            
         except Exception as e:
             self._log("add_trial_dataset warning:", e)
 
@@ -273,24 +275,16 @@ class TrialsPlugin(IPlugin):
         self._log(f"Navegando trial {new_idx + 1}/{T}")
         self._render_trials(td)
 
-        # Actualizar el label del trial actual
-        if new_idx in sd.discarded_trials:
-            self.ui.currentTrialLabel.setText(f"Trial actual: {new_idx + 1} (descartado)/{T}")
-            self.ui.currentTrialLabel.setStyleSheet("color: red; font-weight: bold;")
-            self.ui.Btn_discard_trial.setText("Include")
-        else:
-            self.ui.currentTrialLabel.setText(f"Trial actual: {new_idx + 1}/{T}")
-            self.ui.currentTrialLabel.setStyleSheet("color: black; font-weight: bold;")
-            self.ui.Btn_discard_trial.setText("Discard")
+        self._update_trial_ui(sd, new_idx, T, None)
 
-            # Conectar solo una vez
-            try:
-                self.ui.Btn_discard_trial.clicked.disconnect()
-            except Exception:
-                pass
-            self.ui.Btn_discard_trial.clicked.connect(lambda _, idx=new_idx: self._on_discard_trial(idx))
+        # Conectar el botón
+        try:
+            self.ui.Btn_discard_trial.clicked.disconnect()
+        except Exception:
+            pass
+        self.ui.Btn_discard_trial.clicked.connect(lambda _, idx=new_idx: self._on_discard_trial(idx, T))
 
-
+        
         # Feedback en barra de estado
         if self.mainwin:
             self.mainwin.statusBar().showMessage(
@@ -298,13 +292,14 @@ class TrialsPlugin(IPlugin):
             )
 
 
-    def _on_discard_trial(self, index: int):
+    def _on_discard_trial(self, index: int, T: int):
 
         ds = self._get_active_signal()
+        ch = self.ui.channelComboBox.currentText()
 
         """Alterna el estado de descarte del trial actual (añadir o remover de la lista del SignalDataset)."""
         if not self.last_td:
-            QMessageBox.information(self.widget, "Descartar Trial", "No hay trials cargados.")
+            QMessageBox.warning(self.widget, "Descartar Trial", "No hay trials cargados.")
             return
         
         if not ds:
@@ -312,37 +307,49 @@ class TrialsPlugin(IPlugin):
             return
       
         if not self.visible_trials:
-            QMessageBox.information(self.widget, "Descartar Trial", "No hay trial seleccionado.")
+            QMessageBox.warning(self.widget, "Descartar Trial", "No hay trial seleccionado.")
             return
 
-        # current = self.visible_trials[0]
+        estado = ds.is_trial_discarded(ds.name, ch, index)
+        print(f"Trial {index + 1} descartado: {estado}")
 
-
-        # Alternar descarte / inclusión
-        if index in ds.discarded_trials:
-            # ➕ Incluir nuevamente
-            ds.discarded_trials.discard(index)
-            self._log(f"Trial {index + 1} incluido nuevamente.")
-            self.ui.currentTrialLabel.setText(f"Trial actual: {index + 1}")
-            self.ui.currentTrialLabel.setStyleSheet("color: black; font-weight: bold;")
-            self.ui.Btn_discard_trial.setText("🗑️ Discard Trial")
+        if estado:
+            # Incluir nuevamente
+            ds.include_trial(ds.name, ch, index)
+            self._update_trial_ui(ds, index, T, False)
             QMessageBox.information(
                 self.widget,
                 "Trial incluido",
                 f"El trial {index + 1} ha sido incluido nuevamente."
             )
         else:
-            # 🚫 Marcar como descartado
-            ds.discarded_trials.add(index)
-            self._log(f"Trial {index + 1} marcado como descartado.")
-            self.ui.currentTrialLabel.setText(f"Trial actual: {index + 1} (descartado)")
-            self.ui.currentTrialLabel.setStyleSheet("color: red; font-weight: bold;")
-            self.ui.Btn_discard_trial.setText("Include")
+            # Marcar como descartado
+            ds.discard_trial(ds.name, ch, index)
+            self._update_trial_ui(ds, index, T, True)
+
             QMessageBox.information(
                 self.widget,
                 "Trial descartado",
                 f"El trial {index + 1} ha sido descartado y no se tendrá en cuenta."
             )
+    
+
+    def _update_trial_ui(self, ds: SignalDataset, index: int, total: int = None, estado_descartado: bool = None):
+        """Actualiza el label y botón del trial actual según si está descartado."""
+        total_text = f"/{total}" if total else ""
+        ch = self.ui.channelComboBox.currentText()
+
+        if estado_descartado is None:
+            estado_descartado = ds.is_trial_discarded(ds.name, ch, index)
+
+        if estado_descartado:
+            self.ui.currentTrialLabel.setText(f"Trial actual: {index + 1} (descartado){total_text}")
+            self.ui.currentTrialLabel.setStyleSheet("color: red; font-weight: bold;")
+            self.ui.Btn_discard_trial.setText("Include")
+        else:
+            self.ui.currentTrialLabel.setText(f"Trial actual: {index + 1}{total_text}")
+            self.ui.currentTrialLabel.setStyleSheet("color: black; font-weight: bold;")
+            self.ui.Btn_discard_trial.setText("Discard")
 
     # -------------- Render ----------------------
     def _render_trials(self, td: TrialDataset):
