@@ -47,6 +47,13 @@ class Wavelet_plugin(IPlugin):
             self.ui = Ui_Wavelet()
             self.ui.setupUi(self.widget)
 
+            self.ui.highFrequencySpinBox.setRange(0, 10000)
+            self.ui.highFrequencySpinBox.setValue(500)
+
+            self.ui.lowFrequencySpinBox.setRange(0, 10000)
+            self.ui.lowFrequencySpinBox.setValue(1)
+
+
             # --- Configuración del contenedor VTK ---
             vtk_layout = QVBoxLayout(self.ui.frame)
             vtk_layout.setContentsMargins(0, 0, 0, 0)
@@ -130,6 +137,25 @@ class Wavelet_plugin(IPlugin):
             r, g, b = ctf.GetColor(x)
             lut.SetTableValue(i, r, g, b, 1.0)
         return lut
+    
+    def _lut_to_ctf(self, lut):
+        """Convierte vtkLookupTable a vtkColorTransferFunction (robusto)."""
+        ctf = vtk.vtkColorTransferFunction()
+        ctf.ClampingOn()
+        n = lut.GetNumberOfTableValues()
+        if n <= 0:
+            return ctf
+        vmin, vmax = lut.GetRange()
+        # Si rango inválido, ponemos 0..1
+        if vmax == vmin:
+            vmin -= 0.5
+            vmax += 0.5
+        for i in range(n):
+            rgba = lut.GetTableValue(i)  # (r,g,b,a)
+            r, g, b = rgba[0], rgba[1], rgba[2]
+            x = vmin + (vmax - vmin) * (i / (n - 1))
+            ctf.AddRGBPoint(x, r, g, b)
+        return ctf
 
     # =====================================================
     # ===  Lógica de cálculo y renderizado del Wavelet  ===
@@ -188,17 +214,19 @@ class Wavelet_plugin(IPlugin):
         self.render_scalogram(t, freqs, scalogram, title=f"Scalogram - {getattr(td, 'channel_name', '')}")
 
     def render_scalogram(self, t, freqs, scalogram, title="Scalogram"):
-        """Renderiza el escalograma tipo heatmap 2D (tiempo vs frecuencia) con ejes."""
+        """Renderiza el escalograma tipo heatmap 2D (tiempo vs frecuencia) con ejes físicos correctos."""
         if not self.vtk_widget:
             return
 
         if not self._vtk_renderer:
             self.ensure_vtk()
 
+        # === Datos ===
         Z = np.abs(scalogram).astype(np.float32)
         Z = np.nan_to_num(Z)
         n_freqs, n_times = Z.shape
 
+        # --- Reducción opcional si la señal es muy larga ---
         MAX_SAMPLES = 1500
         if n_times > MAX_SAMPLES:
             factor = int(np.ceil(n_times / MAX_SAMPLES))
@@ -206,14 +234,9 @@ class Wavelet_plugin(IPlugin):
             t = t[::factor]
             n_times = Z.shape[1]
 
-        # Crear vtkImageData
+        # === Crear imagen VTK ===
         img = vtk.vtkImageData()
         img.SetDimensions(n_times, n_freqs, 1)
-        dt = float(t[1] - t[0]) if len(t) > 1 else 1.0
-        f0 = float(freqs[0]) if len(freqs) > 0 else 0.0
-        df = float(freqs[1] - freqs[0]) if len(freqs) > 1 else 1.0
-        img.SetSpacing(dt, df, 1.0)
-        img.SetOrigin(t[0], f0, 0.0)
         img.AllocateScalars(vtk.VTK_FLOAT, 1)
 
         for j in range(n_freqs):
@@ -221,29 +244,49 @@ class Wavelet_plugin(IPlugin):
                 img.SetScalarComponentFromFloat(i, j, 0, 0, Z[j, i])
         img.Modified()
 
+        # === Colormap (LUT y CTF) ===
         finite = np.isfinite(Z)
-        vmin, vmax = (float(np.percentile(Z[finite], 2)), float(np.percentile(Z[finite], 98))) if finite.any() else (0.0, 1.0)
+        if finite.any():
+            vmin, vmax = (
+                float(np.percentile(Z[finite], 2)),
+                float(np.percentile(Z[finite], 98)),
+            )
+        else:
+            vmin, vmax = (0.0, 1.0)
 
         lut = self._build_lut("blue", vmin, vmax)
+        ctf = self._lut_to_ctf(lut)
 
+        # === Crear vista y gráfico 2D ===
         chart_view = vtk.vtkContextView()
         chart_view.SetRenderWindow(self.renwin)
         chart_view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
 
         chart = vtk.vtkChartHistogram2D()
         chart.SetInputData(img, 0)
-        chart.SetTransferFunction(lut)
+        chart.SetTransferFunction(ctf)
+        chart.SetTitle(title)
 
+        # === Configurar ejes físicos ===
         ax_bottom = chart.GetAxis(vtk.vtkAxis.BOTTOM)
         ax_left = chart.GetAxis(vtk.vtkAxis.LEFT)
+
         ax_bottom.SetTitle("Time (s)")
         ax_left.SetTitle("Frequency (Hz)")
-        ax_bottom.SetRange(t[0], t[-1])
-        ax_left.SetRange(freqs[0], freqs[-1])
 
+        # Rango real de tiempo y frecuencia
+        ax_bottom.SetRange(float(t[0]), float(t[-1]))
+        # Normal: bajas abajo, altas arriba
+        # ax_left.SetRange(float(freqs[0]), float(freqs[-1]))
+        # Si prefieres invertir el eje Y:
+        ax_left.SetRange(float(10), float(500))
+        ax_bottom.SetBehavior(vtk.vtkAxis.FIXED)
+        ax_left.SetBehavior(vtk.vtkAxis.FIXED)
+
+        # === Render final ===
         scene = chart_view.GetScene()
         scene.ClearItems()
         scene.AddItem(chart)
 
         self.renwin.Render()
-        print("[Wavelet] Escalograma renderizado con LUT tipo ERP.")
+        print("[Wavelet] Escalograma renderizado correctamente con ejes físicos y LUT.")
