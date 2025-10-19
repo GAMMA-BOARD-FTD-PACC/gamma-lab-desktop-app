@@ -47,7 +47,8 @@ class Ui_OpenSignal(QtWidgets.QWidget):
         sideLayout.setSpacing(10)
 
         self.Btn_abrir_senal = QtWidgets.QPushButton("Abrir señal", self.sidebar)
-        self.Btn_abrir_senal.setObjectName("Btn_abrir_senal")
+        self.Btn_abrir_senal.setObjectName("mainActionButton")
+        #self.Btn_abrir_senal.setObjectName("Btn_abrir_senal")
         self.Btn_abrir_senal.setMinimumHeight(34)
         sideLayout.addWidget(self.Btn_abrir_senal)
 

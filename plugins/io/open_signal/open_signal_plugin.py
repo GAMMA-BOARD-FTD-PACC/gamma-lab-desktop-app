@@ -1,11 +1,14 @@
 # plugins/io/open_signal/open_signal_plugin.py
 from pathlib import Path
+from PyQt5.QtWidgets import QMessageBox
+
 from PyQt5 import QtCore, QtWidgets
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 import vtk
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
+from core.plugins.vtk_context_menu import VTKContextMenu
 from core.services.data_store import DataStore
 from core.services.fileio import FileIOService
 from core.services.signal_dataset import SignalDataset
@@ -46,10 +49,13 @@ class OpenSignalPlugin(IPlugin):
         self._log("start")
 
     def stop(self):
-        self._log("stop")
+        if self.vtk_interactor:
+            self.vtk_interactor.Disable()
 
     def process(self, data: any):
-        pass
+        """Restaura renderización y vuelve a activar interacción."""
+        if self.vtk_interactor:
+            self.vtk_interactor.Enable()
 
     def get_widget(self, parent=None):
         if self.ui is None:
@@ -92,6 +98,14 @@ class OpenSignalPlugin(IPlugin):
         self.vtk_view = vtk.vtkContextView()
         self.vtk_view.SetRenderWindow(self.vtk_interactor.GetRenderWindow())
         self.vtk_view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
+
+        # Crear menú contextual (sin chart al inicio)
+        try:
+            self.vtk_menu = VTKContextMenu(None, self.vtk_interactor, parent=self.ui)
+        except Exception as e:
+            self.vtk_menu = None
+            QMessageBox.information(self.ui, "Menú contextual", "Error creando el menú contextual.\n" + str(e))
+
 
         try:
             self.vtk_interactor.Initialize()
@@ -231,6 +245,8 @@ class OpenSignalPlugin(IPlugin):
         scene.ClearItems()
         self._charts.clear()
 
+        
+
         sel = self._checked_indices()
         if not sel:
             self.vtk_view.GetRenderWindow().Render()
@@ -265,3 +281,7 @@ class OpenSignalPlugin(IPlugin):
             ax_l.SetTitle(unit)
 
         self._relayout_charts()
+
+        if self.vtk_menu and self._charts:
+            # Por ahora usamos el primer chart visible
+            self.vtk_menu.set_chart(self._charts)

@@ -7,6 +7,7 @@ from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
+from core.plugins.vtk_context_menu import VTKContextMenu
 from core.services.data_store import DataStore
 from core.services.signal_dataset import SignalDataset
 from core.services.trial_dataset import TrialDataset
@@ -422,6 +423,14 @@ class TrialsPlugin(IPlugin):
         trials_txt = ", ".join(str(i+1) for i in sel)
         self.chart.SetTitle(f"Trial {trials_txt} — {ch_name}")
         
+        #menu global
+        try:
+            self.vtk_menu = VTKContextMenu(self.chart, self.vtk_interactor, parent=self.widget)
+
+        except Exception as e:
+            QMessageBox.information(self.widget, "Menú contextal", "Error creando el menú contextual.\n" + str(e))
+
+
         try:
             self.vtk_view.GetRenderWindow().Render()
             self._log("  render OK (ContextView interactivo)")
