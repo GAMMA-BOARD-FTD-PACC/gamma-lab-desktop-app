@@ -46,7 +46,9 @@ class OpenSignalPlugin(IPlugin):
         self._log("start")
 
     def stop(self):
-        self._log("stop")
+        if self.vtk_interactor:
+            # Pausar interacción y render loop
+            self.vtk_interactor.Disable()
 
     def process(self, data: any):
         pass
@@ -265,3 +267,23 @@ class OpenSignalPlugin(IPlugin):
             ax_l.SetTitle(unit)
 
         self._relayout_charts()
+
+
+    # def suspend(self):
+    #     """Desactiva render y libera GPU temporalmente."""
+    #     if self.vtk_interactor:
+    #         # Pausar interacción y render loop
+    #         self.vtk_interactor.Disable()
+        # if self.vtk_view:
+        #     rw = self.vtk_view.GetRenderWindow()
+        #     if rw:
+        #         rw.ReleaseGraphicsResources(None)  # Libera GPU temporalmente
+
+    def resume(self):
+        """Restaura renderización y vuelve a activar interacción."""
+        if self.vtk_interactor:
+            self.vtk_interactor.Enable()
+        if self.vtk_view:
+            rw = self.vtk_view.GetRenderWindow()
+            if rw:
+                rw.Render()  # fuerza redibujado
