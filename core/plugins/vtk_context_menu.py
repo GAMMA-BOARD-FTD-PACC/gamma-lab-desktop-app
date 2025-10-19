@@ -22,14 +22,29 @@ class VTKContextMenu:
         self.custom_actions = []  # Acciones registradas por los plugins
         self._install_wheel_shortcuts()
 
-        # Configuración inicial
-        self.chart.SetZoomWithMouseWheel(True)
-        self.chart.SetAxisZoom(0, True)
-        self.chart.SetAxisZoom(1, False)
+        # Configuración inicial (uno o varios charts)
+        charts = self._get_charts()
+        for ch in charts:
+            if ch is not None:
+                ch.SetZoomWithMouseWheel(True)
+                ch.SetAxisZoom(0, True)
+                ch.SetAxisZoom(1, False)   
 
         # Conexión del menú contextual
         self.vtk_widget.setContextMenuPolicy(Qt.CustomContextMenu)
         self.vtk_widget.customContextMenuRequested.connect(self.show_menu)
+
+    def _get_charts(self):
+        """Devuelve una lista con todos los charts activos."""
+        if isinstance(self.chart, list):
+            return [ch for ch in self.chart if ch is not None]
+        elif self.chart is not None:
+            return [self.chart]
+        return []
+
+
+    def set_chart(self, chart):
+        self.chart = chart
 
     # Integración con rueda del mouse
     def _install_wheel_shortcuts(self):
@@ -41,24 +56,34 @@ class VTKContextMenu:
         """
         old_wheel_event = self.vtk_widget.wheelEvent
 
+    def _install_wheel_shortcuts(self):
+        """
+        Intercepta el evento wheelEvent del vtk_widget para implementar:
+         - Ctrl + rueda → zoom horizontal
+         - Shift + rueda → zoom vertical
+         - Rueda sola → zoom normal
+        """
+        old_wheel_event = self.vtk_widget.wheelEvent
+
         def custom_wheel_event(event):
             modifiers = QApplication.keyboardModifiers()
+            charts = self._get_charts()
 
-            if modifiers == Qt.ControlModifier:
-                self.chart.SetZoomWithMouseWheel(True)
-                self.chart.SetAxisZoom(0, True)
-                self.chart.SetAxisZoom(1, False)
+            for ch in charts:
+                if ch is None:
+                    continue
 
-            elif modifiers == Qt.ShiftModifier:
-                self.chart.SetZoomWithMouseWheel(True)
-                self.chart.SetAxisZoom(0, False)
-                self.chart.SetAxisZoom(1, True)
+                ch.SetZoomWithMouseWheel(True)
 
-            else:
-                # Zoom normal (ambos ejes)
-                self.chart.SetZoomWithMouseWheel(True)
-                self.chart.SetAxisZoom(0, True)
-                self.chart.SetAxisZoom(1, True)
+                if modifiers == Qt.ControlModifier:
+                    ch.SetAxisZoom(0, True)
+                    ch.SetAxisZoom(1, False)
+                elif modifiers == Qt.ShiftModifier:
+                    ch.SetAxisZoom(0, False)
+                    ch.SetAxisZoom(1, True)
+                else:
+                    ch.SetAxisZoom(0, True)
+                    ch.SetAxisZoom(1, True)
 
             # Llama al comportamiento original
             old_wheel_event(event)
@@ -106,22 +131,31 @@ class VTKContextMenu:
     # Funciones base de zoom
     # -------------------------------
     def set_zoom_mode(self, mode):
-        if mode == "x":
-            self.chart.SetAxisZoom(0, True)
-            self.chart.SetAxisZoom(1, False)
-        elif mode == "y":
-            self.chart.SetAxisZoom(0, False)
-            self.chart.SetAxisZoom(1, True)
-        elif mode == "xy":
-            self.chart.SetAxisZoom(0, True)
-            self.chart.SetAxisZoom(1, True)
+        charts = self._get_charts()
+        for ch in charts:
+            if ch is None:
+                continue
+            if mode == "x":
+                ch.SetAxisZoom(0, True)
+                ch.SetAxisZoom(1, False)
+            elif mode == "y":
+                ch.SetAxisZoom(0, False)
+                ch.SetAxisZoom(1, True)
+            elif mode == "xy":
+                ch.SetAxisZoom(0, True)
+                ch.SetAxisZoom(1, True)
 
     def reset_zoom(self):
-        try:
-            self.chart.ResetZoom()
-        except AttributeError:
-            QMessageBox.information(self.parent, "Zoom", "No se pudo restablecer el zoom en esta versión de VTK.")
-
+        charts = self._get_charts()
+        for ch in charts:
+            try:
+                ch.RecalculateBounds()  # método más seguro que ResetZoom
+            except AttributeError:
+                QMessageBox.information(
+                    self.parent,
+                    "Zoom",
+                    "No se pudo restablecer el zoom en esta versión de VTK."
+                )
     # -------------------------------
     # Funciones de marcador (placeholder)
     # -------------------------------
