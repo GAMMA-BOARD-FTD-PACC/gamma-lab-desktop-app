@@ -283,7 +283,7 @@ class OpenSignalPlugin(IPlugin):
         """Restaura renderización y vuelve a activar interacción."""
         if self.vtk_interactor:
             self.vtk_interactor.Enable()
-        if self.vtk_view:
-            rw = self.vtk_view.GetRenderWindow()
-            if rw:
-                rw.Render()  # fuerza redibujado
+        # if self.vtk_view:
+        #     rw = self.vtk_view.GetRenderWindow()
+        #     if rw:
+        #         rw.Render()  # fuerza redibujado
