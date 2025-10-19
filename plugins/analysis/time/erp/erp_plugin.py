@@ -9,6 +9,7 @@ from typing import Tuple
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
+from core.plugins.vtk_context_menu import VTKContextMenu
 from core.services.signal_dataset import SignalDataset
 from core.services.trial_dataset import TrialDataset
 from plugins.analysis.time.erp.erp_plugin_ui import Ui_ErpPlot
@@ -37,11 +38,20 @@ class Erp_plugin(IPlugin):
 
     def process(self, data: any):
         print(f"ERP recibió datos: {data}")
-        if self.mainwin:
-            try:
-                self.mainwin.statusBar().showMessage(f"ERP procesó: {data}", 3000)
-            except Exception:
-                pass
+
+        print("[TrialsPlugin] process")
+        # habilita interacción (zoom, pan, etc)
+        if self.vtk_top and self.vtk_top.GetRenderWindow().GetInteractor():
+            self.vtk_top.GetRenderWindow().GetInteractor().Enable()
+
+        if self.vtk_bot and self.vtk_bot.GetRenderWindow().GetInteractor():
+                self.vtk_bot.GetRenderWindow().GetInteractor().Enable()
+
+        # if self.mainwin:
+        #     try:
+        #         self.mainwin.statusBar().showMessage(f"ERP procesó: {data}", 3000)
+        #     except Exception:
+        #         pass
 
     def start(self, kernel):
         print("Iniciando ERP")
@@ -52,8 +62,14 @@ class Erp_plugin(IPlugin):
 
     def stop(self):
         print("[TrialsPlugin] stop")
-        self.mainwin = None
-    
+        # deshabilita interacción (congela plugin)
+        if self.vtk_top and self.vtk_top.GetRenderWindow().GetInteractor():
+            self.vtk_top.GetRenderWindow().GetInteractor().Disable()
+
+        if self.vtk_bot and self.vtk_bot.GetRenderWindow().GetInteractor():
+            self.vtk_bot.GetRenderWindow().GetInteractor().Disable()
+
+
     def get_widget(self, parent=None):
         if self.widget is None:
             self.ui = Ui_ErpPlot(parent)
@@ -295,8 +311,15 @@ class Erp_plugin(IPlugin):
             plot.SetInputData(table, 0, c)
             plot.SetWidth(0.5)
 
-        chart.GetAxis(vtk.vtkAxis.BOTTOM).SetTitle("Time (s)")
-        chart.GetAxis(vtk.vtkAxis.LEFT).SetTitle("Amplitude")
+        # chart.GetAxis(vtk.vtkAxis.BOTTOM).SetTitle("Time (s)")
+        # chart.GetAxis(vtk.vtkAxis.LEFT).SetTitle("Amplitude")
+
+        try:
+            self.vtk_menu = VTKContextMenu(chart, self.vtk_top, parent=self.widget)
+            self.vtk_menu.add_action("Exportar datos", self._on_export_butterfly)
+        except Exception as e:
+            QMessageBox.information(self.widget, "Menú contextal", "Error creando el menú contextual.\n" + str(e))
+
 
         self.view_top.GetRenderWindow().Render()
 
@@ -389,9 +412,32 @@ class Erp_plugin(IPlugin):
         print("Chart añadido a escena")
         print("======================\n")
         
+        try:
+            self.vtk_menu_bot = VTKContextMenu(chart, self.vtk_bot, parent=self.widget)
+            self.vtk_menu_bot.add_action("Exportar heatmap", self._on_export_heatmap)
+            self.vtk_menu_bot.add_action("Cambiar LUT", self._on_change_lut)
+        except Exception as e:
+            QMessageBox.information(self.widget, "Menú contextual (Bottom)", f"Error creando el menú contextual.\n{e}")
+
+
+
+
         # Render
         self.view_bot.GetRenderWindow().Render()
 
+# Funciones no implementadas de los menu contextuales
+    def _on_export_butterfly(self):
+        QMessageBox.information(self.widget, "Exportar", "Exportar datos del gráfico superior (no implementado).")
+
+    def _on_export_heatmap(self):
+        QMessageBox.information(self.widget, "Exportar", "Exportar heatmap (no implementado).")
+
+    def _on_change_lut(self):
+        QMessageBox.information(self.widget, "Cambiar LUT", "Cambiar mapa de colores (no implementado).")
+
+    def _set_zoom_mode(self, mode: str):
+        """Ejemplo: configura modo de zoom actual."""
+        self._log(f"Zoom mode: {mode}")
 
 
 # Helper mini para el LUT (puedes dejar solo uno y olvidarte del resto)

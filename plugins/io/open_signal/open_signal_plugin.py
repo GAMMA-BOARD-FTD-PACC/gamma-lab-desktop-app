@@ -47,11 +47,12 @@ class OpenSignalPlugin(IPlugin):
 
     def stop(self):
         if self.vtk_interactor:
-            # Pausar interacción y render loop
             self.vtk_interactor.Disable()
 
     def process(self, data: any):
-        pass
+        """Restaura renderización y vuelve a activar interacción."""
+        if self.vtk_interactor:
+            self.vtk_interactor.Enable()
 
     def get_widget(self, parent=None):
         if self.ui is None:
@@ -278,12 +279,3 @@ class OpenSignalPlugin(IPlugin):
         #     rw = self.vtk_view.GetRenderWindow()
         #     if rw:
         #         rw.ReleaseGraphicsResources(None)  # Libera GPU temporalmente
-
-    def resume(self):
-        """Restaura renderización y vuelve a activar interacción."""
-        if self.vtk_interactor:
-            self.vtk_interactor.Enable()
-        # if self.vtk_view:
-        #     rw = self.vtk_view.GetRenderWindow()
-        #     if rw:
-        #         rw.Render()  # fuerza redibujado

@@ -28,15 +28,23 @@ class Average_plugin(IPlugin):
         print("Inicializando Average")
 
     def process(self, data: any):
-        print(f"Average recibió datos: {data}")
-        if self.mainwin:
-            # ejemplo: mostrar mensaje en statusBar (si existe)
-            try:
-                self.mainwin.statusBar().showMessage(f"Average procesó: {data}", 3000)
-            except Exception:
-                pass
+        if self.vtk_widget:
+            self.vtk_widget.Enable()
 
-            
+        # print(f"Average recibió datos: {data}")
+        # if self.mainwin:
+        #     # ejemplo: mostrar mensaje en statusBar (si existe)
+        #     try:
+        #         self.mainwin.statusBar().showMessage(f"Average procesó: {data}", 3000)
+        #     except Exception:
+        #         pass
+
+    def stop(self):
+        print("Deteniendo Average")
+
+        if self.vtk_widget:
+            self.vtk_widget.Disable()
+
 
     def start(self, kernel):
         print("Iniciando Average")
@@ -45,9 +53,6 @@ class Average_plugin(IPlugin):
             self.started = True
             print("Average tiene acceso a MainWindow")        
 
-    def stop(self):
-        print("Deteniendo Average")
-        self.mainwin = None
 
     def get_widget(self, parent=None):
         if self.widget is None:

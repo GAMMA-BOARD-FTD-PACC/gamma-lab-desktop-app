@@ -134,7 +134,14 @@ class MainWindow(QMainWindow):
     # Clean workspace
     def clear_plugin_area(self):
         if self.active_plugin_widget and self.active_plugin:
-            self.active_plugin.stop()
+            try:
+                self.active_plugin.stop()
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Error al detener el plugin",
+                    f"Ocurrió un error al detener el VTK render del plugin .\n\nDetalles:\n{str(e)}"
+                )
             self.active_plugin_widget.setVisible(False)
 
         self.active_plugin_widget = None
@@ -143,11 +150,10 @@ class MainWindow(QMainWindow):
 
     # Intertar el widget de un plugin activo en el espacio de trabajo
     def show_plugin_widget(self, plugin):
-        if hasattr(plugin, "resume"):
-            try:
-                plugin.resume()
-            except Exception as e:
-                print("Error al reanudar plugin:", e)
+        try:
+            plugin.process(None)
+        except Exception as e:
+            print("Error al reanudar plugin:", e)
         
         if plugin is None:
             return
