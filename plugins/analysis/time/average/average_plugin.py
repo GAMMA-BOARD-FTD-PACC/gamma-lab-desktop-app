@@ -1,13 +1,16 @@
 from pathlib import Path
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
+from core.plugins.vtk_context_menu import VTKContextMenu
 from core.services.data_store import DataStore
 from core.services.signal_dataset import SignalDataset
 from plugins.analysis.time.average.average_plugin_ui import Ui_Average
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QMessageBox
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QMessageBox, QMenu
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 import vtk
 import numpy as np
+from PyQt5.QtCore import Qt
+
 
 class Average_plugin(IPlugin):
     def __init__(self, meta:PluginMeta):
@@ -149,9 +152,10 @@ class Average_plugin(IPlugin):
         table.AddColumn(arr_time)
         table.AddColumn(arr_sig)
 
-        # Chart + actor (igual patrón que ERP)
+        # Chart + actor 
         chart = vtk.vtkChartXY()
         scene.AddItem(chart)
+
 
         # Dibujar línea
         plot = chart.AddPlot(vtk.vtkChart.LINE)
@@ -168,6 +172,18 @@ class Average_plugin(IPlugin):
         chart.GetAxis(vtk.vtkAxis.LEFT).SetTitle(unit or "Amplitude")
         chart.SetTitle(f"Average - {channel_name or ''}")
 
+        # --- Menú contextual---
+    
+        try:
+            self.vtk_menu = VTKContextMenu(chart, self.vtk_widget, parent=self.widget)
+
+        except Exception as e:
+            QMessageBox.information(self.widget, "Menú contextal", "Error creando el menú contextual.\n" + str(e))
+            
+        # Agregar acción personalizada (por ejemplo: mostrar estadísticas)
+        self.vtk_menu.add_action("Mostrar estadísticas", self.on_show_stats)   
+
+
         # Forzar render
         try:
             self.view.GetRenderWindow().Render()
@@ -178,6 +194,10 @@ class Average_plugin(IPlugin):
             except Exception:
                 pass
 
+    
+    def on_show_stats(self):
+        # Acción personalizada del plugin Average
+        QMessageBox.information(self.widget, "Estadísticas", "Promedio calculado correctamente.")
 
     def ensure_vtk(self):
         """Crea e inicializa los widgets VTK y las vistas (context view)."""
@@ -193,14 +213,8 @@ class Average_plugin(IPlugin):
         # ContextView (facilita charting)
         self.view = vtk.vtkContextView()
         self.view.SetRenderWindow(self.vtk_widget.GetRenderWindow())
-        # Fondo 
-        try:
-            self.view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
-        except Exception:
-            pass
+        self.view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
+        self.vtk_widget.Initialize()
 
-        # Inicializar interactores (evita errores en algunos SO)
-        try:
-            self.vtk_widget.Initialize()
-        except Exception:
-            pass
+
+   
