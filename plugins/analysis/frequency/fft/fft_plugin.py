@@ -8,6 +8,7 @@ from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
+from core.plugins.vtk_context_menu import VTKContextMenu
 from plugins.analysis.frequency.fft.fft_plugin_ui import Ui_Fft
 from core.vtk_adapters.adapters import trials_matrix_to_vtk_table
 
@@ -41,11 +42,15 @@ class Fft_plugin(IPlugin):
 
     def stop(self):
         self._log("stop() - cleanup VTK")
-        self._cleanup_vtk()
-        self.mainwin = None
+        #self._cleanup_vtk()
+        if self.vtk_interactor:
+            self.vtk_interactor.Disable()
         
     def process(self, data):
-        self._log(f"process(): {data}")
+        if self.vtk_interactor:
+            self.vtk_interactor.Enable()
+
+        self._log(f"[FFT] Process: enable {data}")
 
     def get_widget(self, parent=None):
         if self.widget is None:
@@ -98,26 +103,6 @@ class Fft_plugin(IPlugin):
             pass
         self._log("ensure_vtk(): scheduled init")
 
-
-    def _cleanup_vtk(self):
-        self._log("cleanup_vtk()")
-        try:
-            if self.vtk_interactor:
-                rw = self.vtk_interactor.GetRenderWindow()
-                if rw:
-                    iren = rw.GetInteractor()
-                    if iren:
-                        try: iren.TerminateApp()
-                        except Exception: pass
-                    try: rw.Finalize()
-                    except Exception: pass
-                self.vtk_interactor.SetRenderWindow(None)
-        except Exception as e:
-            self._log("cleanup_vtk error:", e)
-        finally:
-            self.vtk_interactor = None
-            self.vtk_view = None
-            self.chart = None
 
     # ------- acciones (placeholder) -------
     def _on_calculate_clicked(self):
@@ -263,5 +248,14 @@ class Fft_plugin(IPlugin):
             plot = self.chart.AddPlot(vtk.vtkChart.LINE)
             plot.SetInputData(table, 0, c)
             plot.SetWidth(0.5)
+
+         # --- Menú contextual---
+    
+        try:
+            self.vtk_menu = VTKContextMenu(self.chart, self.vtk_interactor, parent=self.widget)
+
+        except Exception as e:
+            QMessageBox.information(self.widget, "Menú contextal", "Error creando el menú contextual.\n" + str(e))
+     
 
         self.vtk_view.GetRenderWindow().Render()
