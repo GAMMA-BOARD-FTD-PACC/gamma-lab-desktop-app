@@ -162,6 +162,7 @@ class TrialsPlugin(IPlugin):
         try:
             store: DataStore | None = self.kernel.get_service("DataStore")
             ds = store.get_active_signal() if store else None
+            self._active_ds = ds
             self._log("_get_active_signal:", "ok" if ds else "None")
             return ds
         except Exception as e:
@@ -425,7 +426,7 @@ class TrialsPlugin(IPlugin):
         
         #menu global
         try:
-            self.vtk_menu = VTKContextMenu(self.chart, self.vtk_interactor, parent=self.widget)
+            self.vtk_menu = VTKContextMenu(self.chart, self.vtk_interactor, self._active_ds.name, ch_name, self.meta.id, parent=self.widget)
 
         except Exception as e:
             QMessageBox.information(self.widget, "Menú contextal", "Error creando el menú contextual.\n" + str(e))

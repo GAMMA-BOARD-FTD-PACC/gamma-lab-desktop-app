@@ -9,6 +9,7 @@ from PyQt5.QtWidgets import QMessageBox
 
 from core.plugins.meta import PluginMeta
 from core.plugins.vtk_context_menu import VTKContextMenu
+from core.services.signal_dataset import SignalDataset
 from core.vtk_adapters.adapters import trials_matrix_to_vtk_table
 from plugins.analysis.frequency.fft_average.fft_average_plugin_ui import Ui_Fft_Average
 
@@ -24,6 +25,8 @@ class Fft_average_plugin(IPlugin):
         self.vtk_interactor: QVTKRenderWindowInteractor | None = None
         self.vtk_view: vtk.vtkContextView | None = None
         self.chart: vtk.vtkChartXY | None = None
+
+        self.active_signal: SignalDataset | None = None
         
     def initialize(self, kernel):
         self.kernel = kernel
@@ -151,12 +154,12 @@ class Fft_average_plugin(IPlugin):
             QMessageBox.warning(self.widget, "Error", "No se encontró el DataStore.")
             return None, None, None
 
-        sig = store.get_active_signal()
-        if not sig or not getattr(sig, "trials_dataset", None):
+        self.active_signal = store.get_active_signal()
+        if not self.active_signal or not getattr(self.active_signal, "trials_dataset", None):
             self._log("No hay señal activa o no tiene TrialDataset.")
             return None, None, None
 
-        td = sig.trials_dataset[-1] 
+        td = self.active_signal.trials_dataset[-1] 
         fs = float(getattr(td, "sampling_rate", 0.0))
         X  = np.asarray(getattr(td, "trials", None), dtype=np.float64)  # (Ns, T)
         ch = getattr(td, "channel_name", "")
@@ -263,7 +266,7 @@ class Fft_average_plugin(IPlugin):
            # --- Menú contextual---
     
         try:
-            self.vtk_menu = VTKContextMenu(self.chart, self.vtk_interactor, parent=self.widget)
+            self.vtk_menu = VTKContextMenu(self.chart, self.vtk_interactor, self.active_signal.name, ch_name,self.meta.id,  parent=self.widget)
 
         except Exception as e:
             QMessageBox.information(self.widget, "Menú contextal", "Error creando el menú contextual.\n" + str(e))
