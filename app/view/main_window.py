@@ -133,7 +133,15 @@ class MainWindow(QMainWindow):
 
     # Clean workspace
     def clear_plugin_area(self):
-        if self.active_plugin_widget:
+        if self.active_plugin_widget and self.active_plugin:
+            try:
+                self.active_plugin.stop()
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Error al detener el plugin",
+                    f"Ocurrió un error al detener el VTK render del plugin .\n\nDetalles:\n{str(e)}"
+                )
             self.active_plugin_widget.setVisible(False)
 
         self.active_plugin_widget = None
@@ -142,6 +150,11 @@ class MainWindow(QMainWindow):
 
     # Intertar el widget de un plugin activo en el espacio de trabajo
     def show_plugin_widget(self, plugin):
+        try:
+            plugin.process(None)
+        except Exception as e:
+            print("Error al reanudar plugin:", e)
+        
         if plugin is None:
             return
 
@@ -209,7 +222,7 @@ class MainWindow(QMainWindow):
             self.show_plugin_widget(plugin)
             if hasattr(plugin, "process"):
                 try:
-                    plugin.process("Hola desde MainWindow")
+                    plugin.process("Ventana abierta")
                 except Exception as e:
                     print("Error en process del plugin:", e)
         else:
@@ -228,9 +241,11 @@ class MainWindow(QMainWindow):
             self.update_signal_list()
 
     def setup_sidebar_functionality(self):
+        sidebar = self.ui.widget_3
+        sidebar.setMaximumWidth(250)
         """Inicializa y conecta todas las funciones de la barra lateral."""
         # Collapse de la barra lateral
-        self.ui.collapse_explorer_btn.clicked.connect(self.toggle_sidebar_collapse)
+        self.ui.collapse_explorer_btn.clicked.connect(lambda: self.toggle_sidebar_collapse(sidebar))
         self.ui.collapse_explorer_btn.setIcon(QIcon("assets/icons/home/icn_collapse.png"))
 
         self.update_signal_list()
@@ -242,18 +257,18 @@ class MainWindow(QMainWindow):
         self.setup_calculus_section()
         self.setup_results_section()
 
-
     # Comprimir y expandir la barra lateral
-    def toggle_sidebar_collapse(self):
-        """Colapsa o expande el panel lateral izquierdo con íconos y animación."""
-        sidebar = self.ui.widget_3
+    def toggle_sidebar_collapse(self, sidebar):
+        
         current_width = sidebar.width()
 
-        # --- Si está expandida ---
         if current_width > 0:
             self._last_sidebar_width = current_width
 
-            # Animación de colapso suave
+            # Permitir colapso total
+            sidebar.setMinimumWidth(0)
+
+            # Animación de colapso
             self._sidebar_animation = QPropertyAnimation(sidebar, b"maximumWidth")
             self._sidebar_animation.setDuration(250)
             self._sidebar_animation.setStartValue(current_width)
@@ -263,10 +278,11 @@ class MainWindow(QMainWindow):
 
             self.ui.collapse_explorer_btn.setIcon(QIcon("assets/icons/home/icn_expand.png"))
 
-
-        # --- Si está colapsada ---
         else:
             width = getattr(self, "_last_sidebar_width", 250)
+
+            # Restaurar ancho y límite mínimo
+            sidebar.setMinimumWidth(100)
 
             # Animación de expansión
             self._sidebar_animation = QPropertyAnimation(sidebar, b"maximumWidth")
@@ -276,9 +292,9 @@ class MainWindow(QMainWindow):
             self._sidebar_animation.setEasingCurve(QEasingCurve.InOutCubic)
             self._sidebar_animation.start()
 
-            # Cambiar ícono de nuevo
             self.ui.collapse_explorer_btn.setIcon(QIcon("assets/icons/home/icn_collapse.png"))
-    
+
+
     def on_signal_selected(self):
         """
         Se ejecuta cuando el usuario cambia la señal seleccionada en el comboBox.

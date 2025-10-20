@@ -20,6 +20,11 @@ class Ui_ErpPlot(QtWidgets.QWidget):
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(8)
 
+        # ====== Splitter principal (horizontal) ======
+        self.main_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal, self)
+        self.main_splitter.setObjectName("main_splitter")
+        root.addWidget(self.main_splitter)
+
         # ====== Centro: QSplitter con 2 zonas de gráficos ======
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical, self)
         self.splitter.setObjectName("splitterPlots")
@@ -37,7 +42,8 @@ class Ui_ErpPlot(QtWidgets.QWidget):
         self.heatmapPlot.setMinimumHeight(220)
 
         self.splitter.setSizes([350, 250])
-        root.addWidget(self.splitter, 1)  # expansible
+        #root.addWidget(self.splitter, 1)  # expansible
+
 
         # ====== Derecha: Panel de parámetros ======
         self.panel = QtWidgets.QFrame(self)
@@ -127,12 +133,30 @@ class Ui_ErpPlot(QtWidgets.QWidget):
 
         # --- Plot button ---
         self.btnPlot = QtWidgets.QPushButton("Plot ERP", self.panel)
-        self.btnPlot.setObjectName("btnPlot")
+        self.btnPlot.setObjectName("mainActionButton")
+
+       # self.btnPlot.setObjectName("btnPlot")
         self.btnPlot.setMinimumHeight(36)
         panelLay.addWidget(self.btnPlot)
 
         panelLay.addStretch(1)
-        root.addWidget(self.panel, 0)  # no expansible principal
+        #root.addWidget(self.panel, 0)  # no expansible principal
+        self.main_splitter.addWidget(self.splitter)
+
+
+        self.panel.setMinimumWidth(250)
+        # self.panel.setMaximumWidth(600)
+        self.main_splitter.setSizes([1000, self.panel.minimumWidth()])
+
+
+        self.main_splitter.addWidget(self.splitter)
+        self.main_splitter.addWidget(self.panel)
+
+        
+        # Tamaños por defecto del splitter
+        self.main_splitter.setStretchFactor(0, 1)  # El VtkViewer (izquierda) se expande
+        self.main_splitter.setStretchFactor(1, 0)  # El panel derecho ocupa solo su tamaño mínimo
+
 
         self._wireDefaultState()
         self.retranslateUi()

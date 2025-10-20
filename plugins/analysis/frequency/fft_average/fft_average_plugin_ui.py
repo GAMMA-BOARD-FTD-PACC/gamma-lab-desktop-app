@@ -117,9 +117,13 @@ class Ui_Fft_Average(object):
 
         # Botón
         self.pushButton = QtWidgets.QPushButton(self.panel)
-        self.pushButton.setObjectName("pushButton")
+        self.pushButton.setObjectName("mainActionButton")
         self.pushButton.setMinimumHeight(36)
         self.vbox.addWidget(self.pushButton)
+
+        self.splitter.setStretchFactor(0, 1)  # El VtkViewer (izquierda) se expande
+        self.splitter.setStretchFactor(1, 0)  # El panel derecho ocupa solo su tamaño mínimo
+
 
         self.retranslateUi(Form)
         QtCore.QMetaObject.connectSlotsByName(Form)

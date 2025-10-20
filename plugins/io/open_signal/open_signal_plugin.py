@@ -1,165 +1,287 @@
-# ui_plugin.py
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QFileDialog, QPushButton
+# plugins/io/open_signal/open_signal_plugin.py
+from pathlib import Path
+from PyQt5.QtWidgets import QMessageBox
+
+from PyQt5 import QtCore, QtWidgets
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 import vtk
-from pathlib import Path
+
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
+from core.plugins.vtk_context_menu import VTKContextMenu
 from core.services.data_store import DataStore
 from core.services.fileio import FileIOService
 from core.services.signal_dataset import SignalDataset
 from core.vtk_adapters.adapters import dataset_to_vtk_table
 
+from plugins.io.open_signal.open_signal_ui import Ui_OpenSignal
+
 
 class OpenSignalPlugin(IPlugin):
+    MAX_CHANNELS_VISIBLE = 3
+
     def __init__(self, meta: PluginMeta):
         super().__init__(meta)
         self.kernel = None
         self.mainwin = None
-        self.widget = None
-        self.vtk_widget = None
-        self.renwin = None
-        self.ds_key = "raw"
+
+        self.ui: Ui_OpenSignal | None = None
+        self.vtk_interactor: QVTKRenderWindowInteractor | None = None
+        self.vtk_view: vtk.vtkContextView | None = None
+
+        self.current_ds: SignalDataset | None = None
+        self._block_item_changed = False
+
+        self._charts: list[vtk.vtkChartXY] = []
+        self._vtk_table = None
+
+    # ---------------- utils/log ----------------
+    def _log(self, *args):
+        print("[OpenSignal]", *args)
 
     def initialize(self, kernel):
-        print(f"Inicializando {self.name()}") 
-
-    def process(self, data: any):
-        print(f"UIPlugin recibió datos: {data}")
+        self.kernel = kernel
+        self._log("initialize:", self.name())
 
     def start(self, kernel):
         self.kernel = kernel
-        print("Iniciando OpenSignalPlugin")
         self.mainwin = kernel.get_service("MainWindow")
-        
+        self._log("start")
 
     def stop(self):
-        print("Deteniendo UIPlugin")
+        if self.vtk_interactor:
+            self.vtk_interactor.Disable()
+
+    def process(self, data: any):
+        """Restaura renderización y vuelve a activar interacción."""
+        if self.vtk_interactor:
+            self.vtk_interactor.Enable()
 
     def get_widget(self, parent=None):
-        return self.build_widget(parent)
+        if self.ui is None:
+            self.ui = Ui_OpenSignal(parent)
+            self._ensure_vtk()
 
-    def build_widget(self, parent=None):
-        if self.widget is None:
-            self.widget = QWidget(parent)
-            layout = QVBoxLayout(self.widget)
+            self.ui.Btn_abrir_senal.clicked.connect(self._on_open_clicked)
+            self.ui.listChannels.itemChanged.connect(self._on_channel_item_changed)
 
-            # Botón abrir señal
-            btn = QPushButton("Seleccionar archivo ABF", self.widget)
-            btn.clicked.connect(self.on_open_clicked)
-            layout.addWidget(btn)
+            if hasattr(self.ui, "splitter"):
+                self.ui.splitter.splitterMoved.connect(lambda *_: self._relayout_charts())
 
-            # VTK Widget
-            self.vtk_widget = QVTKRenderWindowInteractor(self.widget)
-            layout.addWidget(self.vtk_widget)
-
-            self.renwin = self.vtk_widget.GetRenderWindow()
-            try:
-                self.vtk_widget.Initialize()
-            except Exception:
-                pass
-
+            store: DataStore | None = self.kernel.get_service("DataStore")
+            if store and store.get_active_signal() is not None:
+                self._set_dataset(store.get_active_signal())
         else:
-            self.widget.setParent(parent)
-        return self.widget
+            self.ui.setParent(parent)
+        return self.ui
+
+    def _ensure_vtk(self):
+        """Embeddear un QVTKRenderWindowInteractor y usar vtkContextView (charts)."""
+        self._log("ensure_vtk(): enter")
+
+        container = self.ui.vtkContainer
+        if container.layout() is None:
+            lay = QtWidgets.QVBoxLayout(container)
+            lay.setContentsMargins(0, 0, 0, 0)
+            lay.setSpacing(0)
+
+        self.vtk_interactor = QVTKRenderWindowInteractor(container)
+        container.layout().addWidget(self.vtk_interactor)
+        self._log("ensure_vtk(): interactor embebido")
+
+        _orig_resize = self.vtk_interactor.resizeEvent
+        def _resize_wrapper(ev):
+            _orig_resize(ev)              
+            self._relayout_charts()        
+        self.vtk_interactor.resizeEvent = _resize_wrapper  
+
+        self.vtk_view = vtk.vtkContextView()
+        self.vtk_view.SetRenderWindow(self.vtk_interactor.GetRenderWindow())
+        self.vtk_view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
+
+        # Crear menú contextual (sin chart al inicio)
+        try:
+            self.vtk_menu = VTKContextMenu(None, self.vtk_interactor, parent=self.ui)
+        except Exception as e:
+            self.vtk_menu = None
+            QMessageBox.information(self.ui, "Menú contextual", "Error creando el menú contextual.\n" + str(e))
 
 
-    def on_open_clicked(self):
-        fname, _ = QFileDialog.getOpenFileName(
-            self.widget,
+        try:
+            self.vtk_interactor.Initialize()
+        except Exception:
+            pass
+        self._log("ensure_vtk(): scheduled init")
+
+    # ---------------- archivo / datos ----------------
+    def _on_open_clicked(self):
+        fname, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self.ui,
             "Seleccionar archivo de señal",
             "",
             "Señales (*.abf *.edf *.ebf *.mat);;Archivos ABF (*.abf);;Archivos EDF (*.edf);;Archivos EBF (*.ebf);;Archivos MAT (*.mat)"
         )
-        if fname:
-            self.load_and_render(fname)
-            
-    def load_and_render(self, path: str):
-        fileio: FileIOService = self.kernel.get_service("FileIO")
+        if not fname:
+            return
+
+        fileio: FileIOService | None = self.kernel.get_service("FileIO")
         if fileio is None:
             fileio = FileIOService()
             self.kernel.register_service("FileIO", fileio)
 
-        ext = Path(path).suffix.lower()
+        ext = Path(fname).suffix.lower()
         if ext == ".abf":
-            ds = fileio.load_abf(path)
+            ds = fileio.load_abf(fname)
         elif ext == ".edf":
-            ds = fileio.load_edf(path)
+            ds = fileio.load_edf(fname)
         else:
-            # Puedes mostrar un mensaje de error si lo deseas
             if self.mainwin:
                 self.mainwin.statusBar().showMessage(f"Formato no soportado: {ext}", 4000)
             return
 
-        # Guarda y pinta como antes
-        store: DataStore = self.kernel.get_service("DataStore")
-        #Registrar el servicio de DataStore
+        store: DataStore | None = self.kernel.get_service("DataStore")
         if store is None:
             store = DataStore()
             self.kernel.register_service("DataStore", store)
-        
-        #usar el método de datastore para almacenar una señal cruda
-        file_name = Path(path).name
-        key = store.add_signal(ds, file_name)
-        print(f"[OpenSignal] Guardado en DataStore: {key}")
 
-        #emitir evento de registro de señal
+        key = store.add_signal(ds, ds.name)
+        self._log("Guardado en DataStore:", key)
         self.kernel.emit_event("signal_added", {"key": key})
+        store.set_active_signal(key)
 
-        if store.get_active_signal_key() is None:
-            store.set_active_signal(key)
-
-        self.render_dataset(ds)
+        self._set_dataset(ds)
         if self.mainwin:
-            self.mainwin.statusBar().showMessage(f"Cargado: {path}", 4000)
+            self.mainwin.statusBar().showMessage(f"Cargado: {fname}", 4000)
 
+    def _set_dataset(self, ds: SignalDataset):
+        self.current_ds = ds
+        self._populate_channel_list(ds)
+        self._vtk_table = dataset_to_vtk_table(ds)
+        self._render_selected()
 
-    # render
-    def render_dataset(self, ds: SignalDataset):
-        self.renwin.GetRenderers().RemoveAllItems()
+    def _populate_channel_list(self, ds: SignalDataset):
+        lw = self.ui.listChannels
+        self._block_item_changed = True
+        lw.clear()
 
-        MIN_PLOT_HEIGHT_PX = 250  
-        h = max(1, self.vtk_widget.height())
-        avail_h = max(1, h - 8)
-        max_visible = max(1, avail_h // MIN_PLOT_HEIGHT_PX)
-        C_total = ds.signals.shape[0]
-        C = min(C_total, int(max_visible))
+        names = list(ds.channel_names) if getattr(ds, "channel_names", None) else [
+            f"ch-{i+1}" for i in range(ds.signals.shape[0])
+        ]
+        for i, name in enumerate(names):
+            it = QtWidgets.QListWidgetItem(name)
+            it.setFlags(it.flags() | QtCore.Qt.ItemIsUserCheckable)
+            it.setCheckState(QtCore.Qt.Checked if i < self.MAX_CHANNELS_VISIBLE else QtCore.Qt.Unchecked)
+            it.setData(QtCore.Qt.UserRole, i)
+            lw.addItem(it)
+
+        self._block_item_changed = False
+
+    def _checked_indices(self):
+        out = []
+        lw = self.ui.listChannels
+        for i in range(lw.count()):
+            it = lw.item(i)
+            if it.checkState() == QtCore.Qt.Checked:
+                out.append(int(it.data(QtCore.Qt.UserRole)))
+        return out
+
+    def _on_channel_item_changed(self, item: QtWidgets.QListWidgetItem):
+        if self._block_item_changed:
+            return
+        checked = self._checked_indices()
+        if len(checked) > self.MAX_CHANNELS_VISIBLE:
+            self._block_item_changed = True
+            item.setCheckState(QtCore.Qt.Unchecked)
+            self._block_item_changed = False
+            if self.mainwin:
+                self.mainwin.statusBar().showMessage(f"Máximo {self.MAX_CHANNELS_VISIBLE} canales visibles.", 2500)
+            return
+        self._render_selected()
+
+    # ---------------- layout helpers ----------------
+    def _relayout_charts(self):
+        """Reposiciona charts con separación suficiente para que se vean los ejes."""
+        if not self.vtk_view or not self._charts:
+            return
+
+        rw = self.vtk_view.GetRenderWindow()
+        w, h = rw.GetSize()
+        if w <= 0 or h <= 0:
+            return
+
+        left_margin, right_margin = 8, 8
+        top_margin, bottom_margin = 10, 12
+        gap = 40            # espacio entre charts
+        min_row_h = 150
+
+        rows = len(self._charts)
+        inner_h = max(1, h - top_margin - bottom_margin - gap * (rows - 1))
+        row_h = max(min_row_h, inner_h // rows)
+
+        y = float(h - top_margin - row_h)
+        for chart in self._charts:
+            chart.SetAutoSize(False)
+            chart.SetSize(vtk.vtkRectf(
+                float(left_margin),
+                float(y),
+                float(w - left_margin - right_margin),
+                float(row_h)
+            ))
+            y -= (row_h + gap)
+
+        for chart in self._charts:
+            ax_b = chart.GetAxis(vtk.vtkAxis.BOTTOM)
+            ax_b.SetLabelsVisible(True)
+            ax_b.SetTitle("Time (s)")
+
+        rw.Render()
+
+    def _render_selected(self):
+        if self.current_ds is None or self.vtk_view is None:
+            return
+
+        ds = self.current_ds
+        scene = self.vtk_view.GetScene()
+        scene.ClearItems()
+        self._charts.clear()
+
         
-        table = dataset_to_vtk_table(ds)
-        colors = vtk.vtkNamedColors()
-        
-        for idx, ch in enumerate(range(C)):
-            vmin = float(C - (idx + 1)) / C
-            vmax = float(C - idx) / C
 
-            renderer = vtk.vtkRenderer()
-            renderer.SetBackground(colors.GetColor3d("WhiteSmoke"))
-            renderer.SetViewport(0.0, vmin, 1.0, vmax)
-            self.renwin.AddRenderer(renderer)
+        sel = self._checked_indices()
+        if not sel:
+            self.vtk_view.GetRenderWindow().Render()
+            return
 
+        table = self._vtk_table if self._vtk_table is not None else dataset_to_vtk_table(ds)
+
+        for ch in sel:
             chart = vtk.vtkChartXY()
-            scene = vtk.vtkContextScene()
-            actor = vtk.vtkContextActor()
             scene.AddItem(chart)
-            actor.SetScene(scene)
-            renderer.AddActor(actor)
-            scene.SetRenderer(renderer)
-
-            title = ds.channel_names[ch] if ch < len(ds.channel_names) else f"ch{ch}"
-            chart.SetTitle(title)
+            self._charts.append(chart)
 
             plot = chart.AddPlot(vtk.vtkChart.LINE)
-            plot.SetInputData(table, 0, ch + 1) 
-            plot.SetColor(*colors.GetColor4ub("Black"))
-            plot.SetWidth(0.5)
-            
-            chart.GetAxis(0).SetTitle("Time (s)")
-            chart.GetAxis(1).SetTitle(ds.units[1] or "Amplitude")
+            plot.SetInputData(table, 0, ch + 1)
+            plot.SetWidth(0.8)
 
-        if C_total > C and self.mainwin:
-                self.mainwin.statusBar().showMessage(
-                    f"Mostrando {C} de {C_total} canales (alto mínimo {MIN_PLOT_HEIGHT_PX}px).",
-                    5000
-                )
-        
-        self.renwin.Render()
+            name = ds.channel_names[ch] if ch < len(ds.channel_names) else f"ch{ch}"
+            chart.SetTitle(name)
+
+            ax_b = chart.GetAxis(vtk.vtkAxis.BOTTOM)
+            ax_l = chart.GetAxis(vtk.vtkAxis.LEFT)
+            ax_b.SetGridVisible(True)
+            ax_l.SetGridVisible(True)
+
+            # Mostrar labels y título de X en todos
+            ax_b.SetLabelsVisible(True)
+            ax_b.SetTitle("Time (s)")
+
+            unit = "Amplitude"
+            if ch < len(ds.units) and ds.units[ch]:
+                unit = ds.units[ch]
+            ax_l.SetTitle(unit)
+
+        self._relayout_charts()
+
+        if self.vtk_menu and self._charts:
+            # Por ahora usamos el primer chart visible
+            self.vtk_menu.set_chart(self._charts)
