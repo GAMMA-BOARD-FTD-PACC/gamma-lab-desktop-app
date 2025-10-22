@@ -162,6 +162,7 @@ class TrialsPlugin(IPlugin):
         try:
             store: DataStore | None = self.kernel.get_service("DataStore")
             ds = store.get_active_signal() if store else None
+            self._active_ds = ds
             self._log("_get_active_signal:", "ok" if ds else "None")
             return ds
         except Exception as e:

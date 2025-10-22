@@ -151,6 +151,9 @@ class OpenSignalPlugin(IPlugin):
         store.set_active_signal(key)
 
         self._set_dataset(ds)
+
+        self.vtk_menu.set_signal_name(ds.name)
+
         if self.mainwin:
             self.mainwin.statusBar().showMessage(f"Cargado: {fname}", 4000)
 

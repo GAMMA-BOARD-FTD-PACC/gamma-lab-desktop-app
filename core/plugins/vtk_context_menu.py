@@ -1,11 +1,12 @@
-from PyQt5.QtWidgets import QMenu, QMessageBox, QApplication, QToolTip
-from PyQt5.QtGui import QCursor
+
+from datetime import datetime
+from PyQt5.QtWidgets import QMenu, QAction, QMessageBox, QApplication, QFileDialog, QToolTip
 from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QCursor
 from vtk import vtkChartXY, vtkTable, vtkPen, vtkFloatArray, vtkChart
 import math
 import itertools
 import bisect
-from datetime import datetime  # <-- NUEVO
 
 from core.filters.measurements import two_point_metrics
 
@@ -20,8 +21,22 @@ try:
 except Exception:
     vtkDataObject = None
 
+import csv
+import json
+import csv
+import os
+import vtk
+import pandas as pd
+
 
 class VTKContextMenu:
+    """
+    Menú contextual general para vistas basadas en VTK.
+    Incluye zoom configurable, atajos de teclado (Ctrl/Shift + rueda)
+    y permite registrar acciones personalizadas desde los plugins.
+    """
+    last_export_dir = os.getcwd()
+    
     _PALETTE = [
         (220, 20, 60), (30, 144, 255), (50, 205, 50), (255, 140, 0),
         (148, 0, 211), (0, 191, 255), (255, 99, 71), (0, 128, 128),
@@ -29,11 +44,13 @@ class VTKContextMenu:
     _CLICK_EPS = 8
     _PICK_RADIUS_PX = 10
 
-    def __init__(self, chart, vtk_widget, parent=None):
+    def __init__(self, chart: vtkChartXY, vtk_widget, singal_name=None, channel_name=None, plugin_name=None, parent=None):
         self.chart = chart
         self.vtk_widget = vtk_widget
         self.parent = parent
-
+        self.signal_name = singal_name
+        self.chanel_name = channel_name
+        self.plugin_name = plugin_name
         self.custom_actions = []
 
         # Estado medición
@@ -87,6 +104,14 @@ class VTKContextMenu:
     def _active_chart(self):
         return (self.chart[0] if isinstance(self.chart, list) and self.chart
                 else self.chart)
+    def set_signal_name(self, name):
+        self.signal_name = name
+    
+    def set_channel_name(self, name):
+        self.chanel_name = name
+    
+    def set_plugin_name(self, name):
+        self.plugin_name = name
 
     def set_chart(self, chart):
         self.chart = chart
@@ -170,6 +195,24 @@ class VTKContextMenu:
         measure_menu.addAction("Eliminar última medición", self.remove_last_measurement)
         measure_menu.addAction("Eliminar todas las mediciones", self.clear_all_measurements)
 
+        # Sección para exportar
+        menu.addSeparator()
+        export_img_menu = menu.addMenu("Export as image")
+        export_img_menu.addAction("png", lambda: self.export_image("png"))
+        export_img_menu.addAction("jpg", lambda: self.export_image("jpg"))
+        export_img_menu.addAction("jpegpg", lambda: self.export_image("jpeg"))
+        export_img_menu.addAction("bmp", lambda: self.export_image("bmp"))
+        export_img_menu.addAction("tiff", lambda: self.export_image("tiff"))
+
+        export_table_menu = menu.addMenu("Exportar tabla")
+        export_table_menu.addAction("csv", lambda: self.export_table("csv"))
+        export_table_menu.addAction("json", lambda: self.export_table("json"))
+        export_table_menu.addAction("xlsx", lambda: self.export_table("xlsx"))
+
+        export_table_menu.addAction("Exportar tabla")
+
+
+        # Acciones personalizadas
         if self.custom_actions:
             menu.addSeparator()
             for text, cb in self.custom_actions:
@@ -177,7 +220,179 @@ class VTKContextMenu:
 
         menu.exec_(self.vtk_widget.mapToGlobal(pos))
 
-    # ---------- zoom helpers ----------
+    #Funciones para exportar
+
+    def export_image(self, format: str, filename: str = None):
+        """
+        Exporta el contenido actual del widget VTK como imagen.
+        Abre un diálogo para que el usuario elija la carpeta y el nombre final.
+        :param format: Formato ('png', 'jpg', 'bmp', 'tiff')
+        :param filename: Ruta completa opcional (si se pasa, no se abre diálogo)
+        """
+        try:
+
+            # Generar nombre sugerido
+            if self.chanel_name:
+                base_name = f"{self.signal_name}_{self.chanel_name}_{self.plugin_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{format}"
+            else:
+                base_name = f"{self.signal_name}_{self.plugin_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{format}"
+
+
+            initial_path = os.path.join(VTKContextMenu.last_export_dir or os.getcwd(), base_name)
+
+            # Si no se da filename, abrir diálogo
+            if not filename:
+                
+                file_filter = f"Imagen (*.{format})"
+                filename, _ = QFileDialog.getSaveFileName(
+                    self.parent,
+                    "Guardar imagen como...",
+                    initial_path,
+                    file_filter
+                )
+
+                # Si el usuario canceló
+                if not filename:
+                    return
+            
+            # Guardar la carpeta usada como última ruta
+            VTKContextMenu.last_export_dir = os.path.dirname(filename)
+
+            # Obtener la ventana VTK
+            window = self.vtk_widget.GetRenderWindow()
+
+            # Capturar contenido del render
+            w2i = vtk.vtkWindowToImageFilter()
+            w2i.SetInput(window)
+            w2i.Update()
+
+            # Seleccionar writer según formato
+            ext = format if format != "jpeg" else "jpg"
+            if ext == "png":
+                writer = vtk.vtkPNGWriter()
+            elif ext in ["jpg", "jpeg"]:
+                writer = vtk.vtkJPEGWriter()
+            elif ext == "bmp":
+                writer = vtk.vtkBMPWriter()
+            elif ext in ["tiff", "tif"]:
+                writer = vtk.vtkTIFFWriter()
+            else:
+                QMessageBox.warning(self.parent, "Error", f"Formato '{format}' no soportado.")
+                return
+
+            writer.SetFileName(filename)
+            writer.SetInputConnection(w2i.GetOutputPort())
+            writer.Write()
+
+            QMessageBox.information(
+                self.parent,
+                "Exportación exitosa",
+                f"Imagen exportada correctamente {base_name}"
+            )
+
+        except Exception as e:
+            QMessageBox.warning(self.parent, "Error al exportar imagen", str(e))
+
+    def export_table(self,  fmt: str, filename: str = None):
+        """
+        Exporta los datos de las series del vtkChartXY a un archivo CSV, XLSX o JSON.
+        Cada serie se guarda con sus valores X e Y.
+        
+        Parámetros:
+            filename (str): ruta de archivo opcional
+            fmt (str): formato de salida ("csv", "xlsx", "json")
+        """
+        try:
+            charts = self._get_charts()
+            if not charts:
+                QMessageBox.warning(self.parent, "Error", "No hay gráficos para exportar.")
+                return
+
+            chart = charts[0]
+            if chart.GetNumberOfPlots() == 0:
+                QMessageBox.warning(self.parent, "Error", "El gráfico no contiene datos para exportar.")
+                return
+
+
+            # Nombre base del archivo
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            base_name = (
+                f"{self.signal_name}_{self.chanel_name}_{self.plugin_name}_{timestamp}.{fmt}"
+                if self.chanel_name else
+                f"{self.signal_name}_{self.plugin_name}_{timestamp}.{fmt}"
+            )
+
+            initial_path = os.path.join(VTKContextMenu.last_export_dir or os.getcwd(), base_name)
+
+            # Diálogo si no se da filename
+            if not filename:
+                filters = {
+                    "csv": "Archivo CSV (*.csv)",
+                    "xlsx": "Archivo Excel (*.xlsx)",
+                    "json": "Archivo JSON (*.json)"
+                }
+                filename, _ = QFileDialog.getSaveFileName(
+                    self.parent,
+                    f"Guardar tabla como {fmt.upper()}...",
+                    initial_path,
+                    filters[fmt]
+                )
+                if not filename:
+                    return
+
+            # Guardar carpeta global
+            VTKContextMenu.last_export_dir = os.path.dirname(filename)
+
+            # Extraer datos de las series
+            data_rows = []
+            headers = []
+
+            for i in range(chart.GetNumberOfPlots()):
+                plot = chart.GetPlot(i)
+                table = plot.GetInput()
+                if table is None:
+                    continue
+
+                x_col = table.GetColumn(0)
+                y_col = table.GetColumn(1)
+                num_points = table.GetNumberOfRows()
+
+                series_name = plot.GetLabel() or f"Serie_{i + 1}"
+                headers.extend([f"{series_name}_X", f"{series_name}_Y"])
+
+                for row_idx in range(num_points):
+                    x_val = x_col.GetValue(row_idx)
+                    y_val = y_col.GetValue(row_idx)
+                    if len(data_rows) <= row_idx:
+                        data_rows.append([])
+                    data_rows[row_idx].extend([x_val, y_val])
+
+            # Guardar según formato
+            if fmt == "csv":
+                with open(filename, mode="w", newline="", encoding="utf-8") as file:
+                    writer = csv.writer(file)
+                    writer.writerow(headers)
+                    writer.writerows(data_rows)
+
+            elif fmt == "xlsx":
+                df = pd.DataFrame(data_rows, columns=headers)
+                df.to_excel(filename, index=False)
+
+            elif fmt == "json":
+                data_dict = [dict(zip(headers, row)) for row in data_rows]
+                with open(filename, "w", encoding="utf-8") as f:
+                    json.dump(data_dict, f, ensure_ascii=False, indent=4)
+
+            QMessageBox.information(
+                self.parent,
+                "Exportación exitosa",
+                f"Datos exportados correctamente a:\n{base_name}"
+            )
+
+        except Exception as e:
+            QMessageBox.warning(self.parent, "Error al exportar tabla", str(e))
+
+    # Funciones base de zoom
     def set_zoom_mode(self, mode):
         for ch in self._get_charts():
             if not ch: continue
