@@ -1,6 +1,7 @@
 # plugins/io/open_signal/open_signal_plugin.py
 from pathlib import Path
 from PyQt5.QtWidgets import QMessageBox
+import traceback
 
 from PyQt5 import QtCore, QtWidgets
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
@@ -130,13 +131,21 @@ class OpenSignalPlugin(IPlugin):
             self.kernel.register_service("FileIO", fileio)
 
         ext = Path(fname).suffix.lower()
-        if ext == ".abf":
-            ds = fileio.load_abf(fname)
-        elif ext == ".edf":
-            ds = fileio.load_edf(fname)
-        else:
-            if self.mainwin:
-                self.mainwin.statusBar().showMessage(f"Formato no soportado: {ext}", 4000)
+        try:
+            if ext == ".abf":
+                ds = fileio.load_abf(fname)
+            elif ext == ".edf":
+                ds = fileio.load_edf(fname)
+            elif ext == ".mat":
+                ds = fileio.load_mat(fname)
+            else:
+                if self.mainwin:
+                    self.mainwin.statusBar().showMessage(f"Formato no soportado: {ext}", 4000)
+                return
+        except Exception as e:
+            QMessageBox.warning(self.ui, "Error", f"Error abriendo el archivo {fname}\n{e}.")
+            self._log("_on_open_clicked error:", e)
+            traceback.print_exc()
             return
 
         store: DataStore | None = self.kernel.get_service("DataStore")

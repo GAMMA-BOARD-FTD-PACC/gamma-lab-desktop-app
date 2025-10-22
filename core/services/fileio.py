@@ -3,6 +3,8 @@ from .signal_dataset import SignalDataset
 import numpy as np
 import pyabf
 import pyedflib
+from scipy.io import loadmat
+import h5py
 
 class FileIOService:
     """Lectura de archivos. Cada loader retorna un SignalDataset."""
@@ -55,6 +57,7 @@ class FileIOService:
     
     
     def load_edf(self, file_path: str) -> SignalDataset:
+
         print(f"\n=== Cargando archivo EDF: {file_path} ===")
         edf = pyedflib.EdfReader(file_path)
 
@@ -129,3 +132,68 @@ class FileIOService:
 
         finally:
             edf.close()
+
+
+    def load_mat(self, file_path: str) -> SignalDataset:
+        """
+        Carga un archivo MATLAB (.mat) y lo convierte en un SignalDataset.
+        Soporta tanto formato clásico (scipy) como v7.3 (HDF5).
+        """
+        print(f"\n=== Cargando archivo MAT: {file_path} ===")
+
+        try:
+            # Intentar con formato clásico
+            mat_data = loadmat(file_path)
+            valid_keys = [k for k in mat_data.keys() if not k.startswith("__")]
+            print("Archivo cargado con scipy.io.loadmat")
+        except NotImplementedError:
+            with h5py.File(file_path, "r") as f:
+                print("Archivo .mat en formato HDF5 (v7.3). Cargando con h5py...")
+                keys = list(f.keys())
+                print(f"Variables encontradas (HDF5): {keys}")
+
+                # Filtrar canales numéricos válidos
+                channels = []
+                channel_names = []
+
+                for key in keys:
+                    data = f[key]
+                    if not isinstance(data, h5py.Dataset):
+                        continue
+
+                    arr = np.array(data)
+
+                    # Verificar si el dataset es numérico
+                    if np.issubdtype(arr.dtype, np.number):
+                        channels.append(arr.flatten())
+                        channel_names.append(key)
+                        print(f"  Canal {key}: {len(arr.flatten())} muestras")
+                    else:
+                        print(f"  ⚠️ Variable {key} ignorada (no numérica, tipo {arr.dtype})")
+
+                if not channels:
+                    raise ValueError("No se encontraron canales numéricos en el archivo .mat")
+
+                # Normalizar longitud (rellenar con NaN para igualar)
+                max_len = max(len(ch) for ch in channels)
+                padded = [np.pad(ch, (0, max_len - len(ch)), constant_values=np.nan) for ch in channels]
+                signals = np.stack(padded, axis=0)
+
+                # Generar eje de tiempo ficticio si no está presente
+                time_data = np.arange(max_len, dtype=float)
+                sampling_rate = 1.0  # desconocida
+
+                ds = SignalDataset(
+                    name=Path(file_path).name,
+                    format="mat",
+                    source_path=file_path,
+                    sampling_rate=sampling_rate,
+                    time=time_data,
+                    signals=signals,
+                    channel_names=channel_names,
+                    units=["a.u."] * len(channel_names),
+                    metadata={"variables": keys},
+                )
+
+                print("Archivo .mat procesado correctamente.")
+                return ds
