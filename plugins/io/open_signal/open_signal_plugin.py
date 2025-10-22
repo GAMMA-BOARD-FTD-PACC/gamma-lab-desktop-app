@@ -101,7 +101,8 @@ class OpenSignalPlugin(IPlugin):
 
         # Crear menú contextual (sin chart al inicio)
         try:
-            self.vtk_menu = VTKContextMenu(None, self.vtk_interactor, plugin_name=self.meta.id, parent=self.ui)
+            self.vtk_menu = VTKContextMenu(None, self.vtk_interactor, parent=self.ui)
+            self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
         except Exception as e:
             self.vtk_menu = None
             QMessageBox.information(self.ui, "Menú contextual", "Error creando el menú contextual.\n" + str(e))
