@@ -25,6 +25,7 @@ class Average_plugin(IPlugin):
 
 
     def initialize(self, kernel):
+        self.kernel = kernel
         print("Inicializando Average")
 
     def process(self, data: any):
@@ -48,6 +49,7 @@ class Average_plugin(IPlugin):
 
     def start(self, kernel):
         print("Iniciando Average")
+        self.kernel = kernel
         self.mainwin = kernel.get_service("MainWindow")
         if self.mainwin:
             self.started = True
@@ -181,6 +183,7 @@ class Average_plugin(IPlugin):
     
         try:
             self.vtk_menu = VTKContextMenu(chart, self.vtk_widget, parent=self.widget)
+            self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
 
         except Exception as e:
             QMessageBox.information(self.widget, "Menú contextal", "Error creando el menú contextual.\n" + str(e))

@@ -426,6 +426,7 @@ class TrialsPlugin(IPlugin):
         #menu global
         try:
             self.vtk_menu = VTKContextMenu(self.chart, self.vtk_interactor, parent=self.widget)
+            self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
 
         except Exception as e:
             QMessageBox.information(self.widget, "Menú contextal", "Error creando el menú contextual.\n" + str(e))
