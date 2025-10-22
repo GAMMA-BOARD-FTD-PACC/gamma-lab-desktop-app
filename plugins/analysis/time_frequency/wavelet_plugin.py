@@ -1,4 +1,5 @@
 from matplotlib import pyplot as plt
+from PyQt5.QtCore import Qt
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QMessageBox
@@ -61,17 +62,51 @@ class Wavelet_plugin(IPlugin):
             self.ui.setupUi(self.widget)
 
             # Parámetros iniciales de la interfaz
+            ## Densidad de muestreo
+            self.ui.sampleDensitySpinBox.setRange(1, 10000)
+            self.ui.sampleDensitySpinBox.setValue(1000)
+
+            # Frecuencias
             self.ui.highFrequencySpinBox.setRange(0, 10000)
             self.ui.highFrequencySpinBox.setValue(500)
 
             self.ui.lowFrequencySpinBox.setRange(0, 10000)
             self.ui.lowFrequencySpinBox.setValue(1)
 
+            # Tiempos
+            self.ui.startSpinBox.setRange(0, 1000)
+            self.ui.startSpinBox.setDecimals(2)
+            self.ui.startSpinBox.setSingleStep(0.1)
+            self.ui.startSpinBox.setValue(0)
+
+            self.ui.finalSpinBox.setRange(0, 1000)
+            self.ui.finalSpinBox.setDecimals(2)
+            self.ui.finalSpinBox.setSingleStep(0.1)
+            self.ui.finalSpinBox.setValue(2)
+
+            # Ciclos
             self.ui.cyclesSpinBox.setRange(1, 20)
             self.ui.cyclesSpinBox.setValue(2)
 
-            self.ui.sampleDensitySpinBox.setRange(1, 10000)
-            self.ui.sampleDensitySpinBox.setValue(1000)
+            # Normalización
+            self.ui.normalizeComboBox.setEnabled(False)
+            self.ui.normalizeComboBox.addItems([
+                "Z-Score",
+                "Percent change",
+                "Relative power"
+            ])
+            self.ui.normalizeCheckBox.stateChanged.connect(
+                lambda state: self.ui.normalizeComboBox.setEnabled(state == Qt.Checked)
+            )
+
+            # Escalado
+            self.ui.scaleComboBox.setEnabled(False)
+            self.ui.scaleComboBox.addItems([
+                "Log"
+            ])
+            self.ui.scaleCheckBox.stateChanged.connect(
+                lambda state: self.ui.scaleComboBox.setEnabled(state == Qt.Checked)
+            )
 
             # --- Contenedor VTK ---
             vtk_layout = QVBoxLayout(self.ui.frame)
@@ -135,9 +170,6 @@ class Wavelet_plugin(IPlugin):
             QMessageBox.warning(self.widget, "Error", "No hay información de tiempo suficiente.")
             return
 
-        print("los trials")
-        # print(trials.trials [:30, :5])
-
         try:
             if trials.trials.ndim == 2:
                 sig = np.mean(trials.trials, axis=1)
@@ -152,39 +184,53 @@ class Wavelet_plugin(IPlugin):
         self._log(f"Signal len={len(sig)}, fs_calculado={fs_calculado} Hz, t=[{t[0]}, {t[-1]}]")
 
         # --- Parámetros de interfaz ---
+        fs = self.ui.sampleDensitySpinBox.value()
         fmin = self.ui.lowFrequencySpinBox.value()
         fmax = self.ui.highFrequencySpinBox.value()
+        start = self.ui.startSpinBox.value()
+        end = self.ui.finalSpinBox.value()
         cycles = float(self.ui.cyclesSpinBox.value())
-        fs = self.ui.sampleDensitySpinBox.value()
+        normalize = self.ui.normalizeCheckBox.isChecked()
+        scaled = self.ui.scaleCheckBox.isChecked()
+        norm_method = self.ui.normalizeComboBox.currentText().lower()
+        scale_method = self.ui.scaleComboBox.currentText().lower()
 
         self._log(f"fmin={fmin}, fmax={fmax}, cycles={cycles}, fs usado={fs}")
 
         # --- Calcular Wavelet ---
-        scalogram, times, freqs = self.compute_wavelet(sig, fs_calculado, fs, fmin, fmax, cycles)
+        scalogram, times, freqs = self.compute_wavelet(sig, fs_calculado, fs, start, end, fmin, fmax, cycles)
 
-        plt.figure(figsize=(10, 6))
-        plt.imshow(
-            scalogram,
-            extent=[times[0], times[-1], freqs[0], freqs[-1]],
-            cmap='jet',
-            aspect='auto',
-            origin='lower'
-        )
-        plt.xlabel('Tiempo [s]')
-        plt.ylabel('Frecuencia [Hz]')
-        plt.title('Escalograma Wavelet (Morlet)')
-        plt.gca().invert_yaxis()
-        plt.colorbar(label='Magnitud')
-        plt.show()
+        # --- Normalización ---
+        if normalize:
+            scalogram = self.normalize_tf(scalogram, norm_method)
+        # end if
 
-        # --- Mostrar información ---
-        print("scalogram shape:", scalogram.shape)
-        print("freqs head:", freqs[:10])
-        print("times head:", times[:10])
+        # --- Escalado logarítmico ---
+        if scaled:
+            freqs = self.scale_tf(freqs, scale_method)
+        # end if
+
+        # plt.figure(figsize=(10, 6))
+        # plt.imshow(
+        #     scalogram,
+        #     extent=[times[0], times[-1], freqs[0], freqs[-1]],
+        #     cmap='jet',
+        #     aspect='auto',
+        #     origin='lower'
+        # )
+        # plt.xlabel('Tiempo [s]')
+        # plt.ylabel('Frecuencia [Hz]')
+        # plt.title('Escalograma Wavelet (Morlet)')
+        # plt.gca().invert_yaxis()
+        # plt.colorbar(label='Magnitud')
+        # plt.show()
+# 
+        # # --- Mostrar información ---
+        # print("scalogram shape:", scalogram.shape)
 
         # --- Renderizar ---
         self.ensure_vtk()
-        # self.render_scalogram(times, freqs, scalogram, title=f"Scalogram - {channel_name}")
+        self.render_scalogram(times, freqs, scalogram, title=f"Scalogram Wavelet (Morlet)", log_scale=scaled)
 
     # =====================================================
     # === Cálculo del Wavelet
@@ -194,6 +240,8 @@ class Wavelet_plugin(IPlugin):
         sig,
         fs_calculado,
         fs,
+        start,
+        end,
         fmin,
         fmax,
         num_cycles
@@ -236,10 +284,12 @@ class Wavelet_plugin(IPlugin):
         scales = central_freq * fs / freq_axis
 
         # --- Transformada Wavelet Continua ---
-        coef, freqs = pywt.cwt(sig, scales, wavelet, sampling_period=1/fs)
+        sig_segment = sig[int(start * fs):int(end * fs)]
+        coef, freqs = pywt.cwt(sig_segment, scales, wavelet, sampling_period=1/fs)
 
         # --- Eje temporal ---
-        time_axis = np.arange(len(sig)) / fs
+        time_axis = np.arange(int(start * fs), int(start * fs) + len(sig_segment)) / fs
+        # time_axis = np.arange(len(sig)) / fs
 
         # --- Escalograma ---
         scalogram = np.abs(coef)
@@ -248,138 +298,172 @@ class Wavelet_plugin(IPlugin):
         return scalogram, time_axis, freq_axis
 
     # =====================================================
+    # === Normalize and scale
+    # =====================================================
+    
+    def normalize_tf(self, tf, method="z-score"):
+        """
+        Normaliza una matriz tiempo-frecuencia según el método indicado.
+        """
+
+        base_mean = np.mean(tf, axis=1, keepdims=True)
+        base_std  = np.std(tf, axis=1, ddof=0, keepdims=True)
+        base_power = np.mean(tf, axis=1, keepdims=True)
+
+        if method == "z-score":
+            tf_norm = (tf - base_mean) / base_std
+        elif method == "percent change":
+            tf_norm = ((tf - base_mean) / base_mean) * 100
+        elif method == "relative power":
+            tf_norm = tf / base_power
+        else:
+            raise ValueError("Método no reconocido. Use 'z-score', 'percent change' o 'relative power'.")
+        
+        return tf_norm
+    # end def
+
+    def scale_tf(self, freqs, method="log"):
+        """
+        Escala un vector de frecuencias según el método indicado.
+        """
+
+        if method == "log":
+            freqs_scaled = np.log10(freqs)
+
+        else:
+            raise ValueError("Método no reconocido. Use 'log'.")
+        
+        return freqs_scaled
+    # end def
+
+    # =====================================================
     # === Render VTK (heatmap 2D)
     # =====================================================
-    def render_scalogram(self, t, freqs, scalogram, title="Scalogram"):
-        """Renderiza el escalograma tiempo-frecuencia con ejes físicos."""
+    def render_scalogram(self, t, freqs, scalogram, title="Scalogram", log_scale=False):
+        """Renderiza el escalograma con ejes y barra de color."""
         if not self.vtk_widget:
             return
         if not self._vtk_renderer:
             self.ensure_vtk()
 
-        # Datos base
+        self._vtk_renderer.RemoveAllViewProps()
+
+        # --- Preparar la imagen ---
         Z = np.abs(scalogram).astype(np.float32)
         Z = np.nan_to_num(Z)
+        Z = np.flipud(Z)  # invertir frecuencias: bajas abajo
         n_freqs, n_times = Z.shape
 
-        # --- Reducción si la señal es muy larga ---
-        # MAX_SAMPLES = 1500
-        # if n_times > MAX_SAMPLES:
-        #     factor = int(np.ceil(n_times / MAX_SAMPLES))
-        #     Z = Z[:, ::factor]
-        #     t = t[::factor]
-        #     n_times = Z.shape[1]
-
-        # --- Crear imagen VTK ---
+        # --- Crear vtkImageData ---
         img = vtk.vtkImageData()
         img.SetDimensions(n_times, n_freqs, 1)
         img.AllocateScalars(vtk.VTK_FLOAT, 1)
+        
         for j in range(n_freqs):
             for i in range(n_times):
                 img.SetScalarComponentFromFloat(i, j, 0, 0, Z[j, i])
-        img.Modified()
 
-        # --- Rango de color ---
-        finite = np.isfinite(Z)
-        if finite.any():
-            vmin, vmax = np.percentile(Z[finite], [2, 98])
-        else:
-            vmin, vmax = (0.0, 1.0)
+        # --- LUT colores suavizados tipo jet ---
+        vmin, vmax = np.percentile(Z, [2, 98])
+        lut = self._build_lut("jet_smooth", vmin, vmax)
 
-        lut = self._build_lut("blue", vmin, vmax)
-        ctf = self._lut_to_ctf(lut)
+        # --- ImageActor ---
+        image_actor = vtk.vtkImageActor()
+        image_actor.GetMapper().SetInputData(img)
+        image_actor.GetProperty().SetLookupTable(lut)
+        image_actor.GetProperty().UseLookupTableScalarRangeOn()
+        image_actor.SetScale(1.0, 1.0, 1.0)
 
-        # --- Configurar gráfico VTK ---
-        chart_view = vtk.vtkContextView()
-        chart_view.SetRenderWindow(self.renwin)
-        chart_view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
+        self._vtk_renderer.AddActor(image_actor)
 
-        chart = vtk.vtkChartHistogram2D()
-        chart.SetInputData(img, 0)
-        chart.SetTransferFunction(ctf)
-        chart.SetTitle(title)
+        # --- Crear ejes ---
+        axes = vtk.vtkCubeAxesActor()
+        axes.SetBounds(0, n_times-1, 0, n_freqs-1, 0, 0)
+        axes.SetCamera(self._vtk_renderer.GetActiveCamera())
 
-        # === Ejes físicos ===
-        ax_bottom = chart.GetAxis(vtk.vtkAxis.BOTTOM)
-        ax_left = chart.GetAxis(vtk.vtkAxis.LEFT)
+        # Títulos de los ejes
+        axes.SetXTitle("Time (s)")
+        axes.SetYTitle("Frequency (Hz)")
+        axes.SetZTitle("Magnitude")
 
-        ax_bottom.SetTitle("Time (s)")
-        ax_left.SetTitle("Frequency (Hz)")
+        # Propiedades de los títulos
+        axes.GetXAxesTitleProperty().SetFontSize(14)
+        axes.GetYAxesTitleProperty().SetFontSize(14)
+        axes.GetZAxesTitleProperty().SetFontSize(14)
 
-        # Rango real (tiempo en segundos, frecuencia real)
-        # ax_bottom.SetRange(float(t[0]), float(t[-1]))
-        ax_left.SetRange(float(freqs[0]), float(freqs[-1]))
-        ax_bottom.SetBehavior(vtk.vtkAxis.FIXED)
-        ax_left.SetBehavior(vtk.vtkAxis.FIXED)
+        # Propiedades de las etiquetas
+        axes.GetXAxesLabelProperty().SetFontSize(12)
+        axes.GetYAxesLabelProperty().SetFontSize(12)
+        axes.GetZAxesLabelProperty().SetFontSize(12)
 
-        # --- Render final ---
-        scene = chart_view.GetScene()
-        scene.ClearItems()
-        scene.AddItem(chart)
+        # Formato de las etiquetas
+        axes.SetXLabelFormat("%0.2f")
+        axes.SetYLabelFormat("%0.0f")
+        axes.SetZLabelFormat("%0.2f")
 
+        self._vtk_renderer.AddActor(axes)
+
+        # --- Propiedades de las etiquetas ---
+        for prop in [axes.GetXAxesLabelProperty(), axes.GetYAxesLabelProperty(), axes.GetZAxesLabelProperty()]:
+            prop.SetColor(0.0, 0.0, 0.0)
+            prop.SetFontSize(12)
+
+        # --- Propiedades de los títulos ---
+        for prop in [axes.GetXAxesTitleProperty(), axes.GetYAxesTitleProperty(), axes.GetZAxesTitleProperty()]:
+            prop.SetColor(0.0, 0.0, 0.0)
+            prop.SetFontSize(14)
+
+        # --- Barra de color (ScalarBar) ---
+        scalar_bar = vtk.vtkScalarBarActor()
+        scalar_bar.SetLookupTable(lut)
+        scalar_bar.SetTitle("Magnitude")
+        scalar_bar.GetLabelTextProperty().SetFontSize(12)
+        scalar_bar.GetTitleTextProperty().SetFontSize(14)
+        scalar_bar.SetOrientationToVertical()
+        scalar_bar.SetPosition(0.85, 0.1)  
+        scalar_bar.SetWidth(0.05) 
+        scalar_bar.SetHeight(0.7)
+        scalar_bar.GetLabelTextProperty().SetColor(0, 0, 0)
+        scalar_bar.GetTitleTextProperty().SetColor(0, 0, 0)
+        scalar_bar.GetLabelTextProperty().SetFontSize(12)
+        scalar_bar.GetTitleTextProperty().SetFontSize(14)           
+        self._vtk_renderer.AddActor2D(scalar_bar)
+
+        # --- Configuración final de cámara y render ---
+        self._vtk_renderer.ResetCamera()
+        self._vtk_renderer.SetBackground(0.98, 0.98, 0.98)
         self.renwin.Render()
-        self._log("Escalograma renderizado correctamente con ejes físicos y LUT.")
+        self._log("Escalograma renderizado con ejes y barra de color.")
 
         # =====================================================
     # ===  HELPER: Colormap LUT (igual que ERP)         ===
     # =====================================================
     def _build_lut(self, mode: str, vmin: float, vmax: float) -> vtk.vtkLookupTable:
-        """Construye un vtkLookupTable (256 entries) con modo 'blue' o con gradiente similar a viridis.
-           Devuelve vtkLookupTable ya preparado con rango (vmin,vmax)."""
-        mode = (mode or "blue").lower()
+        """Construye un vtkLookupTable tipo 'jet' suavizado (menos intenso que matplotlib)."""
         N = 256
-        bg = (1.0, 1.0, 1.0)
-        if hasattr(self, "_vtk_renderer") and self._vtk_renderer:
-            try:
-                bg = self._vtk_renderer.GetBackground()
-            except Exception:
-                bg = (1.0, 1.0, 1.0)
+        lut = vtk.vtkLookupTable()
+        lut.SetNumberOfTableValues(N)
+        lut.SetRange(vmin, vmax)
+        lut.Build()
 
-        def finalize(lut: vtk.vtkLookupTable) -> vtk.vtkLookupTable:
-            lut.SetRange(vmin, vmax)
-            lut.SetNumberOfTableValues(N)
-            lut.Build()
-            # colores para NaN / fuera de rango
-            lut.SetNanColor(bg[0], bg[1], bg[2], 1.0)
-            lut.SetUseBelowRangeColor(True)
-            lut.SetBelowRangeColor(bg[0], bg[1], bg[2], 1.0)
-            lut.SetUseAboveRangeColor(True)
-            lut.SetAboveRangeColor(bg[0], bg[1], bg[2], 1.0)
-            return lut
-
-        # === Azul monocromo (por defecto del ERP)
-        if mode in ("blue", "blue_r"):
-            light = (0.93, 0.97, 1.00)
-            dark  = (0.00, 0.10, 0.60)
-            gamma = 0.6
-            lut = finalize(vtk.vtkLookupTable())
-            for i in range(N):
-                s = (i / (N - 1)) ** gamma
-                if mode == "blue_r":
-                    s = 1.0 - s
-                r = light[0] + s * (dark[0] - light[0])
-                g = light[1] + s * (dark[1] - light[1])
-                b = light[2] + s * (dark[2] - light[2])
-                lut.SetTableValue(i, r, g, b, 1.0)
-            return lut
-
-        # === Gradiente tipo "viridis"-like para alternativa
-        ctf = vtk.vtkColorTransferFunction()
-        ctf.ClampingOn()
-        ctf.SetRange(vmin, vmax)
-        ctf.AddRGBPoint(vmin,                 0.267, 0.005, 0.329)
-        ctf.AddRGBPoint((2*vmin+vmax)/3.0,    0.229, 0.322, 0.545)
-        ctf.AddRGBPoint((vmin+2*vmax)/3.0,    0.127, 0.566, 0.550)
-        ctf.AddRGBPoint(vmax,                 0.993, 0.906, 0.144)
-
-        lut = finalize(vtk.vtkLookupTable())
-        gamma = 0.8
         for i in range(N):
-            s = (i / (N - 1)) ** gamma
-            x = vmin + s * (vmax - vmin)
-            r, g, b = ctf.GetColor(x)
+            t = i / (N - 1)
+            # Azul oscuro a cyan
+            if t < 0.125:
+                r, g, b = 0, 0, 0.6 + 0.3 * t # azul oscuro
+            elif t < 0.375:
+                r, g, b = 0, 0.8*(t-0.125)*4, 1  # cyan
+            elif t < 0.625:
+                r, g, b = 0.8*(t-0.375)*4, 1, 0.8*(1-(t-0.375)*4)  # amarillo 
+            elif t < 0.875:
+                r, g, b = 1, 0.8*(1-(t-0.625)*4), 0  # rojo
+            else:
+                r, g, b = 0.9, 0, 0  # rojo final
             lut.SetTableValue(i, r, g, b, 1.0)
+
         return lut
+    # end def
+
 
     def _lut_to_ctf(self, lut: vtk.vtkLookupTable) -> vtk.vtkColorTransferFunction:
         """Convierte un vtkLookupTable (discreto) a vtkColorTransferFunction (continua) para usar en histogram2D."""

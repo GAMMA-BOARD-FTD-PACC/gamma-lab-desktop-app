@@ -191,7 +191,7 @@
               </widget>
              </item>
              <item>
-              <widget class="QSpinBox" name="highFrequencySpinBox">
+              <widget class="QDoubleSpinBox" name="highFrequencySpinBox">
                <property name="alignment">
                 <set>Qt::AlignCenter</set>
                </property>
@@ -267,7 +267,7 @@
               </widget>
              </item>
              <item>
-              <widget class="QSpinBox" name="lowFrequencySpinBox">
+              <widget class="QDoubleSpinBox" name="lowFrequencySpinBox">
                <property name="alignment">
                 <set>Qt::AlignCenter</set>
                </property>
@@ -359,7 +359,7 @@
               </widget>
              </item>
              <item>
-              <widget class="QSpinBox" name="startSpinBox">
+              <widget class="QDoubleSpinBox" name="startSpinBox">
                <property name="alignment">
                 <set>Qt::AlignCenter</set>
                </property>
@@ -435,7 +435,7 @@
               </widget>
              </item>
              <item>
-              <widget class="QSpinBox" name="finalSpinBox">
+              <widget class="QDoubleSpinBox" name="finalSpinBox">
                <property name="alignment">
                 <set>Qt::AlignCenter</set>
                </property>

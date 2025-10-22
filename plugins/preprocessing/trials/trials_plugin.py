@@ -42,7 +42,7 @@ class TrialsPlugin(IPlugin):
 
     # ---------------- Logs ----------------
     def _log(self, *args):
-        print("[TRIALS]", *args)
+        # print("[TRIALS]", *args)
         sys.stdout.flush()
 
     # -------------- Ciclo de vida ----------
