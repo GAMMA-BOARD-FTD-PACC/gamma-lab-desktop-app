@@ -120,11 +120,7 @@ class Ui_Wavelet(object):
         self.highLabel.setFont(font)
         self.highLabel.setObjectName("highLabel")
         self.horizontalLayout_3.addWidget(self.highLabel)
-<<<<<<< HEAD
         self.highFrequencySpinBox = QtWidgets.QDoubleSpinBox(self.layoutWidget)
-=======
-        self.highFrequencySpinBox = QtWidgets.QSpinBox(self.layoutWidget)
->>>>>>> 788f14588dd95b4eebdff936050db1755913fcad
         self.highFrequencySpinBox.setAlignment(QtCore.Qt.AlignCenter)
         self.highFrequencySpinBox.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
         self.highFrequencySpinBox.setObjectName("highFrequencySpinBox")
@@ -153,11 +149,7 @@ class Ui_Wavelet(object):
         self.lowLabel.setFont(font)
         self.lowLabel.setObjectName("lowLabel")
         self.horizontalLayout_2.addWidget(self.lowLabel)
-<<<<<<< HEAD
         self.lowFrequencySpinBox = QtWidgets.QDoubleSpinBox(self.layoutWidget)
-=======
-        self.lowFrequencySpinBox = QtWidgets.QSpinBox(self.layoutWidget)
->>>>>>> 788f14588dd95b4eebdff936050db1755913fcad
         self.lowFrequencySpinBox.setAlignment(QtCore.Qt.AlignCenter)
         self.lowFrequencySpinBox.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
         self.lowFrequencySpinBox.setObjectName("lowFrequencySpinBox")
@@ -195,11 +187,7 @@ class Ui_Wavelet(object):
         self.startLabel.setFont(font)
         self.startLabel.setObjectName("startLabel")
         self.horizontalLayout_5.addWidget(self.startLabel)
-<<<<<<< HEAD
         self.startSpinBox = QtWidgets.QDoubleSpinBox(self.layoutWidget)
-=======
-        self.startSpinBox = QtWidgets.QSpinBox(self.layoutWidget)
->>>>>>> 788f14588dd95b4eebdff936050db1755913fcad
         self.startSpinBox.setAlignment(QtCore.Qt.AlignCenter)
         self.startSpinBox.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
         self.startSpinBox.setObjectName("startSpinBox")
@@ -228,11 +216,7 @@ class Ui_Wavelet(object):
         self.finalLabel.setFont(font)
         self.finalLabel.setObjectName("finalLabel")
         self.horizontalLayout_4.addWidget(self.finalLabel)
-<<<<<<< HEAD
         self.finalSpinBox = QtWidgets.QDoubleSpinBox(self.layoutWidget)
-=======
-        self.finalSpinBox = QtWidgets.QSpinBox(self.layoutWidget)
->>>>>>> 788f14588dd95b4eebdff936050db1755913fcad
         self.finalSpinBox.setAlignment(QtCore.Qt.AlignCenter)
         self.finalSpinBox.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
         self.finalSpinBox.setObjectName("finalSpinBox")
