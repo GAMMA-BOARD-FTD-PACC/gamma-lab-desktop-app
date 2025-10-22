@@ -500,4 +500,5 @@ class Wavelet_plugin(IPlugin):
             return ds
         except Exception as e:
             self._log("_get_active_signal error:", e)
+
             return None
