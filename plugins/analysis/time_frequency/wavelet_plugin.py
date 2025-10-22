@@ -1,3 +1,4 @@
+from matplotlib import pyplot as plt
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QMessageBox
@@ -5,9 +6,15 @@ from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 import vtk
 import numpy as np
 import pywt
+from scipy.signal import resample
+
+from core.services.data_store import DataStore
+from core.services.signal_dataset import SignalDataset
 
 
 class Wavelet_plugin(IPlugin):
+    """Plugin de análisis tiempo-frecuencia (Wavelet CWT con PyWavelets + visualización VTK)."""
+
     def __init__(self, meta: PluginMeta):
         super().__init__(meta)
         self.mainwin = None
@@ -18,6 +25,9 @@ class Wavelet_plugin(IPlugin):
         self.ui = None
         self._vtk_renderer = None
 
+    # =====================================================
+    # === Ciclo de vida del plugin
+    # =====================================================
     def initialize(self, kernel):
         print("Inicializando Wavelet")
 
@@ -40,6 +50,9 @@ class Wavelet_plugin(IPlugin):
         print("Deteniendo Wavelet")
         self.mainwin = None
 
+    # =====================================================
+    # === Creación del widget UI + VTK
+    # =====================================================
     def get_widget(self, parent=None):
         from plugins.analysis.time_frequency.wavelet_plugin_ui import Ui_Wavelet
         if self.widget is None:
@@ -47,14 +60,20 @@ class Wavelet_plugin(IPlugin):
             self.ui = Ui_Wavelet()
             self.ui.setupUi(self.widget)
 
+            # Parámetros iniciales de la interfaz
             self.ui.highFrequencySpinBox.setRange(0, 10000)
             self.ui.highFrequencySpinBox.setValue(500)
 
             self.ui.lowFrequencySpinBox.setRange(0, 10000)
             self.ui.lowFrequencySpinBox.setValue(1)
 
+            self.ui.cyclesSpinBox.setRange(1, 20)
+            self.ui.cyclesSpinBox.setValue(2)
 
-            # --- Configuración del contenedor VTK ---
+            self.ui.sampleDensitySpinBox.setRange(1, 10000)
+            self.ui.sampleDensitySpinBox.setValue(1000)
+
+            # --- Contenedor VTK ---
             vtk_layout = QVBoxLayout(self.ui.frame)
             vtk_layout.setContentsMargins(0, 0, 0, 0)
 
@@ -73,7 +92,14 @@ class Wavelet_plugin(IPlugin):
 
         return self.widget
 
+    # =====================================================
+    # === Utilidades
+    # =====================================================
+    def _log(self, *args):
+        print("[Wavelet]", *args)
+
     def ensure_vtk(self):
+        """Prepara un renderer VTK si no existe."""
         if self.vtk_widget is None:
             return
 
@@ -88,20 +114,237 @@ class Wavelet_plugin(IPlugin):
         self._vtk_renderer = renderer
 
     # =====================================================
+    # === Lógica principal: CWT + Render
+    # =====================================================
+    def on_create_wavelet(self):
+        """Carga la señal activa, calcula el CWT y renderiza el escalograma."""
+        if not self.mainwin:
+            return
+
+        active_signal = self._get_active_signal()
+        if active_signal is None:
+            QMessageBox.warning(self.widget, "Error", "No hay señal activa para calcular el Wavelet.")
+            return
+
+        channel_name = active_signal.channel_names[0]
+        trials = active_signal.get_active_trials(active_signal.name, channel_name)
+
+        # --- Verificación de datos ---
+        t = trials.time_rel
+        if t is None or len(t) < 2:
+            QMessageBox.warning(self.widget, "Error", "No hay información de tiempo suficiente.")
+            return
+
+        print("los trials")
+        # print(trials.trials [:30, :5])
+
+        try:
+            if trials.trials.ndim == 2:
+                sig = np.mean(trials.trials, axis=1)
+            else:
+                sig = np.ravel(trials.trials)
+        except Exception:
+            sig = np.array(trials.trials, dtype=float).ravel()
+
+        # Frecuencia de muestreo real
+        fs_calculado = round(1.0 / (t[1] - t[0]), 3)
+
+        self._log(f"Signal len={len(sig)}, fs_calculado={fs_calculado} Hz, t=[{t[0]}, {t[-1]}]")
+
+        # --- Parámetros de interfaz ---
+        fmin = self.ui.lowFrequencySpinBox.value()
+        fmax = self.ui.highFrequencySpinBox.value()
+        cycles = float(self.ui.cyclesSpinBox.value())
+        fs = self.ui.sampleDensitySpinBox.value()
+
+        self._log(f"fmin={fmin}, fmax={fmax}, cycles={cycles}, fs usado={fs}")
+
+        # --- Calcular Wavelet ---
+        scalogram, times, freqs = self.compute_wavelet(sig, fs_calculado, fs, fmin, fmax, cycles)
+
+        plt.figure(figsize=(10, 6))
+        plt.imshow(
+            scalogram,
+            extent=[times[0], times[-1], freqs[0], freqs[-1]],
+            cmap='jet',
+            aspect='auto',
+            origin='lower'
+        )
+        plt.xlabel('Tiempo [s]')
+        plt.ylabel('Frecuencia [Hz]')
+        plt.title('Escalograma Wavelet (Morlet)')
+        plt.gca().invert_yaxis()
+        plt.colorbar(label='Magnitud')
+        plt.show()
+
+        # --- Mostrar información ---
+        print("scalogram shape:", scalogram.shape)
+        print("freqs head:", freqs[:10])
+        print("times head:", times[:10])
+
+        # --- Renderizar ---
+        self.ensure_vtk()
+        # self.render_scalogram(times, freqs, scalogram, title=f"Scalogram - {channel_name}")
+
+    # =====================================================
+    # === Cálculo del Wavelet
+    # =====================================================
+    def compute_wavelet(
+        self,
+        sig,
+        fs_calculado,
+        fs,
+        fmin,
+        fmax,
+        num_cycles
+    ):
+        """
+        Calcula una transformada tipo Morse Wavelet (aproximada con Morlet compleja)
+        de forma similar a f_MorseAWTransformMatlab.m.
+
+        Retorna:
+            scalogram : matriz tiempo-frecuencia
+            time_axis : vector de tiempo
+            freq_axis : vector de frecuencias (descendente)
+        """
+
+        sig = np.asarray(sig).flatten()
+
+        # --- Reemplazar NaN e Infs por 0 ---
+        if np.isnan(sig).any() or np.isinf(sig).any():
+            sig = np.nan_to_num(sig, nan=0.0, posinf=0.0, neginf=0.0)
+        
+        # --- Número de segmentos de frecuencia ---
+        freq_seg = 2 * int(fmax - fmin)
+
+        # --- Reducción de muestreo
+        reduction_ratio = fs / fs_calculado
+        num_samples = int(len(sig) * reduction_ratio)
+
+        # Remuestreo proporcional
+        sig = resample(sig, num_samples)
+        print(f"[Wavelet] Señal remuestreada a fs={fs} Hz, len={len(sig)})")
+
+        # --- Vector de frecuencias ---
+        freq_axis = np.linspace(fmin, fmax, freq_seg)
+        freq_axis = np.flip(freq_axis)
+
+        # --- Definir wavelet (Morlet compleja) ---
+        wavelet = f"cmor{num_cycles}-1.0"
+        central_freq = pywt.central_frequency(wavelet)
+        print(f"freq_axis: min={freq_axis.min():.4f}, max={freq_axis.max():.4f}")
+        scales = central_freq * fs / freq_axis
+
+        # --- Transformada Wavelet Continua ---
+        coef, freqs = pywt.cwt(sig, scales, wavelet, sampling_period=1/fs)
+
+        # --- Eje temporal ---
+        time_axis = np.arange(len(sig)) / fs
+
+        # --- Escalograma ---
+        scalogram = np.abs(coef)
+
+        # --- Retornar ---
+        return scalogram, time_axis, freq_axis
+
+    # =====================================================
+    # === Render VTK (heatmap 2D)
+    # =====================================================
+    def render_scalogram(self, t, freqs, scalogram, title="Scalogram"):
+        """Renderiza el escalograma tiempo-frecuencia con ejes físicos."""
+        if not self.vtk_widget:
+            return
+        if not self._vtk_renderer:
+            self.ensure_vtk()
+
+        # Datos base
+        Z = np.abs(scalogram).astype(np.float32)
+        Z = np.nan_to_num(Z)
+        n_freqs, n_times = Z.shape
+
+        # --- Reducción si la señal es muy larga ---
+        # MAX_SAMPLES = 1500
+        # if n_times > MAX_SAMPLES:
+        #     factor = int(np.ceil(n_times / MAX_SAMPLES))
+        #     Z = Z[:, ::factor]
+        #     t = t[::factor]
+        #     n_times = Z.shape[1]
+
+        # --- Crear imagen VTK ---
+        img = vtk.vtkImageData()
+        img.SetDimensions(n_times, n_freqs, 1)
+        img.AllocateScalars(vtk.VTK_FLOAT, 1)
+        for j in range(n_freqs):
+            for i in range(n_times):
+                img.SetScalarComponentFromFloat(i, j, 0, 0, Z[j, i])
+        img.Modified()
+
+        # --- Rango de color ---
+        finite = np.isfinite(Z)
+        if finite.any():
+            vmin, vmax = np.percentile(Z[finite], [2, 98])
+        else:
+            vmin, vmax = (0.0, 1.0)
+
+        lut = self._build_lut("blue", vmin, vmax)
+        ctf = self._lut_to_ctf(lut)
+
+        # --- Configurar gráfico VTK ---
+        chart_view = vtk.vtkContextView()
+        chart_view.SetRenderWindow(self.renwin)
+        chart_view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
+
+        chart = vtk.vtkChartHistogram2D()
+        chart.SetInputData(img, 0)
+        chart.SetTransferFunction(ctf)
+        chart.SetTitle(title)
+
+        # === Ejes físicos ===
+        ax_bottom = chart.GetAxis(vtk.vtkAxis.BOTTOM)
+        ax_left = chart.GetAxis(vtk.vtkAxis.LEFT)
+
+        ax_bottom.SetTitle("Time (s)")
+        ax_left.SetTitle("Frequency (Hz)")
+
+        # Rango real (tiempo en segundos, frecuencia real)
+        # ax_bottom.SetRange(float(t[0]), float(t[-1]))
+        ax_left.SetRange(float(freqs[0]), float(freqs[-1]))
+        ax_bottom.SetBehavior(vtk.vtkAxis.FIXED)
+        ax_left.SetBehavior(vtk.vtkAxis.FIXED)
+
+        # --- Render final ---
+        scene = chart_view.GetScene()
+        scene.ClearItems()
+        scene.AddItem(chart)
+
+        self.renwin.Render()
+        self._log("Escalograma renderizado correctamente con ejes físicos y LUT.")
+
+        # =====================================================
     # ===  HELPER: Colormap LUT (igual que ERP)         ===
     # =====================================================
-    def _build_lut(self, mode: str, vmin: float, vmax: float) -> vtk.vtkScalarsToColors:
+    def _build_lut(self, mode: str, vmin: float, vmax: float) -> vtk.vtkLookupTable:
+        """Construye un vtkLookupTable (256 entries) con modo 'blue' o con gradiente similar a viridis.
+           Devuelve vtkLookupTable ya preparado con rango (vmin,vmax)."""
         mode = (mode or "blue").lower()
         N = 256
-        bg = self._vtk_renderer.GetBackground() if self._vtk_renderer else (1.0, 1.0, 1.0)
+        bg = (1.0, 1.0, 1.0)
+        if hasattr(self, "_vtk_renderer") and self._vtk_renderer:
+            try:
+                bg = self._vtk_renderer.GetBackground()
+            except Exception:
+                bg = (1.0, 1.0, 1.0)
 
         def finalize(lut: vtk.vtkLookupTable) -> vtk.vtkLookupTable:
             lut.SetRange(vmin, vmax)
             lut.SetNumberOfTableValues(N)
             lut.Build()
-            lut.SetNanColor(*bg, 1.0)
-            lut.SetUseBelowRangeColor(True); lut.SetBelowRangeColor(*bg, 1.0)
-            lut.SetUseAboveRangeColor(True); lut.SetAboveRangeColor(*bg, 1.0)
+            # colores para NaN / fuera de rango
+            lut.SetNanColor(bg[0], bg[1], bg[2], 1.0)
+            lut.SetUseBelowRangeColor(True)
+            lut.SetBelowRangeColor(bg[0], bg[1], bg[2], 1.0)
+            lut.SetUseAboveRangeColor(True)
+            lut.SetAboveRangeColor(bg[0], bg[1], bg[2], 1.0)
             return lut
 
         # === Azul monocromo (por defecto del ERP)
@@ -120,7 +363,7 @@ class Wavelet_plugin(IPlugin):
                 lut.SetTableValue(i, r, g, b, 1.0)
             return lut
 
-        # === Viridis (alternativa más neutra)
+        # === Gradiente tipo "viridis"-like para alternativa
         ctf = vtk.vtkColorTransferFunction()
         ctf.ClampingOn()
         ctf.SetRange(vmin, vmax)
@@ -137,9 +380,9 @@ class Wavelet_plugin(IPlugin):
             r, g, b = ctf.GetColor(x)
             lut.SetTableValue(i, r, g, b, 1.0)
         return lut
-    
-    def _lut_to_ctf(self, lut):
-        """Convierte vtkLookupTable a vtkColorTransferFunction (robusto)."""
+
+    def _lut_to_ctf(self, lut: vtk.vtkLookupTable) -> vtk.vtkColorTransferFunction:
+        """Convierte un vtkLookupTable (discreto) a vtkColorTransferFunction (continua) para usar en histogram2D."""
         ctf = vtk.vtkColorTransferFunction()
         ctf.ClampingOn()
         n = lut.GetNumberOfTableValues()
@@ -158,135 +401,19 @@ class Wavelet_plugin(IPlugin):
         return ctf
 
     # =====================================================
-    # ===  Lógica de cálculo y renderizado del Wavelet  ===
+    # === Data access helper
     # =====================================================
-    def on_create_wavelet(self):
-        """Carga el SignalDataset activo, calcula CWT con PyWavelets y renderiza el escalograma."""
-        if not self.mainwin:
-            return
-
-        store = self.mainwin.kernel.get_service("DataStore")
-        if store is None:
-            QMessageBox.warning(self.widget, "Error", "No se encontró el DataStore.")
-            return
-
-        active_signal = store.get_active_signal()
-        if not active_signal or not active_signal.trials_dataset:
-            QMessageBox.warning(self.widget, "Error", "No hay señal activa registrada.")
-            return
-
-        td = active_signal.trials_dataset[0]
-
-        # --- Procesar señal ---
+    def _get_active_signal(self) -> SignalDataset | None:
         try:
-            if td.trials.ndim == 2:
-                sig = np.mean(td.trials, axis=0)
-            else:
-                sig = np.ravel(td.trials)
-        except Exception:
-            sig = np.array(td.trials, dtype=float).ravel()
-
-        t = td.time_rel
-        if t is None or len(t) < 2:
-            QMessageBox.warning(self.widget, "Error", "No hay información de tiempo suficiente en el TrialDataset.")
-            return
-
-        dt = float(t[1] - t[0])
-        fs = 1.0 / dt
-
-        # --- Leer parámetros desde la interfaz ---
-        fmin = self.ui.lowFrequencySpinBox.value()
-        fmax = self.ui.highFrequencySpinBox.value()
-        cycles = float(self.ui.cyclesSpinBox.value())
-        n_scales = int(2 * (fmax - fmin))
-
-        scales = np.arange(1, n_scales + 1)
-        wavelet_name = f"cmor{cycles}-1.0"
-
-        print(f"[Wavelet] fmin={fmin}, fmax={fmax}, scales={len(scales)}, cycles={cycles}")
-
-        coef, freqs = pywt.cwt(sig, scales, wavelet_name, sampling_period=1/fs)
-        scalogram = np.abs(coef) ** 2
-
-        print(f"[Wavelet] scalogram shape: {scalogram.shape}, freqs: {freqs[:5]}...")
-
-        self.ensure_vtk()
-        self.render_scalogram(t, freqs, scalogram, title=f"Scalogram - {getattr(td, 'channel_name', '')}")
-
-    def render_scalogram(self, t, freqs, scalogram, title="Scalogram"):
-        """Renderiza el escalograma tipo heatmap 2D (tiempo vs frecuencia) con ejes físicos correctos."""
-        if not self.vtk_widget:
-            return
-
-        if not self._vtk_renderer:
-            self.ensure_vtk()
-
-        # === Datos ===
-        Z = np.abs(scalogram).astype(np.float32)
-        Z = np.nan_to_num(Z)
-        n_freqs, n_times = Z.shape
-
-        # --- Reducción opcional si la señal es muy larga ---
-        MAX_SAMPLES = 1500
-        if n_times > MAX_SAMPLES:
-            factor = int(np.ceil(n_times / MAX_SAMPLES))
-            Z = Z[:, ::factor]
-            t = t[::factor]
-            n_times = Z.shape[1]
-
-        # === Crear imagen VTK ===
-        img = vtk.vtkImageData()
-        img.SetDimensions(n_times, n_freqs, 1)
-        img.AllocateScalars(vtk.VTK_FLOAT, 1)
-
-        for j in range(n_freqs):
-            for i in range(n_times):
-                img.SetScalarComponentFromFloat(i, j, 0, 0, Z[j, i])
-        img.Modified()
-
-        # === Colormap (LUT y CTF) ===
-        finite = np.isfinite(Z)
-        if finite.any():
-            vmin, vmax = (
-                float(np.percentile(Z[finite], 2)),
-                float(np.percentile(Z[finite], 98)),
-            )
-        else:
-            vmin, vmax = (0.0, 1.0)
-
-        lut = self._build_lut("blue", vmin, vmax)
-        ctf = self._lut_to_ctf(lut)
-
-        # === Crear vista y gráfico 2D ===
-        chart_view = vtk.vtkContextView()
-        chart_view.SetRenderWindow(self.renwin)
-        chart_view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
-
-        chart = vtk.vtkChartHistogram2D()
-        chart.SetInputData(img, 0)
-        chart.SetTransferFunction(ctf)
-        chart.SetTitle(title)
-
-        # === Configurar ejes físicos ===
-        ax_bottom = chart.GetAxis(vtk.vtkAxis.BOTTOM)
-        ax_left = chart.GetAxis(vtk.vtkAxis.LEFT)
-
-        ax_bottom.SetTitle("Time (s)")
-        ax_left.SetTitle("Frequency (Hz)")
-
-        # Rango real de tiempo y frecuencia
-        ax_bottom.SetRange(float(t[0]), float(t[-1]))
-        # Normal: bajas abajo, altas arriba
-        # ax_left.SetRange(float(freqs[0]), float(freqs[-1]))
-        # Si prefieres invertir el eje Y:
-        ax_left.SetRange(float(10), float(500))
-        ax_bottom.SetBehavior(vtk.vtkAxis.FIXED)
-        ax_left.SetBehavior(vtk.vtkAxis.FIXED)
-
-        # === Render final ===
-        scene = chart_view.GetScene()
-        scene.ClearItems()
-        scene.AddItem(chart)
-
-        self.renwin.Render()
-        print("[Wavelet] Escalograma renderizado correctamente con ejes físicos y LUT.")
+            store: DataStore | None = self.mainwin.kernel.get_service("DataStore")
+            if store is None:
+                QMessageBox.warning(self.widget, "Error", "No se encontró el DataStore.")
+                return
+            ds = store.get_active_signal() if store else None
+            if not ds:
+                print("[Wavelet] No hay señal activa registrada en el DataStore.")
+                return
+            return ds
+        except Exception as e:
+            self._log("_get_active_signal error:", e)
+            return None
