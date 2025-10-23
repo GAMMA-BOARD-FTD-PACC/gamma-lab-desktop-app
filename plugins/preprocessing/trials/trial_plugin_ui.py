@@ -84,6 +84,33 @@ class Ui_Trials(QtWidgets.QWidget):
         self.formChannel.setWidget(0, QtWidgets.QFormLayout.FieldRole, self.channelComboBox)
 
         self.vbox.addLayout(self.formChannel)
+        
+        # ===== Subtítulo: Stim Channel =====
+        self.lblStimChanTitle = QtWidgets.QLabel(self.panel)
+        self.lblStimChanTitle.setFont(_f_sub)
+        self.lblStimChanTitle.setText("Stim Channel")
+        self.vbox.addWidget(self.lblStimChanTitle)
+
+        self.sep1b = QtWidgets.QFrame(self.panel)
+        self.sep1b.setFrameShape(QtWidgets.QFrame.HLine)
+        self.sep1b.setFrameShadow(QtWidgets.QFrame.Plain)
+        self.vbox.addWidget(self.sep1b)
+
+        self.formStimChan = QtWidgets.QFormLayout()
+        self.formStimChan.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        self.formStimChan.setFormAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+
+        self.stimChannelLabel = QtWidgets.QLabel(self.panel)
+        self.stimChannelLabel.setText("Name")
+
+        self.stimChannelComboBox = QtWidgets.QComboBox(self.panel)
+        self.stimChannelComboBox.setObjectName("stimChannelComboBox")  # para detectar onsets
+        self.stimChannelComboBox.setToolTip("Canal usado para detectar onsets/estímulos")
+
+        self.formStimChan.setWidget(0, QtWidgets.QFormLayout.LabelRole, self.stimChannelLabel)
+        self.formStimChan.setWidget(0, QtWidgets.QFormLayout.FieldRole, self.stimChannelComboBox)
+
+        self.vbox.addLayout(self.formStimChan)
 
         # ===== Subtítulo: Threshold =====
         self.lblThTitle = QtWidgets.QLabel(self.panel)

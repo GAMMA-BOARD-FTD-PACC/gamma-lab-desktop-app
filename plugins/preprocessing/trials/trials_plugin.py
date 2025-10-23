@@ -170,11 +170,20 @@ class TrialsPlugin(IPlugin):
             return None
 
 
-    def _populate_channel_combo(self, ds: SignalDataset):
-        """Llena channelComboBox con nombres; userData = índice del canal."""
-        cb = getattr(self.ui, "channelComboBox", None)
-        cb.blockSignals(True)
-        cb.clear()
+    def _populate_channel_combos(self, ds: SignalDataset):
+        """
+        Llena channelComboBox y stimChannelComboBox con los mismos nombres (userData = índice).
+        - Channel → por defecto índice 0
+        - Stim Channel → por defecto último canal
+        """
+        # Obtener referencias (tolerante si UI no tiene todavía el stim combo)
+        cb_main = getattr(self.ui, "channelComboBox", None)
+        cb_stim = getattr(self.ui, "stimChannelComboBox", None)
+
+        if cb_main is None:
+            return  # nada que hacer
+
+        # Construir lista de nombres
         names = []
         try:
             if getattr(ds, "channel_names", None):
@@ -183,7 +192,7 @@ class TrialsPlugin(IPlugin):
             self._log("channel_names error:", e)
 
         if not names:
-            # Fallback: ch-1..ch-C usando shape de signals
+            # Fallback por shape
             C = 0
             try:
                 sig = getattr(ds, "signals", None)
@@ -191,22 +200,34 @@ class TrialsPlugin(IPlugin):
             except Exception:
                 C = 0
             names = [f"ch-{i+1}" for i in range(C)]
-            self._log("fallback nombres por shape:", C)
+            self._log("fallback nombres por shape:", len(names))
 
+        # Poblar principal
+        cb_main.blockSignals(True)
+        cb_main.clear()
         for i, name in enumerate(names):
-            cb.addItem(name, i)  # texto=nombre, userData=índice
+            cb_main.addItem(name, i)
+        cb_main.setCurrentIndex(0 if names else -1)
+        cb_main.blockSignals(False)
 
-        cb.setCurrentIndex(0 if names else -1)
-        cb.blockSignals(False)
-
-        #self._log("channelComboBox poblado:", cb.count(), "items",       "ejemplo:", names[:5])
+        # Poblar stim (si existe en UI)
+        if cb_stim is not None:
+            cb_stim.blockSignals(True)
+            cb_stim.clear()
+            for i, name in enumerate(names):
+                cb_stim.addItem(name, i)
+            # por defecto el ÚLTIMO canal
+            default_idx = (len(names) - 1) if names else -1
+            cb_stim.setCurrentIndex(default_idx)
+            cb_stim.setToolTip("Canal usado para detectar onsets/estímulos")
+            cb_stim.blockSignals(False)
 
 
     def _populate_channels_once(self):
         """Intenta cargar la señal activa y poblar el combo (silencioso si no hay)."""
         ds = self._get_active_signal()
         if ds:
-            self._populate_channel_combo(ds)
+            self._populate_channel_combos(ds)
         else:
             self._log("_populate_channels_once: no hay señal activa (aún)")
     
@@ -232,6 +253,14 @@ class TrialsPlugin(IPlugin):
             QMessageBox.warning(self.widget, "Parámetros",
                                 "Seleccione un canal válido.")
             return
+        
+        stim_ch = self.ui.stimChannelComboBox.currentData()
+        if stim_ch is None:
+            stim_ch = self.ui.stimChannelComboBox.currentIndex()
+        if stim_ch is None or stim_ch < 0:
+            QMessageBox.warning(self.widget, "Parámetros",
+                                "Seleccione un canal de estímulos.")
+            return
 
         th   = float(self.ui.thresholdDoubleSpinBox.value())
         t0   = float(self.ui.initialTimeDoubleSpinBox.value())
@@ -251,10 +280,16 @@ class TrialsPlugin(IPlugin):
 
         # Ejecutar corte
         try:
-            td: TrialDataset = cut_trials_single_channel(
-                ds=ds, channel=int(ch), threshold=th, t0=t0, t1=t1,
-                end_mode=mode, stim_expected=stim, inter_stim_time=inter_stim_time
-            )
+            td = cut_trials_single_channel(
+            ds=ds,
+            channel=int(ch),                  # canal objetivo a cortar
+            stim_channel=None if stim_ch is None else int(stim_ch),  # canal de estímulos para detectar onsets
+            threshold=th,
+            t0=t0, t1=t1,
+            end_mode=mode,
+            stim_expected=stim,
+            inter_stim_time=inter_stim_time
+        )
         except Exception as e:
             self._log("cut_trials_single_channel error:", e)
             QMessageBox.critical(self.widget, "Error",
