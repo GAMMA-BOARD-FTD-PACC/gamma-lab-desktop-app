@@ -55,7 +55,7 @@ class Wavelet_plugin(IPlugin):
     # === Creación del widget UI + VTK
     # =====================================================
     def get_widget(self, parent=None):
-        from plugins.analysis.time_frequency.wavelet_plugin_ui import Ui_Wavelet
+        from plugins.analysis.time_frequency.wavelet.wavelet_plugin_ui import Ui_Wavelet
         if self.widget is None:
             self.widget = QWidget(parent)
             self.ui = Ui_Wavelet()
