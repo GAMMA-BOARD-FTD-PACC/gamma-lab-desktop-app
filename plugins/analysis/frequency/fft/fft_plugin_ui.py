@@ -65,7 +65,7 @@ class Ui_Fft(object):
         self.sampleDensityDoubleSpinBox.setDecimals(3)
         self.sampleDensityDoubleSpinBox.setRange(0.0, 1_000_000.0)
         self.sampleDensityDoubleSpinBox.setSingleStep(10.0)
-        self.sampleDensityDoubleSpinBox.setValue(0.0)  # 0 = no resample
+        self.sampleDensityDoubleSpinBox.setValue(1000.0)
         self.sampleDensityDoubleSpinBox.setSuffix(" Hz")
         self.formSample.setWidget(0, QtWidgets.QFormLayout.FieldRole, self.sampleDensityDoubleSpinBox)
 
@@ -94,7 +94,7 @@ class Ui_Fft(object):
         self.highFrecuencyDoubleSpinBox.setDecimals(2)
         self.highFrecuencyDoubleSpinBox.setRange(0.0, 1_000_000.0)
         self.highFrecuencyDoubleSpinBox.setSingleStep(1.0)
-        self.highFrecuencyDoubleSpinBox.setValue(40.0)
+        self.highFrecuencyDoubleSpinBox.setValue(500.0)
         self.highFrecuencyDoubleSpinBox.setSuffix(" Hz")
         self.formRange.setWidget(0, QtWidgets.QFormLayout.FieldRole, self.highFrecuencyDoubleSpinBox)
 
@@ -106,7 +106,7 @@ class Ui_Fft(object):
         self.lowFrecuencyDoubleSpinBox.setDecimals(2)
         self.lowFrecuencyDoubleSpinBox.setRange(0.0, 1_000_000.0)
         self.lowFrecuencyDoubleSpinBox.setSingleStep(1.0)
-        self.lowFrecuencyDoubleSpinBox.setValue(10.0)
+        self.lowFrecuencyDoubleSpinBox.setValue(0.0)
         self.lowFrecuencyDoubleSpinBox.setSuffix(" Hz")
         self.formRange.setWidget(1, QtWidgets.QFormLayout.FieldRole, self.lowFrecuencyDoubleSpinBox)
 
