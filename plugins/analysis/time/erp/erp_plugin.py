@@ -332,7 +332,7 @@ class Erp_plugin(IPlugin):
         scene.ClearItems()
 
         # Datos
-        X = np.asarray(sel, dtype=np.float32)[::-1, :]  # (K, T)
+        X = np.asarray(sel, dtype=np.float32)
         K, Tn = X.shape
         print(f"\n=== DEBUG HEATMAP ===")
         print(f"Dimensiones originales: K={K} trials, Tn={Tn} samples")
