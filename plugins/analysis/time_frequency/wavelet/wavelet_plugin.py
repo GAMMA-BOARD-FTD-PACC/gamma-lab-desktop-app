@@ -4,6 +4,7 @@ from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QMessageBox
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
+from plugins.analysis.time_frequency.wavelet.wavelet_plugin_ui import Ui_Wavelet
 import vtk
 import numpy as np
 import pywt
@@ -24,7 +25,7 @@ class Wavelet_plugin(IPlugin):
         self.renwin = None
         self.started = False
         self.ui = None
-        self._vtk_renderer = None
+        self._context_view = None
 
     # =====================================================
     # === Ciclo de vida del plugin
@@ -48,14 +49,18 @@ class Wavelet_plugin(IPlugin):
             print("Wavelet tiene acceso a MainWindow")
 
     def stop(self):
-        print("Deteniendo Wavelet")
-        self.mainwin = None
+        print("[Wavelet] stop")
+        # Detiene interactor si existe (para evitar cuelgues al cerrar)
+        if self.vtk_widget and self.vtk_widget.GetRenderWindow():
+            interactor = self.vtk_widget.GetRenderWindow().GetInteractor()
+            if interactor:
+                interactor.Disable()
 
     # =====================================================
     # === Creación del widget UI + VTK
     # =====================================================
     def get_widget(self, parent=None):
-        from plugins.analysis.time_frequency.wavelet.wavelet_plugin_ui import Ui_Wavelet
+
         if self.widget is None:
             self.widget = QWidget(parent)
             self.ui = Ui_Wavelet()
@@ -72,17 +77,6 @@ class Wavelet_plugin(IPlugin):
 
             self.ui.lowFrequencySpinBox.setRange(0, 10000)
             self.ui.lowFrequencySpinBox.setValue(1)
-
-            # Tiempos
-            self.ui.startSpinBox.setRange(0, 1000)
-            self.ui.startSpinBox.setDecimals(2)
-            self.ui.startSpinBox.setSingleStep(0.1)
-            self.ui.startSpinBox.setValue(0)
-
-            self.ui.finalSpinBox.setRange(0, 1000)
-            self.ui.finalSpinBox.setDecimals(2)
-            self.ui.finalSpinBox.setSingleStep(0.1)
-            self.ui.finalSpinBox.setValue(2)
 
             # Ciclos
             self.ui.cyclesSpinBox.setRange(1, 20)
@@ -115,12 +109,21 @@ class Wavelet_plugin(IPlugin):
             self.vtk_widget = QVTKRenderWindowInteractor(self.ui.frame)
             vtk_layout.addWidget(self.vtk_widget)
 
+            # Obtener ventana de render
             self.renwin = self.vtk_widget.GetRenderWindow()
+
+            # Crear vista de contexto 2D
+            self._context_view = vtk.vtkContextView()
+            self._context_view.SetRenderWindow(self.renwin)
+            self._context_view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
+
+            # Inicializar interactor
             try:
                 self.vtk_widget.Initialize()
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[Wavelet] Error inicializando interactor: {e}")
 
+            # Conectar botón principal
             self.ui.createWaveletButton.clicked.connect(self.on_create_wavelet)
         else:
             self.widget.setParent(parent)
@@ -132,21 +135,21 @@ class Wavelet_plugin(IPlugin):
     # =====================================================
     def _log(self, *args):
         print("[Wavelet]", *args)
+    # end def
 
     def ensure_vtk(self):
-        """Prepara un renderer VTK si no existe."""
-        if self.vtk_widget is None:
+        """Asegura que la vista 2D de VTK esté correctamente inicializada."""
+        if self.vtk_widget is None or self.renwin is None:
             return
 
-        if self.renwin.GetRenderers().GetNumberOfItems() == 0:
-            renderer = vtk.vtkRenderer()
-            renderer.SetBackground(0.98, 0.98, 0.98)
-            self.renwin.AddRenderer(renderer)
-        else:
-            renderer = self.renwin.GetRenderers().GetFirstRenderer()
-            renderer.SetBackground(0.98, 0.98, 0.98)
+        if not hasattr(self, "_context_view") or self._context_view is None:
+            self._context_view = vtk.vtkContextView()
+            self._context_view.SetRenderWindow(self.renwin)
 
+        renderer = self._context_view.GetRenderer()
+        renderer.SetBackground(0.98, 0.98, 0.98)
         self._vtk_renderer = renderer
+    # end def
 
     # =====================================================
     # === Lógica principal: CWT + Render
@@ -187,8 +190,6 @@ class Wavelet_plugin(IPlugin):
         fs = self.ui.sampleDensitySpinBox.value()
         fmin = self.ui.lowFrequencySpinBox.value()
         fmax = self.ui.highFrequencySpinBox.value()
-        start = self.ui.startSpinBox.value()
-        end = self.ui.finalSpinBox.value()
         cycles = float(self.ui.cyclesSpinBox.value())
         normalize = self.ui.normalizeCheckBox.isChecked()
         scaled = self.ui.scaleCheckBox.isChecked()
@@ -198,7 +199,7 @@ class Wavelet_plugin(IPlugin):
         self._log(f"fmin={fmin}, fmax={fmax}, cycles={cycles}, fs usado={fs}")
 
         # --- Calcular Wavelet ---
-        scalogram, times, freqs = self.compute_wavelet(sig, fs_calculado, fs, start, end, fmin, fmax, cycles)
+        scalogram, times, freqs = self.compute_wavelet(sig, fs_calculado, fs, fmin, fmax, cycles)
 
         # --- Normalización ---
         if normalize:
@@ -210,27 +211,9 @@ class Wavelet_plugin(IPlugin):
             freqs = self.scale_tf(freqs, scale_method)
         # end if
 
-        # plt.figure(figsize=(10, 6))
-        # plt.imshow(
-        #     scalogram,
-        #     extent=[times[0], times[-1], freqs[0], freqs[-1]],
-        #     cmap='jet',
-        #     aspect='auto',
-        #     origin='lower'
-        # )
-        # plt.xlabel('Tiempo [s]')
-        # plt.ylabel('Frecuencia [Hz]')
-        # plt.title('Escalograma Wavelet (Morlet)')
-        # plt.gca().invert_yaxis()
-        # plt.colorbar(label='Magnitud')
-        # plt.show()
-# 
-        # # --- Mostrar información ---
-        # print("scalogram shape:", scalogram.shape)
-
         # --- Renderizar ---
         self.ensure_vtk()
-        self.render_scalogram(times, freqs, scalogram, title=f"Scalogram Wavelet (Morlet)", log_scale=scaled)
+        self.render_scalogram(times, freqs, scalogram, title=f"Scalogram Wavelet (Morlet)", normalization=norm_method, log_scale=scaled)
 
     # =====================================================
     # === Cálculo del Wavelet
@@ -240,8 +223,6 @@ class Wavelet_plugin(IPlugin):
         sig,
         fs_calculado,
         fs,
-        start,
-        end,
         fmin,
         fmax,
         num_cycles
@@ -284,12 +265,10 @@ class Wavelet_plugin(IPlugin):
         scales = central_freq * fs / freq_axis
 
         # --- Transformada Wavelet Continua ---
-        sig_segment = sig[int(start * fs):int(end * fs)]
-        coef, freqs = pywt.cwt(sig_segment, scales, wavelet, sampling_period=1/fs)
+        coef, freqs = pywt.cwt(sig, scales, wavelet, sampling_period=1/fs)
 
         # --- Eje temporal ---
-        time_axis = np.arange(int(start * fs), int(start * fs) + len(sig_segment)) / fs
-        # time_axis = np.arange(len(sig)) / fs
+        time_axis = np.arange(len(sig)) / fs
 
         # --- Escalograma ---
         scalogram = np.abs(coef)
@@ -339,101 +318,99 @@ class Wavelet_plugin(IPlugin):
     # =====================================================
     # === Render VTK (heatmap 2D)
     # =====================================================
-    def render_scalogram(self, t, freqs, scalogram, title="Scalogram", log_scale=False):
-        """Renderiza el escalograma con ejes y barra de color."""
+    def render_scalogram(self, t, freqs, scalogram, title="Scalogram", normalization = "", log_scale=False):
+        """Renderiza el escalograma como heatmap 2D (tiempo vs frecuencia)."""
         if not self.vtk_widget:
             return
-        if not self._vtk_renderer:
-            self.ensure_vtk()
+        
+        # Crear vista 2D
+        context_view = self._context_view
+        scene = context_view.GetScene()
+        scene.ClearItems()
 
-        self._vtk_renderer.RemoveAllViewProps()
-
-        # --- Preparar la imagen ---
+        # --- Preparar datos ---
         Z = np.abs(scalogram).astype(np.float32)
         Z = np.nan_to_num(Z)
-        Z = np.flipud(Z)  # invertir frecuencias: bajas abajo
+        Z = np.flipud(Z)  # frecuencias bajas abajo
         n_freqs, n_times = Z.shape
 
-        # --- Crear vtkImageData ---
+        # --- Calcular origen y espaciado ---
+        t0 = float(t[0]) if len(t) > 0 else 0.0
+        t_end = float(t[-1]) if len(t) > 0 else 1.0
+        dt = (t_end - t0) / n_times if n_times > 1 else 1.0
+
+        f0 = float(freqs[0]) if len(freqs) > 0 else 0.0
+        f_end = float(freqs[-1]) if len(freqs) > 0 else n_freqs
+        df = (f_end - f0) / n_freqs if n_freqs > 1 else 1.0
+
+        # --- Crear imagen VTK ---
         img = vtk.vtkImageData()
         img.SetDimensions(n_times, n_freqs, 1)
+        img.SetSpacing(dt, df, 1.0)
+        img.SetOrigin(t0, f0, 0.0)
         img.AllocateScalars(vtk.VTK_FLOAT, 1)
-        
+
         for j in range(n_freqs):
             for i in range(n_times):
                 img.SetScalarComponentFromFloat(i, j, 0, 0, Z[j, i])
+        img.Modified()
 
-        # --- LUT colores suavizados tipo jet ---
+        # --- Rango de color ---
         vmin, vmax = np.percentile(Z, [2, 98])
-        lut = self._build_lut("jet_smooth", vmin, vmax)
+        lut = self._build_lut("viridis", vmin, vmax)
 
-        # --- ImageActor ---
-        image_actor = vtk.vtkImageActor()
-        image_actor.GetMapper().SetInputData(img)
-        image_actor.GetProperty().SetLookupTable(lut)
-        image_actor.GetProperty().UseLookupTableScalarRangeOn()
-        image_actor.SetScale(1.0, 1.0, 1.0)
+        # --- Crear chart 2D ---
+        chart = vtk.vtkChartHistogram2D()
+        chart.SetInputData(img, 0)
+        chart.SetTransferFunction(lut)
 
-        self._vtk_renderer.AddActor(image_actor)
+        # --- Ejes configurados ---
+        ax_bottom = chart.GetAxis(vtk.vtkAxis.BOTTOM)
+        ax_left = chart.GetAxis(vtk.vtkAxis.LEFT)
 
-        # --- Crear ejes ---
-        axes = vtk.vtkCubeAxesActor()
-        axes.SetBounds(0, n_times-1, 0, n_freqs-1, 0, 0)
-        axes.SetCamera(self._vtk_renderer.GetActiveCamera())
+        ax_bottom.SetTitle("Time (s)")
+        ax_left.SetTitle("Frequency (Hz)")
 
-        # Títulos de los ejes
-        axes.SetXTitle("Time (s)")
-        axes.SetYTitle("Frequency (Hz)")
-        axes.SetZTitle("Magnitude")
+        ax_bottom.SetRange(t0, t_end)
+        ax_left.SetRange(f0, f_end)
 
-        # Propiedades de los títulos
-        axes.GetXAxesTitleProperty().SetFontSize(14)
-        axes.GetYAxesTitleProperty().SetFontSize(14)
-        axes.GetZAxesTitleProperty().SetFontSize(14)
+        # Ajustar etiquetas de frecuencia si es logarítmico
+        if log_scale:
+            # Obtener los valores de frecuencia reales (ya log10 transformados en el plot)
+            f_ticks_log = np.linspace(freqs.min(), freqs.max(), 6)  # escala log10
+            f_labels = [f"{10 ** val:.1f}" for val in f_ticks_log]  # etiquetas reales en Hz
 
-        # Propiedades de las etiquetas
-        axes.GetXAxesLabelProperty().SetFontSize(12)
-        axes.GetYAxesLabelProperty().SetFontSize(12)
-        axes.GetZAxesLabelProperty().SetFontSize(12)
+            # Crear arrays VTK para posiciones y etiquetas
+            tick_positions = vtk.vtkDoubleArray()
+            tick_labels = vtk.vtkStringArray()
+            for val, label in zip(f_ticks_log, f_labels):
+                tick_positions.InsertNextValue(val)
+                tick_labels.InsertNextValue(label)
 
-        # Formato de las etiquetas
-        axes.SetXLabelFormat("%0.2f")
-        axes.SetYLabelFormat("%0.0f")
-        axes.SetZLabelFormat("%0.2f")
+            # Aplicar ticks personalizados
+            ax_left.SetCustomTickPositions(tick_positions, tick_labels)
+            ax_left.SetTitle("Frequency (Hz, log scale)")
+        else:
+            # Escala lineal normal
+            ax_left.SetTitle("Frequency (Hz)")
 
-        self._vtk_renderer.AddActor(axes)
+        # --- Ajustes visuales ---
+        ax_bottom.GetLabelProperties().SetFontSize(12)
+        ax_left.GetLabelProperties().SetFontSize(12)
+        ax_bottom.GetTitleProperties().SetFontSize(14)
+        ax_left.GetTitleProperties().SetFontSize(14)
+        ax_bottom.GetLabelProperties().SetColor(0, 0, 0)
+        ax_left.GetLabelProperties().SetColor(0, 0, 0)
 
-        # --- Propiedades de las etiquetas ---
-        for prop in [axes.GetXAxesLabelProperty(), axes.GetYAxesLabelProperty(), axes.GetZAxesLabelProperty()]:
-            prop.SetColor(0.0, 0.0, 0.0)
-            prop.SetFontSize(12)
+        # --- Añadir chart a escena ---
+        scene.AddItem(chart)
+# 
+        # --- Fondo claro y render final ---
+        context_view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
+        context_view.GetRenderWindow().Render()
 
-        # --- Propiedades de los títulos ---
-        for prop in [axes.GetXAxesTitleProperty(), axes.GetYAxesTitleProperty(), axes.GetZAxesTitleProperty()]:
-            prop.SetColor(0.0, 0.0, 0.0)
-            prop.SetFontSize(14)
-
-        # --- Barra de color (ScalarBar) ---
-        scalar_bar = vtk.vtkScalarBarActor()
-        scalar_bar.SetLookupTable(lut)
-        scalar_bar.SetTitle("Magnitude")
-        scalar_bar.GetLabelTextProperty().SetFontSize(12)
-        scalar_bar.GetTitleTextProperty().SetFontSize(14)
-        scalar_bar.SetOrientationToVertical()
-        scalar_bar.SetPosition(0.85, 0.1)  
-        scalar_bar.SetWidth(0.05) 
-        scalar_bar.SetHeight(0.7)
-        scalar_bar.GetLabelTextProperty().SetColor(0, 0, 0)
-        scalar_bar.GetTitleTextProperty().SetColor(0, 0, 0)
-        scalar_bar.GetLabelTextProperty().SetFontSize(12)
-        scalar_bar.GetTitleTextProperty().SetFontSize(14)           
-        self._vtk_renderer.AddActor2D(scalar_bar)
-
-        # --- Configuración final de cámara y render ---
-        self._vtk_renderer.ResetCamera()
-        self._vtk_renderer.SetBackground(0.98, 0.98, 0.98)
-        self.renwin.Render()
-        self._log("Escalograma renderizado con ejes y barra de color.")
+        self._log("Escalograma 2D renderizado correctamente.")
+    # end def
 
         # =====================================================
     # ===  HELPER: Colormap LUT (igual que ERP)         ===
