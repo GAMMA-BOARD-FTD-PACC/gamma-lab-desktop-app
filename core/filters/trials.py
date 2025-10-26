@@ -38,7 +38,7 @@ def _assemble_trials_general(
     tis: float,
     fs: float,
     *,
-    pad_value: float = np.nan,
+    pad_value: float = 0.0,
     debug: bool = False
 ) -> np.ndarray:
     Ns_in, T_raw = trials.shape
@@ -143,7 +143,7 @@ def cut_trials_single_channel(
     end_mode: EndMode = "fixed",
     *,
     stim_channel: Optional[int] = None,
-    pad_value: float = np.nan,
+    pad_value: float = 0.0,
     debug: bool = True,
 ) -> TrialDataset:
 
