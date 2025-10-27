@@ -126,6 +126,10 @@ class VTKContextMenu:
 
     def set_chart(self, chart):
         self.chart = chart
+        # avisar al servicio que cambió el chart (invalida rangos, refs, etc.)
+        if hasattr(self, "measure_service") and self.measure_service:
+            if hasattr(self.measure_service, "on_chart_changed"):
+                self.measure_service.on_chart_changed()
 
     def set_datastore(self, store):
         """Inyecta el servicio DataStore (dict-like con get/set)."""
@@ -172,11 +176,16 @@ class VTKContextMenu:
 
         # Medidas (delegado a servicio)
         measure_menu = menu.addMenu("Medidas")
-        measure_menu.addAction("Pendiente (2 puntos – clic IZQ.)", lambda: self.measure_service.start('slope'))
+        act_start = measure_menu.addAction("Pendiente (2 puntos – clic IZQ.)",lambda: self.measure_service.start('slope'))
+        act_start.setEnabled(self.measure_service.state == 'idle')
+
+        act_cancel = measure_menu.addAction("Cancelar medición (Esc)", self.measure_service.cancel)
+        act_cancel.setEnabled(self.measure_service.state != 'idle')
         measure_menu.addSeparator()
-        # Estas dos son no-ops por ahora (no hay overlay en el servicio).
-        measure_menu.addAction("Eliminar última medición", self._noop_measure_overlay)
-        measure_menu.addAction("Eliminar todas las mediciones", self._noop_measure_overlay)
+        
+        measure_menu.addAction("Mostrar/Ocultar todas las líneas", self.measure_service.toggle_overlay)
+        measure_menu.addAction("Eliminar última medición", self.measure_service.remove_last_measurement)
+        measure_menu.addAction("Eliminar TODAS las mediciones", self.measure_service.clear_all_measurements)
 
         # Exportar (delegado a servicio)
         menu.addSeparator()
@@ -201,7 +210,7 @@ class VTKContextMenu:
 
         menu.exec_(self.vtk_widget.mapToGlobal(pos))
 
-    # ---------- export (no usado: todo va al servicio) ----------
+    # ---------- export  ----------
     def export_image(self, fmt: str, filename: str = None):
         self.export_service.export_image(fmt, filename)
 
@@ -231,7 +240,7 @@ class VTKContextMenu:
                 # algunas versiones de VTK no lo soportan
                 pass
 
-    # ---------- eventos mouse (delegados al servicio de medidas) ----------
+    # ---------- eventos mouse----------
     def _install_mouse_observers(self):
         iren = self.vtk_widget.GetRenderWindow().GetInteractor()
         iren.AddObserver("LeftButtonPressEvent", self._on_left_press, 1.0)
@@ -253,11 +262,43 @@ class VTKContextMenu:
         self.measure_service.on_left_release(sx, sy, click_eps=self._CLICK_EPS)
 
     def _on_mouse_move_block_hover(self, obj, evt):
-        # Bloquea interacciones hover si estamos midiendo (para evitar tooltips/selecciones externas)
         if self.measure_service.state == 'idle':
             return
-        return 1  # consume el evento
+        return 1 
 
-    def _noop_measure_overlay(self):
-        # Si más adelante agregas overlay al servicio, redirige aquí.
-        pass
+    def set_measurement_context(self, *, view_id: str, trial_id: int, channel_name: str):
+        if hasattr(self, "measure_service") and self.measure_service:
+            self.measure_service.set_context(view_id=view_id, trial_id=trial_id, channel_name=channel_name)
+
+    def rebuild_measurement_overlays(self):
+        if hasattr(self, "measure_service") and self.measure_service:
+            self.measure_service.rebuild_overlays_for_current_context()
+
+    def clear_measurement_overlays(self):
+        if hasattr(self, "measure_service") and self.measure_service:
+            self.measure_service.clear_visual_overlays()
+
+    def on_view_rebuilt(self, chart, *, view_id: str, trial_id: int, channel_name: str):
+        """
+        Llamar SIEMPRE desde el plugin después de reconstruir la gráfica y hacer Render().
+        """
+        # 1) Asociar el nuevo chart (esto invalida caches en MeasurementService)
+        self.set_chart(chart)
+
+        # 2) Forzar un render y recalcular bounds para que los ejes del chart estén actualizados
+        try:
+            self.vtk_widget.GetRenderWindow().Render()
+        except Exception:
+            pass
+        try:
+            if chart and hasattr(chart, "RecalculateBounds"):
+                chart.RecalculateBounds()
+        except Exception:
+            pass
+
+        # 3) Contexto + reconstrucción de overlays del contexto actual
+        try:
+            self.set_measurement_context(view_id=view_id, trial_id=trial_id, channel_name=channel_name)
+            self.rebuild_measurement_overlays()
+        except Exception:
+            pass
