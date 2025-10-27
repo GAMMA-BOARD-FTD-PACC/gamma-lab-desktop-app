@@ -20,7 +20,7 @@ class VTKContextMenu:
     last_export_dir = os.getcwd()
 
     _CLICK_EPS = 8
-    _PICK_RADIUS_PX = 10
+    _PICK_RADIUS_PX = 20
 
     def __init__(self, chart: vtkChartXY, vtk_widget, singal_name=None, channel_name=None, plugin_name=None, parent=None):
         self.chart = chart
@@ -126,6 +126,7 @@ class VTKContextMenu:
 
     def set_chart(self, chart):
         self.chart = chart
+        print(f"[VTK_MENU] set_chart chart={chart}")
         # avisar al servicio que cambió el chart (invalida rangos, refs, etc.)
         if hasattr(self, "measure_service") and self.measure_service:
             if hasattr(self.measure_service, "on_chart_changed"):
@@ -279,26 +280,11 @@ class VTKContextMenu:
             self.measure_service.clear_visual_overlays()
 
     def on_view_rebuilt(self, chart, *, view_id: str, trial_id: int, channel_name: str):
-        """
-        Llamar SIEMPRE desde el plugin después de reconstruir la gráfica y hacer Render().
-        """
-        # 1) Asociar el nuevo chart (esto invalida caches en MeasurementService)
+        print(f"[VTK_MENU] on_view_rebuilt view_id={view_id} trial_id={trial_id} ch={channel_name}")
         self.set_chart(chart)
-
-        # 2) Forzar un render y recalcular bounds para que los ejes del chart estén actualizados
         try:
-            self.vtk_widget.GetRenderWindow().Render()
+            self.vtk_widget.GetRenderWindow().Render()  # asegura bounds frescos
         except Exception:
             pass
-        try:
-            if chart and hasattr(chart, "RecalculateBounds"):
-                chart.RecalculateBounds()
-        except Exception:
-            pass
-
-        # 3) Contexto + reconstrucción de overlays del contexto actual
-        try:
-            self.set_measurement_context(view_id=view_id, trial_id=trial_id, channel_name=channel_name)
-            self.rebuild_measurement_overlays()
-        except Exception:
-            pass
+        self.set_measurement_context(view_id=view_id, trial_id=trial_id, channel_name=channel_name)
+        self.rebuild_measurement_overlays()

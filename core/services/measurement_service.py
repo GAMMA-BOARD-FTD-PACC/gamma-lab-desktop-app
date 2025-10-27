@@ -22,7 +22,7 @@ class MeasurementService:
         self.ds_get = datastore_get
         self.ds_set = datastore_set
 
-        self._debug = debug
+        self._debug = False
         self._PICK_RADIUS_PX = pick_radius_px
 
         # ---- estado de interacción ----
@@ -210,12 +210,33 @@ class MeasurementService:
             return
 
         if self._state == 'waiting_p2':
+            curr = self._get_current_ranges()
+            if curr is not None:
+                self._saved_ranges = curr
+                self._dbg("waiting_p2: ranges REFRESHED ->", self._saved_ranges)
+
             self._current['p2'] = picked
             self._suspend_left_actions(False)
             self._finalize()
             return
 
     # ====================== ejes/rangos & transformaciones ======================
+
+    def _get_current_ranges(self):
+        """Lee SIEMPRE los rangos actuales del chart (tras zoom/pan)."""
+        ch = self.get_active_chart()
+        if not ch:
+            return None
+        try:
+            ax_x = ch.GetAxis(vtk.vtkAxis.BOTTOM)
+            ax_y = ch.GetAxis(vtk.vtkAxis.LEFT)
+            return {
+                'x': (ax_x.GetMinimum(), ax_x.GetMaximum()),
+                'y': (ax_y.GetMinimum(), ax_y.GetMaximum()),
+            }
+        except Exception:
+            return None
+
 
     def _vec2_to_xy(self, v):
         if isinstance(v, (tuple, list)) and len(v) == 2:
@@ -251,13 +272,23 @@ class MeasurementService:
 
     def _plot_to_screen(self, x_val, y_val):
         rect = self._plot_rect_pixels()
-        if rect is None or self._saved_ranges is None:
+        if rect is None:
             return None
         x_min_px, x_max_px, y_min_px, y_max_px = rect
-        x_min, x_max = self._saved_ranges['x']
-        y_min, y_max = self._saved_ranges['y']
-        dxp = (x_max_px - x_min_px); dyp = (y_max_px - y_min_px)
-        if dxp <= 0 or dyp <= 0: return None
+
+        # Preferimos rangos del chart en vivo; usamos saved como fallback
+        rng = self._get_current_ranges() or self._saved_ranges
+        if rng is None:
+            return None
+
+        x_min, x_max = rng['x']
+        y_min, y_max = rng['y']
+
+        dxp = (x_max_px - x_min_px)
+        dyp = (y_max_px - y_min_px)
+        if dxp <= 0 or dyp <= 0 or (x_max - x_min) == 0 or (y_max - y_min) == 0:
+            return None
+
         sx = x_min_px + (x_val - x_min) * dxp / (x_max - x_min)
         if not self._invert_y:
             sy = y_min_px + (y_val - y_min) * dyp / (y_max - y_min)
@@ -265,25 +296,31 @@ class MeasurementService:
             sy = y_min_px + (y_max - y_val) * dyp / (y_max - y_min)
         return float(sx), float(sy)
 
+
     def _screen_to_plot(self, sx, sy):
         ch = self.get_active_chart()
-        if not ch: return None
+        if not ch:
+            return None
+
         rect = self._plot_rect_pixels()
-        if rect is None: return None
+        if rect is None:
+            return None
         x_min_px, x_max_px, y_min_px, y_max_px = rect
+
         if sx < x_min_px or sx > x_max_px or sy < y_min_px or sy > y_max_px:
             return None
 
-        if self._saved_ranges:
-            x_min, x_max = self._saved_ranges['x']
-            y_min, y_max = self._saved_ranges['y']
-        else:
-            ax_x = ch.GetAxis(0); ax_y = ch.GetAxis(1)
-            x_min, x_max = ax_x.GetMinimum(), ax_x.GetMaximum()
-            y_min, y_max = ax_y.GetMinimum(), ax_y.GetMaximum()
+        # Preferimos rangos del chart en vivo; usamos saved como fallback
+        rng = self._get_current_ranges() or self._saved_ranges
+        if rng is None:
+            return None
 
-        dxp = (x_max_px - x_min_px); dyp = (y_max_px - y_min_px)
-        if dxp <= 0 or dyp <= 0:
+        x_min, x_max = rng['x']
+        y_min, y_max = rng['y']
+
+        dxp = (x_max_px - x_min_px)
+        dyp = (y_max_px - y_min_px)
+        if dxp <= 0 or dyp <= 0 or (x_max - x_min) == 0 or (y_max - y_min) == 0:
             return None
 
         x_val = x_min + (sx - x_min_px) * (x_max - x_min) / dxp
@@ -647,5 +684,64 @@ class MeasurementService:
         self._ref_data = None
         self._down_pos = None
         
+        self._dump_chart_state("on_chart_changed(before render)")
+        try:
+            self.vtk_widget.GetRenderWindow().Render()
+        except Exception:
+            pass
+        self._dump_chart_state("on_chart_changed(after render)")
+        
         if self._state != 'idle':
             self.cancel() 
+            
+    def _dump_chart_state(self, tag=""): ## BORRAR CUANDO SE DEJN DE HACER LOGS
+        ch = self.get_active_chart()
+        if not ch:
+            print(f"[MEAS] {tag} chart=None"); return
+        try:
+            nplots = ch.GetNumberOfPlots()
+        except Exception:
+            nplots = -1
+        # ejes
+        try:
+            ax_x = ch.GetAxis(vtk.vtkAxis.BOTTOM)
+            ax_y = ch.GetAxis(vtk.vtkAxis.LEFT)
+            xr = (ax_x.GetMinimum(), ax_x.GetMaximum())
+            yr = (ax_y.GetMinimum(), ax_y.GetMaximum())
+        except Exception:
+            xr = yr = None
+        # rect en pixels del chart
+        try:
+            p1 = ch.GetPoint1(); p2 = ch.GetPoint2()
+            rect = (p1.GetX(), p2.GetX(), p1.GetY(), p2.GetY())
+        except Exception:
+            rect = None
+
+        print(f"[MEAS] {tag} plots={nplots} xr={xr} yr={yr} rect={rect}")
+
+        # Lista rápida de labels/filas para ver qué plots hay
+        try:
+            for i in range(nplots):
+                pl = ch.GetPlot(i)
+                if pl is None: 
+                    print(f"   [plot {i}] None")
+                    continue
+                try:
+                    lbl = pl.GetLabel()
+                except Exception:
+                    lbl = None
+                rows = None
+                try:
+                    tbl = pl.GetInput()
+                    rows = tbl.GetNumberOfRows() if tbl else None
+                except Exception:
+                    pass
+                # tipo (LINE/POINTS) si está disponible
+                ptype = None
+                try:
+                    ptype = pl.GetPlotType()
+                except Exception:
+                    pass
+                print(f"   [plot {i}] label={lbl!r} rows={rows} type={ptype}")
+        except Exception:
+            pass
