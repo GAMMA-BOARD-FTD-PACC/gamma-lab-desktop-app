@@ -1,15 +1,17 @@
-from matplotlib import pyplot as plt
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QMessageBox
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 import vtk
 import numpy as np
 import pywt
+from scipy.interpolate import interp1d
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
-from core.services.data_store import DataStore
 from core.services.signal_dataset import SignalDataset
+
+# Importaciones de tu proyecto (mantener)
+from core.services.data_store import DataStore
 from plugins.analysis.time_frequency.wavelet.wavelet_plugin_ui import Ui_Wavelet
 
 
@@ -34,7 +36,6 @@ class Wavelet_plugin(IPlugin):
         print("Inicializando Wavelet")
 
     def process(self, data: any):
-        print(f"Wavelet recibió datos: {data}")
         if self.mainwin:
             try:
                 self.mainwin.statusBar().showMessage(f"Wavelet procesó: {data}", 3000)
@@ -42,18 +43,18 @@ class Wavelet_plugin(IPlugin):
                 pass
 
     def start(self, kernel):
-        print("Iniciando Wavelet")
         self.mainwin = kernel.get_service("MainWindow")
         if self.mainwin:
             self.started = True
-            print("Wavelet tiene acceso a MainWindow")
 
     def stop(self):
-        print("[Wavelet] stop")
         if self.vtk_widget and self.vtk_widget.GetRenderWindow():
             interactor = self.vtk_widget.GetRenderWindow().GetInteractor()
             if interactor:
                 interactor.Disable()
+
+    def _log(self, *args):
+        print("[Wavelet]", *args)
 
     # =====================================================
     # === Creación del widget UI + VTK
@@ -70,24 +71,19 @@ class Wavelet_plugin(IPlugin):
         # --- Configuración de interfaz ---
         self.ui.sampleDensitySpinBox.setRange(1, 10000)
         self.ui.sampleDensitySpinBox.setValue(1000)
-
         self.ui.highFrequencySpinBox.setRange(0, 10000)
         self.ui.highFrequencySpinBox.setValue(500)
-
         self.ui.lowFrequencySpinBox.setRange(0, 10000)
         self.ui.lowFrequencySpinBox.setValue(1)
-
         self.ui.cyclesSpinBox.setRange(1, 20)
         self.ui.cyclesSpinBox.setValue(2)
 
-        # Normalización
         self.ui.normalizeComboBox.setEnabled(False)
         self.ui.normalizeComboBox.addItems(["Z-Score", "Percent change", "Relative power", "Min-Max"])
         self.ui.normalizeCheckBox.stateChanged.connect(
             lambda state: self.ui.normalizeComboBox.setEnabled(state == Qt.Checked)
         )
 
-        # Escalado
         self.ui.scaleComboBox.setEnabled(False)
         self.ui.scaleComboBox.addItems(["Log"])
         self.ui.scaleCheckBox.stateChanged.connect(
@@ -105,21 +101,12 @@ class Wavelet_plugin(IPlugin):
         self._context_view.SetRenderWindow(self.renwin)
         self._context_view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
 
-        try:
-            self.vtk_widget.Initialize()
-        except Exception as e:
-            print(f"[Wavelet] Error inicializando interactor: {e}")
-
-        # Botón principal
         self.ui.createWaveletButton.clicked.connect(self.on_create_wavelet)
         return self.widget
 
     # =====================================================
     # === Utilidades
     # =====================================================
-    def _log(self, *args):
-        print("[Wavelet]", *args)
-
     def ensure_vtk(self):
         """Asegura que la vista 2D de VTK esté correctamente inicializada."""
         if not self.vtk_widget or not self.renwin:
@@ -131,22 +118,31 @@ class Wavelet_plugin(IPlugin):
         renderer.SetBackground(0.98, 0.98, 0.98)
         self._vtk_renderer = renderer
 
+    def _get_active_signal(self) -> SignalDataset | None:
+        """Devuelve la señal activa."""
+        try:
+            store: DataStore | None = self.mainwin.kernel.get_service("DataStore")
+            if store is None:
+                QMessageBox.warning(self.widget, "Error", "No se encontró el DataStore.")
+                return
+            ds = store.get_active_signal() if store else None
+            return ds
+        except Exception as e:
+            print("[Wavelet] Error al obtener señal:", e)
+            return None
+
     # =====================================================
     # === Lógica principal: CWT + Render
     # =====================================================
     def on_create_wavelet(self):
         """Carga la señal activa, calcula el CWT y renderiza el escalograma."""
-        if not self.mainwin:
-            return
-
         active_signal = self._get_active_signal()
         if active_signal is None:
-            QMessageBox.warning(self.widget, "Error", "No hay señal activa para calcular el Wavelet.")
+            QMessageBox.warning(self.widget, "Error", "No hay señal activa.")
             return
 
         channel_name = active_signal.channel_names[0]
         trials = active_signal.get_active_trials(active_signal.name, channel_name)
-
         t = trials.time_rel
         if t is None or len(t) < 2:
             QMessageBox.warning(self.widget, "Error", "No hay información de tiempo suficiente.")
@@ -167,18 +163,18 @@ class Wavelet_plugin(IPlugin):
         normalize = self.ui.normalizeCheckBox.isChecked()
         scaled = self.ui.scaleCheckBox.isChecked()
         norm_method = self.ui.normalizeComboBox.currentText().lower()
-        scale_method = self.ui.scaleComboBox.currentText().lower()
+        # scale_method = self.ui.scaleComboBox.currentText().lower() # No se usa
 
-        self._log(f"fmin={fmin}, fmax={fmax}, cycles={cycles}, fs usado={fs}")
         scalogram, times, freqs = self.compute_wavelet(sig, fs_calculado, fs, fmin, fmax, cycles)
 
         if normalize:
             scalogram = self.normalize_tf(scalogram, norm_method)
+        
         if scaled:
-            freqs = self.scale_tf(freqs, scale_method)
+            # Remuestrea el escalograma y obtiene las nuevas frecuencias logarítmicas
+            scalogram, freqs = self._scale_log(scalogram, freqs)
 
         self.ensure_vtk()
-        print(np.max(scalogram), np.min(scalogram))
         self.render_scalogram(times, freqs, scalogram, "Scalogram Wavelet (Morlet)", scaled)
 
     # =====================================================
@@ -190,7 +186,8 @@ class Wavelet_plugin(IPlugin):
         factor = int(round(fs_calculado / fs))
         sig = sig[::factor]
 
-        freq_axis = np.linspace(fmin, fmax, freq_seg)[::-1]
+        # Las frecuencias se generan en orden descendente ([::-1])
+        freq_axis = np.linspace(fmin, fmax, freq_seg)[::-1] 
         wavelet = f"cmor{num_cycles}-1.0"
         central_freq = pywt.central_frequency(wavelet)
         scales = central_freq * fs / freq_axis
@@ -205,12 +202,11 @@ class Wavelet_plugin(IPlugin):
     # === Normalización y Escalado
     # =====================================================
     def normalize_tf(self, tf, method="z-score"):
+        """Normaliza el mapa tiempo-frecuencia."""
         base_mean = np.mean(tf, axis=1, keepdims=True)
         base_std = np.std(tf, axis=1, ddof=0, keepdims=True)
-        base_min = round(np.min(tf), 3)
-        print("base_min:", base_min)
-        base_max = round(np.max(tf), 3)
-        print("base_max:", base_max)
+        base_min = np.min(tf)
+        base_max = np.max(tf)
 
         if method == "z-score":
             return (tf - base_mean) / base_std
@@ -223,18 +219,54 @@ class Wavelet_plugin(IPlugin):
 
         elif method == "min-max":
             denom = base_max - base_min
-            print("denom:", denom)
-            print(np.max((tf-base_min)/denom))
             return (tf - base_min) / denom
         else:
             raise ValueError("Método no reconocido.")
-    # end def
 
-    def scale_tf(self, freqs, method="log"):
-        if method == "log":
-            return np.log10(freqs)
-        raise ValueError("Método no reconocido. Use 'log'.")
-    # end def
+    def _scale_log(self, scalogram, freqs):
+        """Remuestrea el escalograma para que las filas estén espaciadas logarítmicamente."""
+        freqs_numeric = np.asarray(freqs, dtype=np.float64)
+        
+        fmin = np.min(freqs_numeric[freqs_numeric > 0])
+        fmax = np.max(freqs_numeric)
+        
+        n_freqs_new = scalogram.shape[0] 
+        
+        log_fmin = np.log10(fmin)
+        log_fmax = np.log10(fmax)
+        
+        log_freqs_new = np.linspace(log_fmin, log_fmax, n_freqs_new)
+        freqs_new = 10**log_freqs_new 
+        
+        scalogram_new = np.zeros_like(scalogram)
+        
+        freqs_orig_sorted = np.sort(freqs_numeric)
+        
+        for i in range(scalogram.shape[1]):
+            # data_col: Se debe desinvertir el scalogram (filas) para que se alinee con freqs_orig_sorted
+            data_col = np.flipud(scalogram[:, i]) 
+            
+            interp_func = interp1d(freqs_orig_sorted, data_col, kind='linear', fill_value='extrapolate')
+            scalogram_new[:, i] = interp_func(freqs_new)
+            
+        # freqs_new está ordenado de forma ascendente (fmin a fmax), reflejando las nuevas filas.
+        return scalogram_new, freqs_new
+
+    def _get_log_ticks_coords(self, f_min_log, f_max_log):
+        start = np.floor(f_min_log)
+        end = np.ceil(f_max_log)
+        
+        # Genera las coordenadas logarítmicas de los ticks (ej: 0.0, 0.5, 1.0...)
+        tick_coords = np.arange(start, end + 0.5, 0.5) 
+        tick_coords = tick_coords[(tick_coords >= f_min_log) & (tick_coords <= f_max_log)]
+            
+        labels = []
+        for t_coord in tick_coords:
+            label_val = 10**t_coord
+            labels.append(f"{label_val:.1f}") 
+                
+        return tick_coords, labels
+        # end def
 
     # =====================================================
     # === Render escalograma 2D en VTK
@@ -246,47 +278,96 @@ class Wavelet_plugin(IPlugin):
         context_view = self._context_view
         scene = context_view.GetScene()
         scene.ClearItems()
-
-        Z = np.flipud(np.nan_to_num(scalogram.astype(np.float32)))
-        n_freqs, n_times = Z.shape
-
+        
+        # === 1. Preprocesamiento y Asignación de Límites ===
+        n_freqs, n_times = scalogram.shape
         t0, t_end = float(t[0]), float(t[-1])
         dt = (t_end - t0) / n_times if n_times > 1 else 1.0
-        f0, f_end = float(freqs[0]), float(freqs[-1])
-        df = (f_end - f0) / n_freqs if n_freqs > 1 else 1.0
 
+        if log_scale:
+            Z = np.nan_to_num(scalogram.astype(np.float32))
+            ax_title = "Frequency (Hz) - Log"
+            
+            # Calcular los límites en escala LOG10
+            f0_orig = float(freqs[0]) if freqs[0] > 0 else 1e-6 # Asegurar > 0
+            f_end_orig = float(freqs[-1])
+            
+            f0_coord = np.log10(f0_orig)
+            f_end_coord = np.log10(f_end_orig)
+            df_coord = (f_end_coord - f0_coord) / n_freqs if n_freqs > 1 else 1.0
+            
+            # VTK usa coordenadas LOG10
+            f0_range, f_end_range = f0_coord, f_end_coord
+            df_spacing = df_coord
+
+        else:
+            Z = np.flipud(np.nan_to_num(scalogram.astype(np.float32)))
+            ax_title = "Frequency (Hz)"
+            
+            # Usar valores de frecuencia reales (lineales)
+            f0_range = float(freqs[0])
+            f_end_range = float(freqs[-1])
+            df_spacing = (f_end_range - f0_range) / n_freqs if n_freqs > 1 else 1.0
+            
+        # === 2. Configuración de vtkImageData ===
         img = vtk.vtkImageData()
         img.SetDimensions(n_times, n_freqs, 1)
-        img.SetSpacing(dt, df, 1.0)
-        img.SetOrigin(t0, f0, 0.0)
+        img.SetSpacing(dt, df_spacing, 1.0)
+        img.SetOrigin(t0, f0_range, 0.0)
+        
         img.AllocateScalars(vtk.VTK_FLOAT, 1)
+        
         for j in range(n_freqs):
             for i in range(n_times):
                 img.SetScalarComponentFromFloat(i, j, 0, 0, Z[j, i])
         img.Modified()
 
-        # Calcula límites
+        # Calcula límites y LUT
         vmin, vmax = np.min(Z), np.max(Z)
         vmin, vmax = np.round([vmin, vmax], 2)
-
         lut = self._build_lut("viridis", vmin, vmax)
+        
+        # Configuración del Chart
         chart = vtk.vtkChartHistogram2D()
         chart.SetInputData(img, 0)
         chart.SetTransferFunction(lut)
 
         ax_bottom, ax_left = chart.GetAxis(vtk.vtkAxis.BOTTOM), chart.GetAxis(vtk.vtkAxis.LEFT)
         ax_bottom.SetTitle("Time (s)")
-        ax_left.SetTitle("Frequency (Hz)")
-        ax_bottom.SetRange(t0, t_end)
-        ax_left.SetRange(f0, f_end)
+        ax_bottom.SetRange(t0, t_end) # Rango de tiempo siempre lineal
+        
+        # --- 3. Configuración del Eje Y ---
+        ax_left.SetTitle(ax_title)
+        ax_left.SetLogScale(False)
+        ax_left.SetRange(f0_range, f_end_range) # Usar rango (logarítmico o lineal)
+
+        if log_scale:
+            # Etiquetado logarítmico (Coordenadas ya están en log10)
+            
+            # LLAMADA CORREGIDA: Pasar los límites LOG10 y usar la función correcta
+            tick_values, tick_labels = self._get_log_ticks_coords(f0_range, f_end_range) 
+            
+            tick_positions_array = vtk.vtkDoubleArray()
+            [tick_positions_array.InsertNextValue(float(pos)) for pos in tick_values]
+
+            tick_labels_array = vtk.vtkStringArray()
+            [tick_labels_array.InsertNextValue(label) for label in tick_labels]
+                
+            ax_left.SetCustomTickPositions(tick_positions_array, tick_labels_array) 
+            ax_left.SetNumberOfTicks(0)
+
+        else:
+            # Modo Lineal estándar
+            ax_left.SetTickLabelAlgorithm(vtk.vtkAxis.TICK_WILKINSON_EXTENDED)
+            ax_left.SetNumberOfTicks(-1)
+            ax_left.SetPrecision(2)
+
         ax_bottom.GetLabelProperties().SetColor(0, 0, 0)
         ax_left.GetLabelProperties().SetColor(0, 0, 0)
 
         scene.AddItem(chart)
         context_view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
         context_view.GetRenderWindow().Render()
-
-        self._log("Escalograma renderizado correctamente.")
 
     # =====================================================
     # === Colormap LUT
