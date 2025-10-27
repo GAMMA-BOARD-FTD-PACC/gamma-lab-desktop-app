@@ -35,6 +35,9 @@ class OpenSignalPlugin(IPlugin):
 
         self._charts: list[vtk.vtkChartXY] = []
         self._vtk_table = None
+        
+        self._sync_callback = None
+        self._is_syncing = False
 
     # ---------------- utils/log ----------------
     def _log(self, *args):
@@ -100,19 +103,65 @@ class OpenSignalPlugin(IPlugin):
         self.vtk_view.SetRenderWindow(self.vtk_interactor.GetRenderWindow())
         self.vtk_view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
 
-        # Crear menú contextual (sin chart al inicio)
         try:
-            self.vtk_menu = VTKContextMenu(None, self.vtk_interactor, plugin_name=self.meta.id, parent=self.ui)
+            self.vtk_menu = VTKContextMenu(None, self.vtk_interactor, parent=self.ui)
+            self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
         except Exception as e:
             self.vtk_menu = None
             QMessageBox.information(self.ui, "Menú contextual", "Error creando el menú contextual.\n" + str(e))
 
+        # callback de sincronización
+        self._setup_sync_callback()
 
         try:
             self.vtk_interactor.Initialize()
         except Exception:
             pass
         self._log("ensure_vtk(): scheduled init")
+
+    def _setup_sync_callback(self):
+        """Configura el callback para sincronizar los ejes X de todos los charts."""
+        if not self.vtk_interactor:
+            return
+        
+        def sync_axes(caller, event):
+            if self._is_syncing or not self._charts:
+                return
+            self._is_syncing = True
+            try:
+                ref_axis = self._charts[0].GetAxis(vtk.vtkAxis.BOTTOM)
+
+                # Obtener el rango del chart de referencia (buffer)
+                ref_range = [0.0, 0.0]
+                ref_axis.GetRange(ref_range)
+                x0, x1 = ref_range
+
+                for chart in self._charts:
+                    axis = chart.GetAxis(vtk.vtkAxis.BOTTOM)
+
+                    cur_range = [0.0, 0.0]
+                    axis.GetRange(cur_range)
+                    cx0, cx1 = cur_range
+
+                    # Solo actualizar si cambia
+                    if abs(cx0 - x0) > 1e-6 or abs(cx1 - x1) > 1e-6:
+                        axis.SetRange(x0, x1)
+                        axis.SetBehavior(vtk.vtkAxis.FIXED)
+
+                self.vtk_view.GetRenderWindow().Render()
+            finally:
+                self._is_syncing = False
+
+        
+        self._sync_callback = sync_axes
+        
+        # Agregar observers para diferentes eventos de interacción
+        self.vtk_interactor.AddObserver(vtk.vtkCommand.InteractionEvent, self._sync_callback)
+        self.vtk_interactor.AddObserver(vtk.vtkCommand.MouseWheelForwardEvent, self._sync_callback)
+        self.vtk_interactor.AddObserver(vtk.vtkCommand.MouseWheelBackwardEvent, self._sync_callback)
+        self.vtk_interactor.AddObserver(vtk.vtkCommand.LeftButtonPressEvent, self._sync_callback)
+        self.vtk_interactor.AddObserver(vtk.vtkCommand.LeftButtonReleaseEvent, self._sync_callback)
+        self.vtk_interactor.AddObserver(vtk.vtkCommand.MouseMoveEvent, self._sync_callback)
 
     # ---------------- archivo / datos ----------------
     def _on_open_clicked(self):
@@ -246,7 +295,33 @@ class OpenSignalPlugin(IPlugin):
             ax_b.SetLabelsVisible(True)
             ax_b.SetTitle("Time (s)")
 
+        # Sincronizar los rangos después del re-layout
+        self._sync_all_x_axes()
+
         rw.Render()
+
+    def _sync_all_x_axes(self):
+        """Sincroniza todos los ejes X al mismo rango."""
+        if not self._charts or self._is_syncing:
+            return
+
+        self._is_syncing = True
+        try:
+            # Rango del chart de referencia
+            ref_axis = self._charts[0].GetAxis(vtk.vtkAxis.BOTTOM)
+
+            ref_range = [0.0, 0.0]
+            ref_axis.GetRange(ref_range)
+            x0, x1 = ref_range
+
+            # Aplicar a todos los charts
+            for chart in self._charts:
+                axis = chart.GetAxis(vtk.vtkAxis.BOTTOM)
+                axis.SetRange(x0, x1)
+                axis.SetBehavior(vtk.vtkAxis.AUTO)
+        finally:
+            self._is_syncing = False
+
 
     def _render_selected(self):
         if self.current_ds is None or self.vtk_view is None:
@@ -256,8 +331,6 @@ class OpenSignalPlugin(IPlugin):
         scene = self.vtk_view.GetScene()
         scene.ClearItems()
         self._charts.clear()
-
-        
 
         sel = self._checked_indices()
         if not sel:
@@ -287,6 +360,8 @@ class OpenSignalPlugin(IPlugin):
             ax_b.SetLabelsVisible(True)
             ax_b.SetTitle("Time (s)")
 
+            ax_b.SetBehavior(vtk.vtkAxis.AUTO)
+
             unit = "Amplitude"
             if ch < len(ds.units) and ds.units[ch]:
                 unit = ds.units[ch]
@@ -295,5 +370,4 @@ class OpenSignalPlugin(IPlugin):
         self._relayout_charts()
 
         if self.vtk_menu and self._charts:
-            # Por ahora usamos el primer chart visible
             self.vtk_menu.set_chart(self._charts)
