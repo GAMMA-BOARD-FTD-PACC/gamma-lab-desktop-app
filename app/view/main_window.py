@@ -1,7 +1,7 @@
 from collections import defaultdict
 import os
 from PyQt5.QtWidgets import QMainWindow, QMessageBox, QHBoxLayout, QVBoxLayout, QWidget, QToolButton, QGroupBox, QLabel, QSizePolicy
-from app.view.ventana_principal_ui import Ui_MainWindow 
+from app.view.main_window_ui import Ui_MainWindow 
 from PyQt5.QtGui import QIcon, QPixmap
 from PyQt5.QtCore import QSize, Qt, QPropertyAnimation, QEasingCurve
 
@@ -43,8 +43,6 @@ class MainWindow(QMainWindow):
             "Preprocessing": self.ui.btn_preprocessing,
             "Analysis": self.ui.btn_analysis,
             "Measure": self.ui.btn_measure,
-            "Visualization": self.ui.btn_visualization,
-            "Utilities": self.ui.btn_utilities,
             "FAQ": self.ui.btn_faq,
         }
 
