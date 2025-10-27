@@ -134,7 +134,7 @@ class Wavelet_average_plugin(IPlugin):
     # === Lógica principal: CWT + Render
     # =====================================================
     def on_create_wavelet(self):
-        """Carga la señal activa, calcula el CWT y renderiza el escalograma."""
+        """Calcula la wavelet promedio sobre todos los trials activos"""
         active_signal = self._get_active_signal()
         if active_signal is None:
             QMessageBox.warning(self.widget, "Error", "No hay señal activa.")
@@ -142,21 +142,23 @@ class Wavelet_average_plugin(IPlugin):
 
         channel_name = active_signal.channel_names[0]
         trials = active_signal.get_active_trials(active_signal.name, channel_name)
+
         t = trials.time_rel
         if t is None or len(t) < 2:
             QMessageBox.warning(self.widget, "Error", "No hay información de tiempo suficiente.")
             return
-    
+
         try:
-            sig = trials.trials[:, 0] if trials.trials.ndim == 2 else np.ravel(trials.trials)
-            print(np.min(sig), np.max(sig))
-        except Exception:
-            sig = np.array(trials.trials, dtype=float).ravel()
+            data = np.array(trials.trials)  # (n_samples, n_trials)
+            if data.shape[0] < data.shape[1]:
+                data = data.T
+        except Exception as e:
+            QMessageBox.warning(self.widget, "Error", f"No se pudo obtener la matriz de trials: {e}")
+            return
 
-
-        sig = np.nan_to_num(np.asarray(sig).flatten(), nan=0.0, posinf=0.0, neginf=0.0)
         fs_calculado = round(1.0 / (t[1] - t[0]), 3)
 
+        # Parámetros UI
         fs = self.ui.sampleDensitySpinBox.value()
         fmin = self.ui.lowFrequencySpinBox.value()
         fmax = self.ui.highFrequencySpinBox.value()
@@ -164,19 +166,37 @@ class Wavelet_average_plugin(IPlugin):
         normalize = self.ui.normalizeCheckBox.isChecked()
         scaled = self.ui.scaleCheckBox.isChecked()
         norm_method = self.ui.normalizeComboBox.currentText().lower()
-        # scale_method = self.ui.scaleComboBox.currentText().lower() # No se usa
 
-        scalogram, times, freqs = self.compute_wavelet(sig, fs_calculado, fs, fmin, fmax, cycles)
+        # === Cálculo individual por trial ===
+        scalograms = []
+        n_trials = data.shape[1]
+        self._log(f"Wavelet Average: calculando {n_trials} trials activos...")
 
+        for trial_idx in range(n_trials):
+            sig = np.nan_to_num(data[:, trial_idx], nan=0.0, posinf=0.0, neginf=0.0)
+            scalogram, times, freqs = self.compute_wavelet(sig, fs_calculado, fs, fmin, fmax, cycles)
+            scalograms.append(scalogram)
+            self._log(f"  Trial {trial_idx+1}/{n_trials}: min={np.min(scalogram):.4f}, max={np.max(scalogram):.4f}")
+
+        # === Promedio de todos los trials ===
+        avg_scalogram = np.mean(np.stack(scalograms, axis=0), axis=0)
+        self._log(f"Scalogram promedio calculado: min={np.min(avg_scalogram):.4f}, max={np.max(avg_scalogram):.4f}")
+
+        # === Normalización y escalado opcional ===
         if normalize:
-            scalogram = self.normalize_tf(scalogram, norm_method)
-        
-        if scaled:
-            # Remuestrea el escalograma y obtiene las nuevas frecuencias logarítmicas
-            scalogram, freqs = self._scale_log(scalogram, freqs)
+            avg_scalogram = self.normalize_tf(avg_scalogram, norm_method)
+            self._log(f"Normalización aplicada: método={norm_method}")
 
+        if scaled:
+            avg_scalogram, freqs = self._scale_log(avg_scalogram, freqs)
+            self._log("Escalado logarítmico aplicado")
+
+        # === Render final ===
         self.ensure_vtk()
-        self.render_scalogram(times, freqs, scalogram, "Scalogram Wavelet (Morlet)", scaled)
+        self.render_scalogram(times, freqs, avg_scalogram, "Wavelet Average (Morlet)", scaled)
+        self._log("Renderización completa ✅")
+
+
 
     # =====================================================
     # === Cálculo del Wavelet
@@ -187,7 +207,10 @@ class Wavelet_average_plugin(IPlugin):
         factor = int(round(fs_calculado / fs))
         sig = sig[::factor]
 
-        # Las frecuencias se generan en orden descendente ([::-1])
+        if len(sig) < 4:
+            return np.zeros((1, 1)), np.array([0.0]), np.array([0.0])
+        # end def
+
         freq_axis = np.linspace(fmin, fmax, freq_seg)[::-1] 
         wavelet = f"cmor{num_cycles}-1.0"
         central_freq = pywt.central_frequency(wavelet)
