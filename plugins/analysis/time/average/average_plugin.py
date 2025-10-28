@@ -1,4 +1,5 @@
 from pathlib import Path
+from core import kernel
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
 from core.plugins.vtk_context_menu import VTKContextMenu
@@ -41,10 +42,13 @@ class Average_plugin(IPlugin):
             self.vtk_widget.Disable()
 
 
-    def start(self, kernel):
+    def start(self, kernel: kernel):
         print("Iniciando Average")
         self.kernel = kernel
         self.mainwin = kernel.get_service("MainWindow")
+        #Escuchar los eventos del kernel
+        self.kernel.event.connect(self.on_kernel_event)
+
         if self.mainwin:
             self.started = True
             print("Average tiene acceso a MainWindow")        
@@ -56,6 +60,8 @@ class Average_plugin(IPlugin):
             self.ui = Ui_Average()
             self.ui.setupUi(self.widget)
             self.ensure_vtk()
+            self.active_signal = self._get_active_signal()        
+
 
             # Conectar botón “Calculate Average”
             self.ui.mainActionButton.clicked.connect(self._on_calculate_average)
@@ -65,6 +71,16 @@ class Average_plugin(IPlugin):
 
         return self.widget
     
+    def on_kernel_event(self, topic: str, payload: object):
+        """
+        Escucha eventos emitidos por el Kernel.
+        """
+        if topic == "signal_active_changed":
+            print(f"Nueva señal cambiada: {payload}")
+            self.active_signal = self._get_active_signal()        
+
+
+
     def _log(self, *args):
         print("[Average]", *args)
 
@@ -89,7 +105,6 @@ class Average_plugin(IPlugin):
     def _on_calculate_average(self):
         """Carga el SignalDataset activo desde el DataStore y muestra sus TrialDataset asociados."""
 
-        self.active_signal = self._get_active_signal()        
         if self.active_signal is None:
             QMessageBox.warning(self.widget, "Error", "No hay señal activa para calcular el promedio.")
             return

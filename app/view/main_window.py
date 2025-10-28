@@ -5,6 +5,8 @@ from app.view.main_window_ui import Ui_MainWindow
 from PyQt5.QtGui import QIcon, QPixmap
 from PyQt5.QtCore import QSize, Qt, QPropertyAnimation, QEasingCurve
 
+from core.plugins.interfaces import IPlugin
+
 class MainWindow(QMainWindow):
     def __init__(self, kernel):
         super().__init__()
@@ -147,7 +149,7 @@ class MainWindow(QMainWindow):
 
 
     # Intertar el widget de un plugin activo en el espacio de trabajo
-    def show_plugin_widget(self, plugin):
+    def show_plugin_widget(self, plugin: IPlugin):
         try:
             plugin.process(None)
         except Exception as e:
@@ -310,6 +312,8 @@ class MainWindow(QMainWindow):
 
         try:
             datastore.set_active_signal(selected_key)
+            self.kernel.emit_event("signal_active_changed", {"key": selected_key})
+
             print(f"[Main Window] Señal activa cambiada a: {selected_key}")
         except ValueError as e:
             print(f"[Main Window] Error al cambiar señal activa: {e}")

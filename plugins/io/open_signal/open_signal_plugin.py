@@ -226,8 +226,8 @@ class OpenSignalPlugin(IPlugin):
 
         key = store.add_signal(ds, ds.name)
         self._log("Guardado en DataStore:", key)
-        self.kernel.emit_event("signal_added", {"key": key})
         store.set_active_signal(key)
+        self.kernel.emit_event("signal_added", {"key": key})
 
         self._set_dataset(ds)
 
