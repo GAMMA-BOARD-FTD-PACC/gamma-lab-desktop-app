@@ -128,10 +128,18 @@ class MeasurementService:
         return self._state
 
     def start(self, measure_type: str):
-        allowed = {"slope", "derivative", "amplitude"}
+        allowed = {"slope", "slope_all_trials", "amplitude"}
         if measure_type not in allowed:
             measure_type = "slope"
-            
+        
+        if measure_type == "slope_all_trials" and self._context.get("plugin") != "trials":
+            try:
+                QMessageBox.information(self.parent, "Medición",
+                                        "Esta medición solo está disponible en el plugin de Trials.")
+            except Exception:
+                pass
+            return False
+    
         if self._state != 'idle':
             try:
                 QMessageBox.information(self.parent, "Medición", "Ya hay una medición en curso. Completa o cancélala (Esc).")
@@ -525,13 +533,12 @@ class MeasurementService:
 
     # ====================== persistencia ======================
 
-    def _save_measurement(self, result, p1, p2):
+    def _save_measurement(self, result, p1, p2, override_ctx=None):
         t = str(result.get("type", "measure"))
         lst = self.ds_get("measurements", None)
         if not isinstance(lst, list):
             lst = []
 
-        # secuencia por tipo
         prefix, seq = f"{t}-", 0
         for it in lst:
             if isinstance(it, dict) and it.get("type") == t:
@@ -544,14 +551,14 @@ class MeasurementService:
         seq += 1
         meas_id = f"{t}-{seq:03d}"
 
-        # contexto actual
         ctx = {
             "view_id": self._context.get("view_id"),
             "trial_id": self._context.get("trial_id"),
             "channel_name": self._context.get("channel_name"),
         }
+        if isinstance(override_ctx, dict):
+            ctx.update({k: v for k, v in override_ctx.items() if v is not None})
 
-        # registro base común
         p1x, p1y = float(p1[0]), float(p1[1])
         p2x, p2y = float(p2[0]), float(p2[1])
         base = {
@@ -563,28 +570,22 @@ class MeasurementService:
             "ctx": ctx,
         }
 
-        # métricas genéricas útiles
         dx = p2x - p1x
         dy = p2y - p1y
-
-        # fusionar resultado específico de la medición
-        # (esto asegura que x1, x2, y_min, y_max, amp_pp, etc. se conserven)
         rec = {**base, **{k: v for k, v in (result or {}).items() if k != "type"}}
 
-        # sólo añadir campos de slope si aplica
         if t == "slope":
             rec.setdefault("dx", float(dx))
             rec.setdefault("dy", float(dy))
-            # si no viene calculada:
             if "slope" not in rec:
                 rec["slope"] = float(dy / dx) if dx != 0 else float("inf")
             if "dist" not in rec:
                 rec["dist"] = float((dx*dx + dy*dy) ** 0.5)
 
-        # Nota: para 'amplitude' NO tocamos ni sobreescribimos x1/x2/y_min/...
         lst.append(rec)
         self.ds_set("measurements", lst)
         return meas_id
+
 
 
     # ====================== cierre de medición ======================
@@ -646,6 +647,55 @@ class MeasurementService:
                 )
             except Exception:
                 pass
+        
+        elif kind == 'slope_all_trials':
+            if not self._ref_data or not self._ref_data.get('xs'):
+                ch = self.get_active_chart()
+                if not ch:
+                    self.cancel(); return
+                self._load_reference_data_for_pick(ch)
+                if not self._ref_data or not self._ref_data.get('xs'):
+                    try:
+                        QMessageBox.information(self.parent, "Medición",
+                            "No hay datos para estimar índices en X.")
+                    except Exception:
+                        pass
+                    self.cancel(); return
+
+            i1 = self._nearest_index(x1)
+            i2 = self._nearest_index(x2)
+            if i1 is None or i2 is None:
+                try:
+                    QMessageBox.information(self.parent, "Medición",
+                        "No se pudieron determinar los índices de los puntos.")
+                except Exception:
+                    pass
+                self.cancel(); return
+
+            if i1 == i2:
+                try:
+                    QMessageBox.information(self.parent, "Medición",
+                        "Los dos puntos caen en el mismo índice; dx=0.")
+                except Exception:
+                    pass
+                # seguimos adelante para que no deje rastro de estado
+                self.cancel(); return
+
+            ids = self._compute_and_save_slopes_each_trial_by_index(
+                min(i1, i2), max(i1, i2),
+                make_overlays_for_current=False  # pon True si quieres overlay solo del trial visible
+            )
+
+            try:
+                QMessageBox.information(
+                    self.parent, "Pendientes por trial",
+                    f"Se generaron {len(ids)} mediciones (una por trial)."
+                )
+            except Exception:
+                pass
+
+            self._state = 'idle'
+            self._current = None
 
         else:
             # tipo no soportado (por si queda rastro de 'derivative')
@@ -904,3 +954,82 @@ class MeasurementService:
 
         xs = self._ref_data['xs']; ys = self._ref_data['ys']
         return amplitude_in_window(xs, ys, x1, x2)
+    
+    def _nearest_index(self, x_target):
+        # requiere self._ref_data cargado (xs ordenados)
+        xs = self._ref_data.get('xs') if self._ref_data else None
+        if not xs:
+            return None
+        i = bisect.bisect_left(xs, x_target)
+        cand = []
+        if i > 0: cand.append(i-1)
+        if i < len(xs): cand.append(i)
+        # elegir el más cercano en X
+        best_i, best_d = None, None
+        for j in cand:
+            d = abs(xs[j] - x_target)
+            if best_d is None or d < best_d:
+                best_d, best_i = d, j
+        return best_i
+
+    def _compute_and_save_slopes_each_trial_by_index(self, i1, i2, make_overlays_for_current=False):
+        ch = self.get_active_chart()
+        if not ch or ch.GetNumberOfPlots() == 0:
+            return []
+
+        ref_plot = ch.GetPlot(0)
+        table = ref_plot.GetInput()
+        if table is None:
+            return []
+
+        x_arr = table.GetColumnByName("time") or table.GetColumn(0)
+        if x_arr is None:
+            return []
+
+        t1 = float(x_arr.GetValue(i1))
+        t2 = float(x_arr.GetValue(i2))
+        dx = float(t2 - t1)
+        if dx == 0:
+            return []
+
+        ncols = table.GetNumberOfColumns()
+        meas_ids = []
+
+        for c in range(1, ncols):
+            col = table.GetColumn(c)
+            if not col:
+                continue
+            name = col.GetName() if hasattr(col, "GetName") else f"col{c}"
+            if not name or not name.startswith("trial_"):
+                continue
+
+            y1 = float(col.GetValue(i1))
+            y2 = float(col.GetValue(i2))
+
+            # métrica estándar “slope” con tus utilidades
+            res = two_point_metrics((t1, y1), (t2, y2), kind='slope')
+            # agrega metadatos útiles
+            res["trial_name"] = name
+            # mapea trial_k (1-based) a trial_id (0-based)
+            try:
+                k = int(name.split("_")[1])
+                trial_id_zero_based = k - 1
+            except Exception:
+                trial_id_zero_based = None
+
+            mid = self._save_measurement(
+                res,
+                (t1, y1),
+                (t2, y2),
+                override_ctx={"trial_id": trial_id_zero_based}
+            )
+            meas_ids.append(mid)
+
+            if make_overlays_for_current and self._context.get("trial_id") == trial_id_zero_based:
+                try:
+                    self._add_overlay_for_points(mid, (t1, y1), (t2, y2))
+                except Exception:
+                    pass
+
+        return meas_ids
+

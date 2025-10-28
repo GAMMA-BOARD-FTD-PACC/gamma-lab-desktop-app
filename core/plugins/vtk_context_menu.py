@@ -227,10 +227,15 @@ class VTKContextMenu:
             "Amplitud (2 puntos)",
             lambda: self.measure_service.start('amplitude')
         )
+        act_slope_all_trials = measure_menu.addAction(
+            "Pendiente (todos los trials)",
+            lambda: self.measure_service.start('slope_all_trials')
+        )
 
         can_measure = self._measurements_enabled and self._can_measure_current_chart()
         act_slope.setEnabled(can_measure and self.measure_service.state == 'idle')
         act_amp.setEnabled(can_measure and self.measure_service.state == 'idle')
+        act_slope_all_trials.setEnabled(can_measure and self.measure_service.state == 'idle')
 
         act_cancel = measure_menu.addAction("Cancelar medición (Esc)", self.measure_service.cancel)
         act_cancel.setEnabled(self.measure_service.state != 'idle')
