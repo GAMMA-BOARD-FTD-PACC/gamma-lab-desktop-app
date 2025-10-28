@@ -40,6 +40,8 @@ class TrialsPlugin(IPlugin):
         self.visible_trials = []
         self.last_td: TrialDataset | None = None
         self._active_ds: SignalDataset | None = None
+        
+        self.vtk_menu: VTKContextMenu | None = None
 
     # ---------------- Logs ----------------
     def _log(self, *args):
@@ -101,6 +103,25 @@ class TrialsPlugin(IPlugin):
             self.vtk_interactor.Initialize()
         except Exception:
             pass
+        
+        if self.vtk_menu is None:
+            base_scope = {
+                "view_id": "trials",
+                "trial_id": None,
+                "channel_name": None,
+                "plugin": "trials",
+                "domain": "time",
+                "graph_id": "trials:blank"
+            }
+            self.vtk_menu = VTKContextMenu(
+                chart=None,
+                vtk_widget=self.vtk_interactor,
+                plugin_name="trials",
+                measurements_enabled=True,
+                measure_scope=base_scope,
+                parent=self.widget
+            )
+            self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
         self._log("ensure_vtk(): scheduled init")
 
     def _init_controls(self):
@@ -267,7 +288,7 @@ class TrialsPlugin(IPlugin):
         t1   = float(self.ui.finalTimeDoubleSpinBox.value())
         mode = self.ui.endModeCombo.currentData() or "fixed"
         stim = int(self.ui.stimNumberSpinBox.value())
-        stim = None if stim <= 0 else stim
+        stim = None if stim < 0 else stim
         inter_stim_time  = float(self.ui.interStimTimeDoubleSpinBox.value())
         inter_stim_time  = None if inter_stim_time <= 0 else inter_stim_time
 
@@ -278,7 +299,7 @@ class TrialsPlugin(IPlugin):
         self._log("params →", dict(channel=int(ch), threshold=th, t0=t0, t1=t1,
                                 end_mode=mode, stim_expected=stim, inter_stim_time=inter_stim_time))
 
-        # Ejecutar corte
+        print("")
         try:
             td = cut_trials_single_channel(
             ds=ds,
@@ -458,14 +479,6 @@ class TrialsPlugin(IPlugin):
         ch_name = getattr(td, "channel_name", "") or "channel"
         trials_txt = ", ".join(str(i+1) for i in sel)
         self.chart.SetTitle(f"Trial {trials_txt} — {ch_name}")
-        
-        #menu global
-        try:
-            self.vtk_menu = VTKContextMenu(self.chart, self.vtk_interactor, parent=self.widget)
-            self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
-
-        except Exception as e:
-            QMessageBox.information(self.widget, "Menú contextal", "Error creando el menú contextual.\n" + str(e))
 
 
         try:
@@ -473,3 +486,23 @@ class TrialsPlugin(IPlugin):
             self._log("  render OK (ContextView interactivo)")
         except Exception as e:
             self._log("Render error:", e)
+            
+        if self.vtk_menu is not None:
+            self.vtk_menu.set_chart(self.chart)
+            ds = self._get_active_signal()
+            signal_name = getattr(ds, "name", "signal")
+            trial_idx = (self.visible_trials[0] if self.visible_trials else 0)
+
+            curr_channel_name = getattr(td, "channel_name", "") or "channel"
+
+            graph_uid = f"trials:{signal_name}:{curr_channel_name}"
+            print(f"trial idx={trial_idx}")
+            self.vtk_menu.on_view_rebuilt(
+                self.chart,
+                view_id="trials",
+                trial_id=trial_idx,
+                channel_name=curr_channel_name,
+                plugin="trials",
+                domain="time",
+                graph_id=graph_uid
+            )

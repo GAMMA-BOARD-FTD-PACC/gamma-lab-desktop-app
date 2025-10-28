@@ -103,7 +103,21 @@ class OpenSignalPlugin(IPlugin):
         self.vtk_view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
 
         try:
-            self.vtk_menu = VTKContextMenu(None, self.vtk_interactor, parent=self.ui)
+            self.vtk_menu = VTKContextMenu(
+                chart=[],                              
+                vtk_widget=self.vtk_interactor,       
+                plugin_name="open_signal",
+                measurements_enabled=False,             
+                measure_scope={                         
+                    "view_id": "signal_loader",         
+                    "trial_id": None,
+                    "channel_name": None,          
+                    "plugin": "open_signal",
+                    "domain": "time",
+                    "graph_id": "open_signal:blank" 
+                },
+                parent=self
+            )
             self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
         except Exception as e:
             self.vtk_menu = None
@@ -122,27 +136,36 @@ class OpenSignalPlugin(IPlugin):
         """Configura el callback para sincronizar los ejes X de todos los charts."""
         if not self.vtk_interactor:
             return
-        
+
         def sync_axes(caller, event):
             if self._is_syncing or not self._charts:
                 return
             self._is_syncing = True
             try:
-                ref_axis = self._charts[0].GetAxis(vtk.vtkAxis.BOTTOM)
+                # 1) ¿Dónde está el cursor?
+                try:
+                    mx, my = self.vtk_interactor.GetEventPosition()
+                except Exception:
+                    mx, my = -1, -1
 
-                # Obtener el rango del chart de referencia (buffer)
+                ref_chart = self._chart_at_pixel(mx, my) or self._charts[0]
+
+                ref_axis = ref_chart.GetAxis(vtk.vtkAxis.BOTTOM)
                 ref_range = [0.0, 0.0]
                 ref_axis.GetRange(ref_range)
                 x0, x1 = ref_range
 
+                ref_axis.SetBehavior(vtk.vtkAxis.AUTO)
+
                 for chart in self._charts:
+                    if chart is ref_chart:
+                        continue
                     axis = chart.GetAxis(vtk.vtkAxis.BOTTOM)
 
                     cur_range = [0.0, 0.0]
                     axis.GetRange(cur_range)
                     cx0, cx1 = cur_range
 
-                    # Solo actualizar si cambia
                     if abs(cx0 - x0) > 1e-6 or abs(cx1 - x1) > 1e-6:
                         axis.SetRange(x0, x1)
                         axis.SetBehavior(vtk.vtkAxis.FIXED)
@@ -150,8 +173,7 @@ class OpenSignalPlugin(IPlugin):
                 self.vtk_view.GetRenderWindow().Render()
             finally:
                 self._is_syncing = False
-
-        
+ 
         self._sync_callback = sync_axes
         
         # Agregar observers para diferentes eventos de interacción
@@ -362,3 +384,12 @@ class OpenSignalPlugin(IPlugin):
 
         if self.vtk_menu and self._charts:
             self.vtk_menu.set_chart(self._charts)
+            
+    def _chart_at_pixel(self, x: int, y: int):
+        """Devuelve el chart cuyo rectángulo contiene el punto (x, y) en coords de VTK."""
+        for ch in self._charts:
+            r = ch.GetSize()  # vtkRectf: x, y, width, height
+            if (r.GetX() <= x <= r.GetX() + r.GetWidth()
+                    and r.GetY() <= y <= r.GetY() + r.GetHeight()):
+                return ch
+        return None

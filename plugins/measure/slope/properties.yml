@@ -1,5 +1,5 @@
-id: "filter_adjust"
-name: "Calculate Slope"
+id: "slope_results"
+name: "Slope Results"
 category: "Measure"
 subcategory: "Measures"
 version: "1.0"

@@ -8,30 +8,39 @@ from PyQt5.QtWidgets import QMessageBox, QFileDialog, QHeaderView
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
-from plugins.measure.slope.slope_plugin_ui import Ui_Slope
+from plugins.measure.amplitude.amplitude_plugin_ui import Ui_Amplitude
 
-class SlopeTableModel(QtCore.QAbstractTableModel):
-    # User-facing headers in English (no "Type" column shown)
+
+class AmplitudeTableModel(QtCore.QAbstractTableModel):
+    # User-facing headers in English
     HEADERS = [
         "ID",
-        "Point 1 (x, y)",    # unified P1
-        "Point 2 (x, y)",    # unified P2
-        "Δx",
-        "Δy",
-        "Slope (m)",
-        "Distance",
+        "Point 1 (x, y)",      # unified P1
+        "Point 2 (x, y)",      # unified P2
+        "Window start (x1)",   # previously Win.x1
+        "Window end (x2)",     # previously Win.x2
+        "Samples (N)",         # previously N
+        "Min value (Ymin)",
+        "Max value (Ymax)",
+        "Amplitude (p-p)",     # previously Amp p-p
+        "x at min",            # previously x@min
+        "x at max",            # previously x@max
         "Timestamp",
     ]
 
-    # Header tooltips in English
+    # Optional tooltips for headers
     HEADER_TIPS = {
         1: "Coordinates of the first selected point (x, y).",
         2: "Coordinates of the second selected point (x, y).",
-        3: "Difference in x: Δx = x2 − x1.",
-        4: "Difference in y: Δy = y2 − y1.",
-        5: "Slope m = Δy / Δx (if Δx = 0, m = ∞).",
-        6: "Euclidean distance between P1 and P2.",
-        7: "When the measurement was saved.",
+        3: "Lower limit of the X-axis window used for amplitude measurement.",
+        4: "Upper limit of the X-axis window used for amplitude measurement.",
+        5: "Number of samples considered in the [x1, x2] window.",
+        6: "Minimum Y value within the window.",
+        7: "Maximum Y value within the window.",
+        8: "Peak-to-peak amplitude = Ymax − Ymin.",
+        9: "X coordinate where the minimum (Ymin) occurs.",
+        10: "X coordinate where the maximum (Ymax) occurs.",
+        11: "Timestamp when the measurement was saved.",
     }
 
     def __init__(self, rows: List[Dict[str, Any]] | None = None, parent=None):
@@ -78,11 +87,15 @@ class SlopeTableModel(QtCore.QAbstractTableModel):
             0: r.get("id"),
             1: self._fmt_xy(p1x, p1y),
             2: self._fmt_xy(p2x, p2y),
-            3: r.get("dx"),
-            4: r.get("dy"),
-            5: r.get("slope"),
-            6: r.get("dist"),
-            7: r.get("timestamp"),
+            3: r.get("x1"),
+            4: r.get("x2"),
+            5: r.get("n"),
+            6: r.get("y_min"),
+            7: r.get("y_max"),
+            8: r.get("amp_pp"),
+            9: r.get("x_at_min"),
+            10: r.get("x_at_max"),
+            11: r.get("timestamp"),
         }
         return self._fmt(mapping.get(c))
 
@@ -95,11 +108,10 @@ class SlopeTableModel(QtCore.QAbstractTableModel):
         return list(self._rows)
 
 
-
 # ----------------------------
 # Plugin
 # ----------------------------
-class SlopePlugin(IPlugin):
+class AmplitudePlugin(IPlugin):
 
     def __init__(self, meta: PluginMeta):
         super().__init__(meta)
@@ -108,14 +120,14 @@ class SlopePlugin(IPlugin):
 
         # UI
         self.widget: QtWidgets.QWidget | None = None
-        self.ui: Ui_Slope | None = None
+        self.ui: Ui_Amplitude | None = None
 
-        # Modelo
-        self.model: SlopeTableModel | None = None
+        # Model
+        self.model: AmplitudeTableModel | None = None
 
-    # ---------- util de logs ----------
+    # ---------- Logging helpers ----------
     def _log(self, *args):
-        print("[SLOPE]", *args)
+        print("[AMPLITUDE]", *args)
         sys.stdout.flush()
 
     def _notify(self, msg: str):
@@ -129,11 +141,11 @@ class SlopePlugin(IPlugin):
 
     def _warn(self, msg: str):
         try:
-            QMessageBox.warning(self.widget, "Slope", msg)
+            QMessageBox.warning(self.widget, "Amplitude", msg)
         except Exception:
             self._log("WARN:", msg)
 
-    # ---------- ciclo de vida ----------
+    # ---------- Lifecycle ----------
     def initialize(self, kernel):
         self.kernel = kernel
         self._log("initialize()")
@@ -147,20 +159,19 @@ class SlopePlugin(IPlugin):
         self._log("stop()")
 
     def process(self, data: Any):
-        # Cuando el host "procesa" algo, refrescamos la tabla (opcional).
-        self._log("process(): refresh table")
+        self._log("process(): refreshing table")
         self._reload_from_store()
 
     # ---------- UI ----------
     def get_widget(self, parent=None):
         if self.widget is None:
-            self._log("get_widget(): creando UI")
-            self.ui = Ui_Slope()
+            self._log("get_widget(): creating UI")
+            self.ui = Ui_Amplitude()
             self.widget = QtWidgets.QWidget(parent)
-            self.ui.setupUi(self.widget)
+            self.ui.setupUi(self.widget)  # assumes Form: AmplitudeForm
 
-            # Modelo + tabla
-            self.model = SlopeTableModel([])
+            # Model + table setup
+            self.model = AmplitudeTableModel([])
             tv = self.ui.tableView
             tv.setModel(self.model)
             tv.setSortingEnabled(True)
@@ -170,11 +181,11 @@ class SlopePlugin(IPlugin):
             tv.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
             tv.verticalHeader().setVisible(False)
 
-            # Botón derecha -> export CSV
+            # Export button
             self.ui.pushButton.setText("Export CSV")
             self.ui.pushButton.clicked.connect(self._on_export_csv)
 
-            # Primer load
+            # Initial load
             self._reload_from_store()
         else:
             self.widget.setParent(parent)
@@ -182,19 +193,17 @@ class SlopePlugin(IPlugin):
 
     # ---------- DataStore ----------
     def _reload_from_store(self):
-        rows = self._load_slope_rows_from_store()
+        rows = self._load_amplitude_rows_from_store()
         if self.model:
             self.model.set_rows(rows)
-        self._notify(f"Slope: {len(rows)} mediciones")
+        self._notify(f"Amplitude: {len(rows)} measurements")
 
-    def _load_slope_rows_from_store(self) -> List[Dict[str, Any]]:
+    def _load_amplitude_rows_from_store(self) -> List[Dict[str, Any]]:
         """
-        Lee DataStore['measurements'] (también tolera 'meassurements'),
-        filtra tipo 'slope' y normaliza a filas con:
-          id, type, p1x, p1y, p2x, p2y, dx, dy, slope, dist, timestamp
-        Si faltan métricas, las calcula.
+        Reads DataStore['measurements'] (also tolerates 'meassurements'),
+        filters entries of type 'amplitude' and normalizes them to:
+          id, p1x, p1y, p2x, p2y, x1, x2, n, y_min, y_max, amp_pp, x_at_min, x_at_max, timestamp
         """
-        # Obtener servicio DataStore
         store = None
         try:
             if self.mainwin:
@@ -205,12 +214,12 @@ class SlopePlugin(IPlugin):
             store = None
 
         if store is None:
-            self._warn("No se encontró DataStore.")
+            self._warn("DataStore service not found.")
             return []
 
-        # Leer lista cruda
+        # Try to read from DataStore
         raw = None
-        for key in ("measurements", "meassurements"):  # tolera typo
+        for key in ("measurements", "meassurements"):
             try:
                 if hasattr(store, "get"):
                     raw = store.get(key)
@@ -226,43 +235,51 @@ class SlopePlugin(IPlugin):
                 break
 
         if not raw or not isinstance(raw, (list, tuple)):
-            self._log("DataStore['measurements'] vacío o inválido.")
+            self._log("DataStore['measurements'] is empty or invalid.")
             return []
 
         rows: List[Dict[str, Any]] = []
         seq = 0
         for item in raw:
             try:
-                if not isinstance(item, dict) or item.get("type") != "slope":
+                if not isinstance(item, dict) or item.get("type") != "amplitude":
                     continue
 
+                print("[AMPLITUDE]",item)
                 p1 = item.get("p1"); p2 = item.get("p2")
                 if not (isinstance(p1, (list, tuple)) and isinstance(p2, (list, tuple)) and len(p1) == 2 and len(p2) == 2):
-                    continue
+                    p1x = p1y = p2x = p2y = None
+                else:
+                    p1x, p1y = float(p1[0]), float(p1[1])
+                    p2x, p2y = float(p2[0]), float(p2[1])
 
-                p1x, p1y = float(p1[0]), float(p1[1])
-                p2x, p2y = float(p2[0]), float(p2[1])
-
-                dx    = item.get("dx");    dx    = float(dx) if dx is not None else (p2x - p1x)
-                dy    = item.get("dy");    dy    = float(dy) if dy is not None else (p2y - p1y)
-                slope = item.get("slope"); slope = float(slope) if slope is not None else (dy / dx if dx != 0 else float("inf"))
-                dist  = item.get("dist");  dist  = float(dist) if dist is not None else ((dx**2 + dy**2) ** 0.5)
+                # amplitude metrics
+                x1        = _f(item.get("x1"))
+                x2        = _f(item.get("x2"))
+                n         = _i(item.get("n"))
+                y_min     = _f(item.get("y_min"))
+                y_max     = _f(item.get("y_max"))
+                amp_pp    = _f(item.get("amp_pp"))
+                x_at_min  = _f(item.get("x_at_min"))
+                x_at_max  = _f(item.get("x_at_max"))
 
                 mid = item.get("id")
                 if not mid:
                     seq += 1
-                    mid = f"slope-{seq:03d}"
+                    mid = f"amplitude-{seq:03d}"
 
                 ts = item.get("timestamp") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
                 rows.append({
-                    "id": mid, "type": "slope",
+                    "id": mid,
                     "p1x": p1x, "p1y": p1y, "p2x": p2x, "p2y": p2y,
-                    "dx": dx, "dy": dy, "slope": slope, "dist": dist,
+                    "x1": x1, "x2": x2, "n": n,
+                    "y_min": y_min, "y_max": y_max, "amp_pp": amp_pp,
+                    "x_at_min": x_at_min, "x_at_max": x_at_max,
                     "timestamp": ts
                 })
             except Exception as e:
-                self._log("Fila inválida en measurements:", e)
+                self._log("Invalid row in measurements (amplitude):", e)
 
         return rows
 
@@ -272,13 +289,13 @@ class SlopePlugin(IPlugin):
             return
         rows = self.model.get_all_rows()
         if not rows:
-            self._warn("No hay mediciones para exportar.")
+            self._warn("No measurements to export.")
             return
 
         path, _ = QFileDialog.getSaveFileName(
             self.widget,
-            "Exportar mediciones (slope) a CSV",
-            "slope_measurements.csv",
+            "Export amplitude measurements to CSV",
+            "amplitude_measurements.csv",
             "CSV (*.csv)"
         )
         if not path:
@@ -287,20 +304,39 @@ class SlopePlugin(IPlugin):
         try:
             with open(path, "w", newline="", encoding="utf-8") as f:
                 w = csv.writer(f)
-                w.writerow(SlopeTableModel.HEADERS)
+                w.writerow(AmplitudeTableModel.HEADERS)
                 for r in rows:
-                    p1 = "" if (r.get("p1x") is None or r.get("p1y") is None) else f"({r.get('p1x')},{r.get('p1y')})"
-                    p2 = "" if (r.get("p2x") is None or r.get("p2y") is None) else f"({r.get('p2x')},{r.get('p2y')})"
                     w.writerow([
                         r.get("id", ""),
-                        p1,
-                        p2,
-                        r.get("dx", ""),
-                        r.get("dy", ""),
-                        r.get("slope", ""),
-                        r.get("dist", ""),
+                        f"({r.get('p1x', '')},{r.get('p1y', '')})",
+                        f"({r.get('p2x', '')},{r.get('p2y', '')})",
+                        r.get("x1", ""),
+                        r.get("x2", ""),
+                        r.get("n", ""),
+                        r.get("y_min", ""),
+                        r.get("y_max", ""),
+                        r.get("amp_pp", ""),
+                        r.get("x_at_min", ""),
+                        r.get("x_at_max", ""),
                         r.get("timestamp", ""),
                     ])
-            self._notify(f"Exportado CSV: {path}")
+            self._notify(f"CSV exported: {path}")
         except Exception as e:
-            self._warn(f"No se pudo exportar CSV:\n{e}")
+            self._warn(f"Failed to export CSV:\n{e}")
+
+
+# --- Local helpers for safe casting ---
+def _f(v):
+    try:
+        return float(v) if v is not None else None
+    except Exception:
+        return None
+
+def _i(v):
+    try:
+        return int(v) if v is not None else None
+    except Exception:
+        try:
+            return int(float(v))
+        except Exception:
+            return None
