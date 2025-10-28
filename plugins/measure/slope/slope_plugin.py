@@ -1,3 +1,4 @@
+# plugins/measure/slope/slope_plugin.py
 import sys
 import csv
 from datetime import datetime
@@ -10,28 +11,35 @@ from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
 from plugins.measure.slope.slope_plugin_ui import Ui_Slope
 
+
 class SlopeTableModel(QtCore.QAbstractTableModel):
-    # User-facing headers in English (no "Type" column shown)
+    """
+    Table model for slope measurements.
+    """
     HEADERS = [
-        "ID",
-        "Point 1 (x, y)",    # unified P1
-        "Point 2 (x, y)",    # unified P2
-        "Δx",
-        "Δy",
-        "Slope (m)",
-        "Distance",
-        "Timestamp",
+        "ID",                 # 0
+        "Channel",            # 1  <-- ctx.channel_name
+        "Graph",          # 2  <-- ctx.graph_id
+        "Point 1 (x, y)",     # 3
+        "Point 2 (x, y)",     # 4
+        "Δx",                 # 5
+        "Δy",                 # 6
+        "Slope (m)",          # 7
+        "Distance",           # 8
+        "Timestamp",          # 9
     ]
 
-    # Header tooltips in English
     HEADER_TIPS = {
-        1: "Coordinates of the first selected point (x, y).",
-        2: "Coordinates of the second selected point (x, y).",
-        3: "Difference in x: Δx = x2 − x1.",
-        4: "Difference in y: Δy = y2 − y1.",
-        5: "Slope m = Δy / Δx (if Δx = 0, m = ∞).",
-        6: "Euclidean distance between P1 and P2.",
-        7: "When the measurement was saved.",
+        0: "Unique measurement ID.",
+        1: "Channel associated with this measurement (from ctx.channel_name).",
+        2: "Unique Graph ID from which the measurement was taken (ctx.graph_id).",
+        3: "Coordinates of the first point (x, y).",
+        4: "Coordinates of the second point (x, y).",
+        5: "Difference in x: Δx = x2 − x1.",
+        6: "Difference in y: Δy = y2 − y1.",
+        7: "Slope m = Δy / Δx (if Δx = 0, m = ∞).",
+        8: "Euclidean distance between P1 and P2.",
+        9: "Timestamp when the measurement was saved.",
     }
 
     def __init__(self, rows: List[Dict[str, Any]] | None = None, parent=None):
@@ -76,13 +84,15 @@ class SlopeTableModel(QtCore.QAbstractTableModel):
 
         mapping = {
             0: r.get("id"),
-            1: self._fmt_xy(p1x, p1y),
-            2: self._fmt_xy(p2x, p2y),
-            3: r.get("dx"),
-            4: r.get("dy"),
-            5: r.get("slope"),
-            6: r.get("dist"),
-            7: r.get("timestamp"),
+            1: r.get("ctx_channel"),
+            2: r.get("ctx_graph"),
+            3: self._fmt_xy(p1x, p1y),
+            4: self._fmt_xy(p2x, p2y),
+            5: r.get("dx"),
+            6: r.get("dy"),
+            7: r.get("slope"),
+            8: r.get("dist"),
+            9: r.get("timestamp"),
         }
         return self._fmt(mapping.get(c))
 
@@ -95,9 +105,8 @@ class SlopeTableModel(QtCore.QAbstractTableModel):
         return list(self._rows)
 
 
-
 # ----------------------------
-# Plugin
+# Slope Plugin
 # ----------------------------
 class SlopePlugin(IPlugin):
 
@@ -110,10 +119,10 @@ class SlopePlugin(IPlugin):
         self.widget: QtWidgets.QWidget | None = None
         self.ui: Ui_Slope | None = None
 
-        # Modelo
+        # Table model
         self.model: SlopeTableModel | None = None
 
-    # ---------- util de logs ----------
+    # ---------- Logging ----------
     def _log(self, *args):
         print("[SLOPE]", *args)
         sys.stdout.flush()
@@ -133,7 +142,7 @@ class SlopePlugin(IPlugin):
         except Exception:
             self._log("WARN:", msg)
 
-    # ---------- ciclo de vida ----------
+    # ---------- Lifecycle ----------
     def initialize(self, kernel):
         self.kernel = kernel
         self._log("initialize()")
@@ -147,19 +156,18 @@ class SlopePlugin(IPlugin):
         self._log("stop()")
 
     def process(self, data: Any):
-        # Cuando el host "procesa" algo, refrescamos la tabla (opcional).
-        self._log("process(): refresh table")
+        self._log("process(): refreshing table")
         self._reload_from_store()
 
     # ---------- UI ----------
     def get_widget(self, parent=None):
         if self.widget is None:
-            self._log("get_widget(): creando UI")
+            self._log("get_widget(): creating UI")
             self.ui = Ui_Slope()
             self.widget = QtWidgets.QWidget(parent)
             self.ui.setupUi(self.widget)
 
-            # Modelo + tabla
+            # Model + table setup
             self.model = SlopeTableModel([])
             tv = self.ui.tableView
             tv.setModel(self.model)
@@ -170,11 +178,11 @@ class SlopePlugin(IPlugin):
             tv.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
             tv.verticalHeader().setVisible(False)
 
-            # Botón derecha -> export CSV
+            # Export CSV button
             self.ui.pushButton.setText("Export CSV")
             self.ui.pushButton.clicked.connect(self._on_export_csv)
 
-            # Primer load
+            # Initial load
             self._reload_from_store()
         else:
             self.widget.setParent(parent)
@@ -185,16 +193,18 @@ class SlopePlugin(IPlugin):
         rows = self._load_slope_rows_from_store()
         if self.model:
             self.model.set_rows(rows)
-        self._notify(f"Slope: {len(rows)} mediciones")
+        self._notify(f"Slope: {len(rows)} measurements")
 
     def _load_slope_rows_from_store(self) -> List[Dict[str, Any]]:
         """
-        Lee DataStore['measurements'] (también tolera 'meassurements'),
-        filtra tipo 'slope' y normaliza a filas con:
-          id, type, p1x, p1y, p2x, p2y, dx, dy, slope, dist, timestamp
-        Si faltan métricas, las calcula.
+        Reads DataStore['measurements'] (or 'meassurements'),
+        filters type='slope', and normalizes rows with:
+            id, p1x, p1y, p2x, p2y, dx, dy, slope, dist, timestamp
+        Also extracts from context:
+            ctx_channel = ctx.channel_name
+            ctx_graph   = ctx.graph_id
         """
-        # Obtener servicio DataStore
+        # Get DataStore service
         store = None
         try:
             if self.mainwin:
@@ -205,12 +215,12 @@ class SlopePlugin(IPlugin):
             store = None
 
         if store is None:
-            self._warn("No se encontró DataStore.")
+            self._warn("DataStore service not found.")
             return []
 
-        # Leer lista cruda
+        # Raw list
         raw = None
-        for key in ("measurements", "meassurements"):  # tolera typo
+        for key in ("measurements", "meassurements"):
             try:
                 if hasattr(store, "get"):
                     raw = store.get(key)
@@ -226,7 +236,7 @@ class SlopePlugin(IPlugin):
                 break
 
         if not raw or not isinstance(raw, (list, tuple)):
-            self._log("DataStore['measurements'] vacío o inválido.")
+            self._log("DataStore['measurements'] empty or invalid.")
             return []
 
         rows: List[Dict[str, Any]] = []
@@ -236,17 +246,18 @@ class SlopePlugin(IPlugin):
                 if not isinstance(item, dict) or item.get("type") != "slope":
                     continue
 
-                p1 = item.get("p1"); p2 = item.get("p2")
+                p1 = item.get("p1")
+                p2 = item.get("p2")
                 if not (isinstance(p1, (list, tuple)) and isinstance(p2, (list, tuple)) and len(p1) == 2 and len(p2) == 2):
                     continue
 
                 p1x, p1y = float(p1[0]), float(p1[1])
                 p2x, p2y = float(p2[0]), float(p2[1])
 
-                dx    = item.get("dx");    dx    = float(dx) if dx is not None else (p2x - p1x)
-                dy    = item.get("dy");    dy    = float(dy) if dy is not None else (p2y - p1y)
+                dx = item.get("dx");    dx = float(dx) if dx is not None else (p2x - p1x)
+                dy = item.get("dy");    dy = float(dy) if dy is not None else (p2y - p1y)
                 slope = item.get("slope"); slope = float(slope) if slope is not None else (dy / dx if dx != 0 else float("inf"))
-                dist  = item.get("dist");  dist  = float(dist) if dist is not None else ((dx**2 + dy**2) ** 0.5)
+                dist = item.get("dist"); dist = float(dist) if dist is not None else ((dx**2 + dy**2) ** 0.5)
 
                 mid = item.get("id")
                 if not mid:
@@ -255,14 +266,20 @@ class SlopePlugin(IPlugin):
 
                 ts = item.get("timestamp") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+                ctx = item.get("ctx") or {}
+                ch_name = ctx.get("channel_name")
+                graph_uid = f"trial {ctx.get('trial_id', '')+1}"
+
                 rows.append({
                     "id": mid, "type": "slope",
                     "p1x": p1x, "p1y": p1y, "p2x": p2x, "p2y": p2y,
                     "dx": dx, "dy": dy, "slope": slope, "dist": dist,
-                    "timestamp": ts
+                    "timestamp": ts,
+                    "ctx_channel": ch_name,
+                    "ctx_graph": graph_uid,
                 })
             except Exception as e:
-                self._log("Fila inválida en measurements:", e)
+                self._log("Invalid row in measurements:", e)
 
         return rows
 
@@ -272,12 +289,12 @@ class SlopePlugin(IPlugin):
             return
         rows = self.model.get_all_rows()
         if not rows:
-            self._warn("No hay mediciones para exportar.")
+            self._warn("No measurements to export.")
             return
 
         path, _ = QFileDialog.getSaveFileName(
             self.widget,
-            "Exportar mediciones (slope) a CSV",
+            "Export slope measurements to CSV",
             "slope_measurements.csv",
             "CSV (*.csv)"
         )
@@ -287,12 +304,15 @@ class SlopePlugin(IPlugin):
         try:
             with open(path, "w", newline="", encoding="utf-8") as f:
                 w = csv.writer(f)
+                # Header: same order as UI
                 w.writerow(SlopeTableModel.HEADERS)
                 for r in rows:
                     p1 = "" if (r.get("p1x") is None or r.get("p1y") is None) else f"({r.get('p1x')},{r.get('p1y')})"
                     p2 = "" if (r.get("p2x") is None or r.get("p2y") is None) else f"({r.get('p2x')},{r.get('p2y')})"
                     w.writerow([
                         r.get("id", ""),
+                        r.get("ctx_channel", ""),
+                        r.get("ctx_graph", ""),
                         p1,
                         p2,
                         r.get("dx", ""),
@@ -301,6 +321,6 @@ class SlopePlugin(IPlugin):
                         r.get("dist", ""),
                         r.get("timestamp", ""),
                     ])
-            self._notify(f"Exportado CSV: {path}")
+            self._notify(f"CSV exported successfully: {path}")
         except Exception as e:
-            self._warn(f"No se pudo exportar CSV:\n{e}")
+            self._warn(f"Failed to export CSV:\n{e}")

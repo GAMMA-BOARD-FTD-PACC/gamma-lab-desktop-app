@@ -1,3 +1,4 @@
+# plugins/measure/amplitude/amplitude_plugin.py
 import sys
 import csv
 from datetime import datetime
@@ -14,33 +15,38 @@ from plugins.measure.amplitude.amplitude_plugin_ui import Ui_Amplitude
 class AmplitudeTableModel(QtCore.QAbstractTableModel):
     # User-facing headers in English
     HEADERS = [
-        "ID",
-        "Point 1 (x, y)",      # unified P1
-        "Point 2 (x, y)",      # unified P2
-        "Window start (x1)",   # previously Win.x1
-        "Window end (x2)",     # previously Win.x2
-        "Samples (N)",         # previously N
-        "Min value (Ymin)",
-        "Max value (Ymax)",
-        "Amplitude (p-p)",     # previously Amp p-p
-        "x at min",            # previously x@min
-        "x at max",            # previously x@max
-        "Timestamp",
+        "ID",                 # 0
+        "Channel",            # 1 (ctx.channel_name)
+        "Graph",              # 2 (e.g., "trial N" from ctx.trial_id)
+        "Point 1 (x, y)",     # 3
+        "Point 2 (x, y)",     # 4
+        "Window start (x1)",  # 5
+        "Window end (x2)",    # 6
+        "Samples (N)",        # 7
+        "Min value (Ymin)",   # 8
+        "Max value (Ymax)",   # 9
+        "Amplitude (p-p)",    # 10
+        "x at min",           # 11
+        "x at max",           # 12
+        "Timestamp",          # 13
     ]
 
     # Optional tooltips for headers
     HEADER_TIPS = {
-        1: "Coordinates of the first selected point (x, y).",
-        2: "Coordinates of the second selected point (x, y).",
-        3: "Lower limit of the X-axis window used for amplitude measurement.",
-        4: "Upper limit of the X-axis window used for amplitude measurement.",
-        5: "Number of samples considered in the [x1, x2] window.",
-        6: "Minimum Y value within the window.",
-        7: "Maximum Y value within the window.",
-        8: "Peak-to-peak amplitude = Ymax − Ymin.",
-        9: "X coordinate where the minimum (Ymin) occurs.",
-        10: "X coordinate where the maximum (Ymax) occurs.",
-        11: "Timestamp when the measurement was saved.",
+        0: "Unique measurement ID.",
+        1: "Channel associated with this measurement (from ctx.channel_name).",
+        2: "Graph label derived from context (e.g., 'trial k').",
+        3: "Coordinates of the first selected point (x, y).",
+        4: "Coordinates of the second selected point (x, y).",
+        5: "Lower limit of the X-axis window used for amplitude measurement.",
+        6: "Upper limit of the X-axis window used for amplitude measurement.",
+        7: "Number of samples considered in the [x1, x2] window.",
+        8: "Minimum Y value within the window.",
+        9: "Maximum Y value within the window.",
+        10: "Peak-to-peak amplitude = Ymax − Ymin.",
+        11: "X coordinate where the minimum (Ymin) occurs.",
+        12: "X coordinate where the maximum (Ymax) occurs.",
+        13: "Timestamp when the measurement was saved.",
     }
 
     def __init__(self, rows: List[Dict[str, Any]] | None = None, parent=None):
@@ -85,17 +91,19 @@ class AmplitudeTableModel(QtCore.QAbstractTableModel):
 
         mapping = {
             0: r.get("id"),
-            1: self._fmt_xy(p1x, p1y),
-            2: self._fmt_xy(p2x, p2y),
-            3: r.get("x1"),
-            4: r.get("x2"),
-            5: r.get("n"),
-            6: r.get("y_min"),
-            7: r.get("y_max"),
-            8: r.get("amp_pp"),
-            9: r.get("x_at_min"),
-            10: r.get("x_at_max"),
-            11: r.get("timestamp"),
+            1: r.get("ctx_channel"),
+            2: r.get("ctx_graph"),
+            3: self._fmt_xy(p1x, p1y),
+            4: self._fmt_xy(p2x, p2y),
+            5: r.get("x1"),
+            6: r.get("x2"),
+            7: r.get("n"),
+            8: r.get("y_min"),
+            9: r.get("y_max"),
+            10: r.get("amp_pp"),
+            11: r.get("x_at_min"),
+            12: r.get("x_at_max"),
+            13: r.get("timestamp"),
         }
         return self._fmt(mapping.get(c))
 
@@ -203,6 +211,9 @@ class AmplitudePlugin(IPlugin):
         Reads DataStore['measurements'] (also tolerates 'meassurements'),
         filters entries of type 'amplitude' and normalizes them to:
           id, p1x, p1y, p2x, p2y, x1, x2, n, y_min, y_max, amp_pp, x_at_min, x_at_max, timestamp
+        Additionally extracts context fields as in the slope example:
+          ctx_channel = ctx.channel_name
+          ctx_graph   = f"trial {ctx.trial_id+1}" (string)
         """
         store = None
         try:
@@ -245,13 +256,12 @@ class AmplitudePlugin(IPlugin):
                 if not isinstance(item, dict) or item.get("type") != "amplitude":
                     continue
 
-                print("[AMPLITUDE]",item)
                 p1 = item.get("p1"); p2 = item.get("p2")
                 if not (isinstance(p1, (list, tuple)) and isinstance(p2, (list, tuple)) and len(p1) == 2 and len(p2) == 2):
                     p1x = p1y = p2x = p2y = None
                 else:
-                    p1x, p1y = float(p1[0]), float(p1[1])
-                    p2x, p2y = float(p2[0]), float(p2[1])
+                    p1x, p1y = _f(p1[0]), _f(p1[1])
+                    p2x, p2y = _f(p2[0]), _f(p2[1])
 
                 # amplitude metrics
                 x1        = _f(item.get("x1"))
@@ -270,8 +280,15 @@ class AmplitudePlugin(IPlugin):
 
                 ts = item.get("timestamp") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+                # Context (same pattern as your slope example)
+                ctx = item.get("ctx") or {}
+                ch_name = ctx.get("channel_name")
+                graph_label = f"trial {ctx.get('trial_id', '')+1}"  # mirrors your slope code behavior
+
                 rows.append({
                     "id": mid,
+                    "ctx_channel": ch_name,
+                    "ctx_graph": graph_label,
                     "p1x": p1x, "p1y": p1y, "p2x": p2x, "p2y": p2y,
                     "x1": x1, "x2": x2, "n": n,
                     "y_min": y_min, "y_max": y_max, "amp_pp": amp_pp,
@@ -304,12 +321,17 @@ class AmplitudePlugin(IPlugin):
         try:
             with open(path, "w", newline="", encoding="utf-8") as f:
                 w = csv.writer(f)
+                # Header: same order as UI
                 w.writerow(AmplitudeTableModel.HEADERS)
                 for r in rows:
+                    p1 = f"({r.get('p1x', '')},{r.get('p1y', '')})" if r.get("p1x") is not None and r.get("p1y") is not None else ""
+                    p2 = f"({r.get('p2x', '')},{r.get('p2y', '')})" if r.get("p2x") is not None and r.get("p2y") is not None else ""
                     w.writerow([
                         r.get("id", ""),
-                        f"({r.get('p1x', '')},{r.get('p1y', '')})",
-                        f"({r.get('p2x', '')},{r.get('p2y', '')})",
+                        r.get("ctx_channel", ""),
+                        r.get("ctx_graph", ""),
+                        p1,
+                        p2,
                         r.get("x1", ""),
                         r.get("x2", ""),
                         r.get("n", ""),

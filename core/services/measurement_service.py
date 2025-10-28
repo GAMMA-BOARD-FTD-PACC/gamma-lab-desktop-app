@@ -553,8 +553,11 @@ class MeasurementService:
 
         ctx = {
             "view_id": self._context.get("view_id"),
+            "graph_id": self._context.get("graph_id"),
             "trial_id": self._context.get("trial_id"),
             "channel_name": self._context.get("channel_name"),
+            "plugin": self._context.get("plugin"),
+            "domain": self._context.get("domain"),
         }
         if isinstance(override_ctx, dict):
             ctx.update({k: v for k, v in override_ctx.items() if v is not None})

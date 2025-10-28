@@ -495,13 +495,13 @@ class TrialsPlugin(IPlugin):
 
             curr_channel_name = getattr(td, "channel_name", "") or "channel"
 
-            graph_uid = f"trials:{signal_name}:{curr_channel_name}"
+            graph_uid = f"trial {trial_idx}"
             print(f"trial idx={trial_idx}")
             self.vtk_menu.on_view_rebuilt(
                 self.chart,
                 view_id="trials",
                 trial_id=trial_idx,
-                channel_name=curr_channel_name,
+                channel_name=f"{signal_name}:{curr_channel_name}",
                 plugin="trials",
                 domain="time",
                 graph_id=graph_uid
