@@ -126,8 +126,6 @@ class VTKContextMenu:
 
     def set_chart(self, chart):
         self.chart = chart
-        print(f"[VTK_MENU] set_chart chart={chart}")
-        # avisar al servicio que cambió el chart (invalida rangos, refs, etc.)
         if hasattr(self, "measure_service") and self.measure_service:
             if hasattr(self.measure_service, "on_chart_changed"):
                 self.measure_service.on_chart_changed()
@@ -177,8 +175,17 @@ class VTKContextMenu:
 
         # Medidas (delegado a servicio)
         measure_menu = menu.addMenu("Medidas")
-        act_start = measure_menu.addAction("Pendiente (2 puntos – clic IZQ.)",lambda: self.measure_service.start('slope'))
-        act_start.setEnabled(self.measure_service.state == 'idle')
+        act_slope = measure_menu.addAction(
+            "Pendiente (2 puntos – clic IZQ.)",
+            lambda: self.measure_service.start('slope')
+        )
+        act_amp = measure_menu.addAction(
+            "Amplitud (pico-a-pico en el intervalo)",
+            lambda: self.measure_service.start('amplitude')
+        )
+        act_slope.setEnabled(self.measure_service.state == 'idle')
+        act_amp.setEnabled(self.measure_service.state == 'idle')
+
 
         act_cancel = measure_menu.addAction("Cancelar medición (Esc)", self.measure_service.cancel)
         act_cancel.setEnabled(self.measure_service.state != 'idle')

@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import QMessageBox
 import vtk
 import bisect
 
-from core.filters.measurements import two_point_metrics
+from core.filters.measurements import amplitude_in_window, two_point_metrics
 
 
 class MeasurementService:
@@ -133,6 +133,10 @@ class MeasurementService:
         return self._state
 
     def start(self, measure_type: str):
+        allowed = {"slope", "derivative", "amplitude"}
+        if measure_type not in allowed:
+            measure_type = "slope"
+            
         if self._state != 'idle':
             try:
                 QMessageBox.information(self.parent, "Medición", "Ya hay una medición en curso. Completa o cancélala (Esc).")
@@ -432,7 +436,7 @@ class MeasurementService:
     # ====================== persistencia ======================
 
     def _save_measurement(self, result, p1, p2):
-        t = result.get("type", "measure")
+        t = str(result.get("type", "measure"))
         lst = self.ds_get("measurements", None)
         if not isinstance(lst, list):
             lst = []
@@ -457,21 +461,41 @@ class MeasurementService:
             "channel_name": self._context.get("channel_name"),
         }
 
-        rec = {
+        # registro base común
+        p1x, p1y = float(p1[0]), float(p1[1])
+        p2x, p2y = float(p2[0]), float(p2[1])
+        base = {
             "id": meas_id,
             "type": t,
-            "p1": (float(p1[0]), float(p1[1])),
-            "p2": (float(p2[0]), float(p2[1])),
-            "dx": float(result.get("dx", float(p2[0]) - float(p1[0]))),
-            "dy": float(result.get("dy", float(p2[1]) - float(p1[1]))),
-            "slope": float(result.get("slope", 0.0)),
-            "dist": float(result.get("dist", 0.0)),
+            "p1": (p1x, p1y),
+            "p2": (p2x, p2y),
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "ctx": ctx,  # <-- guardamos contexto para reconstruir luego
+            "ctx": ctx,
         }
+
+        # métricas genéricas útiles
+        dx = p2x - p1x
+        dy = p2y - p1y
+
+        # fusionar resultado específico de la medición
+        # (esto asegura que x1, x2, y_min, y_max, amp_pp, etc. se conserven)
+        rec = {**base, **{k: v for k, v in (result or {}).items() if k != "type"}}
+
+        # sólo añadir campos de slope si aplica
+        if t == "slope":
+            rec.setdefault("dx", float(dx))
+            rec.setdefault("dy", float(dy))
+            # si no viene calculada:
+            if "slope" not in rec:
+                rec["slope"] = float(dy / dx) if dx != 0 else float("inf")
+            if "dist" not in rec:
+                rec["dist"] = float((dx*dx + dy*dy) ** 0.5)
+
+        # Nota: para 'amplitude' NO tocamos ni sobreescribimos x1/x2/y_min/...
         lst.append(rec)
         self.ds_set("measurements", lst)
         return meas_id
+
 
     # ====================== cierre de medición ======================
 
@@ -480,36 +504,67 @@ class MeasurementService:
         if not (cur.get('p1') and cur.get('p2')):
             self.cancel(); return
 
-        x1, y1 = cur['p1']; x2, y2 = cur['p2']
-        result = two_point_metrics((x1, y1), (x2, y2), kind=cur.get('type', 'slope'))
-        meas_id = self._save_measurement(result, (x1, y1), (x2, y2))
+        x1, y1 = cur['p1']; 
+        x2, y2 = cur['p2']
+        kind = cur.get('type', 'slope')
 
-        # overlay sólo si coincide con el contexto actual (lo normal)
-        try:
-            self._add_overlay_for_points(meas_id, (x1, y1), (x2, y2), axes_snapshot=None)
-        except Exception:
-            pass
+        if kind == 'slope':
+            result = two_point_metrics((x1, y1), (x2, y2), kind='slope')
+            meas_id = self._save_measurement(result, (x1, y1), (x2, y2))
+            try:
+                self._add_overlay_for_points(meas_id, (x1, y1), (x2, y2))
+            except Exception:
+                pass
+            try:
+                QMessageBox.information(
+                    self.parent, "Slope saved",
+                    f"Result '{result['type']}' saved (ID: {meas_id}).\n"
+                    f"Slope = {result['slope']:.6f}\n\n"
+                    f"For more information go to 'Measure / Slope'."
+                )
+            except Exception:
+                pass
 
-        try:
-            QMessageBox.information(
-                self.parent, "Slope saved",
-                f"Result '{result['type']}' saved (ID: {meas_id}).\n"
-                f"Slope = {result['slope']:.6f}\n\n"
-                f"For more information go to 'Measure / Slope'."
-            )
-        except Exception:
-            pass
+        elif kind == 'amplitude':
+            result = self._compute_amplitude_window(x1, x2)
+            if not result:
+                try:
+                    QMessageBox.information(self.parent, "Amplitud",
+                        "No se pudo calcular la amplitud en la ventana seleccionada.")
+                except Exception:
+                    pass
+                self._state = 'idle'
+                self._current = None
+                return
 
-        self._state = 'idle'
-        self._current = None
-        self._ref_axes = None
-        self._saved_ranges = None
-        self._ref_data = None
+            # Guarda medición con los campos de amplitud
+            meas_id = self._save_measurement(result, (x1, y1), (x2, y2))
 
-        try:
-            self.vtk_widget.GetRenderWindow().Render()
-        except Exception:
-            pass
+            # Overlay sencillo: dibujar línea vertical en x1 y x2 para marcar ventana
+            try:
+                self._add_overlay_for_points(meas_id, (x1, y1), (x2, y2))
+            except Exception:
+                pass
+
+            try:
+                QMessageBox.information(
+                    self.parent, "Amplitud guardada",
+                    (f"Amplitud pico-a-pico = {result['amp_pp']:.6f}\n"
+                    f"Ymax={result['y_max']:.6f} @ x={result['x_at_max']:.6f}\n"
+                    f"Ymin={result['y_min']:.6f} @ x={result['x_at_min']:.6f}\n"
+                    f"ID: {meas_id}")
+                )
+            except Exception:
+                pass
+
+        else:
+            # tipo no soportado (por si queda rastro de 'derivative')
+            try:
+                QMessageBox.information(self.parent, "Medición",
+                                        f"Tipo de medición no soportado: {kind}")
+            except Exception:
+                pass
+
 
     # ====================== bloqueo botón izquierdo ======================
 
@@ -745,3 +800,17 @@ class MeasurementService:
                 print(f"   [plot {i}] label={lbl!r} rows={rows} type={ptype}")
         except Exception:
             pass
+
+
+    def _compute_amplitude_window(self, x1, x2):
+        """Usa self._ref_data (xs/ys) para calcular amplitud en la ventana [x1,x2]."""
+        if not self._ref_data or not self._ref_data.get('xs'):
+            ch = self.get_active_chart()
+            if not ch:
+                return None
+            self._load_reference_data_for_pick(ch)
+            if not self._ref_data or not self._ref_data.get('xs'):
+                return None
+
+        xs = self._ref_data['xs']; ys = self._ref_data['ys']
+        return amplitude_in_window(xs, ys, x1, x2)
