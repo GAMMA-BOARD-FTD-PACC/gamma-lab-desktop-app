@@ -105,9 +105,20 @@ class TrialsPlugin(IPlugin):
             pass
         
         if self.vtk_menu is None:
+            base_scope = {
+                "view_id": "trials",
+                "trial_id": None,
+                "channel_name": None,
+                "plugin": "trials",
+                "domain": "time",
+                "graph_id": "trials:blank"
+            }
             self.vtk_menu = VTKContextMenu(
-                chart=None,                          # aún no hay chart
+                chart=None,
                 vtk_widget=self.vtk_interactor,
+                plugin_name="trials",
+                measurements_enabled=True,
+                measure_scope=base_scope,
                 parent=self.widget
             )
             self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
@@ -277,7 +288,7 @@ class TrialsPlugin(IPlugin):
         t1   = float(self.ui.finalTimeDoubleSpinBox.value())
         mode = self.ui.endModeCombo.currentData() or "fixed"
         stim = int(self.ui.stimNumberSpinBox.value())
-        stim = None if stim <= 0 else stim
+        stim = None if stim < 0 else stim
         inter_stim_time  = float(self.ui.interStimTimeDoubleSpinBox.value())
         inter_stim_time  = None if inter_stim_time <= 0 else inter_stim_time
 
@@ -288,7 +299,7 @@ class TrialsPlugin(IPlugin):
         self._log("params →", dict(channel=int(ch), threshold=th, t0=t0, t1=t1,
                                 end_mode=mode, stim_expected=stim, inter_stim_time=inter_stim_time))
 
-        # Ejecutar corte
+        print("")
         try:
             td = cut_trials_single_channel(
             ds=ds,
@@ -477,11 +488,21 @@ class TrialsPlugin(IPlugin):
             self._log("Render error:", e)
             
         if self.vtk_menu is not None:
-            curr_channel_name = ch_name
+            self.vtk_menu.set_chart(self.chart)
+            ds = self._get_active_signal()
+            signal_name = getattr(ds, "name", "signal")
             trial_idx = (self.visible_trials[0] if self.visible_trials else 0)
+
+            curr_channel_name = getattr(td, "channel_name", "") or "channel"
+
+            graph_uid = f"trials:{signal_name}:{curr_channel_name}"
+
             self.vtk_menu.on_view_rebuilt(
                 self.chart,
                 view_id="trials",
                 trial_id=trial_idx,
-                channel_name=curr_channel_name
+                channel_name=curr_channel_name,
+                plugin="trials",
+                domain="time",
+                graph_id=graph_uid
             )

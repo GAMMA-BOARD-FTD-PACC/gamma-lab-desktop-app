@@ -2,10 +2,8 @@
 from PyQt5.QtWidgets import QMenu, QApplication
 from PyQt5.QtCore import Qt
 from vtk import vtkChartXY, vtkChart
-
 import os
 
-# Servicios externos
 from core.services.export_service import ExportService
 from core.services.measurement_service import MeasurementService
 
@@ -16,48 +14,59 @@ class VTKContextMenu:
     - Zoom y atajos (Ctrl/Shift + rueda)
     - Acciones personalizadas registrables
     - Delegación en servicios: ExportService y MeasurementService
+    - Contexto extendido para mediciones (view_id, trial_id, channel_name, plugin, domain, graph_id)
     """
     last_export_dir = os.getcwd()
 
     _CLICK_EPS = 8
     _PICK_RADIUS_PX = 20
 
-    def __init__(self, chart: vtkChartXY, vtk_widget, singal_name=None, channel_name=None, plugin_name=None, parent=None):
+    def __init__(
+        self,
+        chart: vtkChartXY,
+        vtk_widget,
+        signal_name=None,           
+        channel_name=None,           
+        plugin_name=None,
+        *,
+        measurements_enabled=True,
+        measure_scope=None,    
+        parent=None
+    ):
         self.chart = chart
         self.vtk_widget = vtk_widget
         self.parent = parent
-        self.signal_name = singal_name
-        self.chanel_name = channel_name
+
+        self.signal_name = signal_name
+        self.channel_name = channel_name
         self.plugin_name = plugin_name
+
+        self._measurements_enabled = bool(measurements_enabled)
+        self._measure_scope = dict(measure_scope or {})   # copia defensiva
+
         self.custom_actions = []
-
-        # DataStore (inyectable por set_datastore)
         self._datastore = None
-
-        # DEBUG
         self._debug = True
 
-        # --- wiring de zoom/ratón ---
+        # wiring zoom/ratón
         self._install_wheel_shortcuts()
         self._install_mouse_observers()
 
-        # Asegurar zoom con rueda en todos los charts
+        # asegurar zoom con rueda
         for ch in self._get_charts():
             if ch:
                 ch.SetZoomWithMouseWheel(True)
                 ch.SetAxisZoom(0, True)
                 ch.SetAxisZoom(1, True)
 
-        # Menú contextual
+        # menú contextual
         self.vtk_widget.setContextMenuPolicy(Qt.CustomContextMenu)
         self.vtk_widget.customContextMenuRequested.connect(self.show_menu)
 
-        # --- Servicios ---
-
-        # Helpers para nombres y last_dir (se leen siempre "al vuelo")
+        # servicios
         def _get_names():
             return (self.signal_name or "signal",
-                    self.chanel_name or None,
+                    self.channel_name or None,
                     self.plugin_name or "plugin")
 
         def _get_last_dir():
@@ -66,7 +75,6 @@ class VTKContextMenu:
         def _set_last_dir(path):
             VTKContextMenu.last_export_dir = path
 
-        # Servicio de exportación
         self.export_service = ExportService(
             parent=self.parent,
             vtk_widget=self.vtk_widget,
@@ -76,7 +84,6 @@ class VTKContextMenu:
             last_dir_setter=_set_last_dir
         )
 
-        # Adaptadores de datastore (leen el self._datastore actual)
         def _ds_get(k, default=None):
             try:
                 return self._datastore.get(k, default) if self._datastore else default
@@ -90,7 +97,6 @@ class VTKContextMenu:
             except Exception:
                 pass
 
-        # Servicio de mediciones (usa SIEMPRE el chart activo)
         self.measure_service = MeasurementService(
             parent=self.parent,
             vtk_widget=self.vtk_widget,
@@ -98,8 +104,11 @@ class VTKContextMenu:
             datastore_get=_ds_get,
             datastore_set=_ds_set,
             pick_radius_px=self._PICK_RADIUS_PX,
-            debug=self._debug
+            debug=False 
         )
+
+        if self._measure_scope:
+            self._apply_measure_scope_to_service()
 
     # ---------- utils ----------
     def _log(self, *args):
@@ -119,10 +128,14 @@ class VTKContextMenu:
         self.signal_name = name
 
     def set_channel_name(self, name):
-        self.chanel_name = name
+        self.channel_name = name
+        self._measure_scope["channel_name"] = name
+        self._apply_measure_scope_to_service()
 
     def set_plugin_name(self, name):
         self.plugin_name = name
+        self._measure_scope["plugin"] = name
+        self._apply_measure_scope_to_service()
 
     def set_chart(self, chart):
         self.chart = chart
@@ -133,6 +146,33 @@ class VTKContextMenu:
     def set_datastore(self, store):
         """Inyecta el servicio DataStore (dict-like con get/set)."""
         self._datastore = store
+
+    def set_measurements_enabled(self, enabled: bool):
+        self._measurements_enabled = bool(enabled)
+
+    def set_measurement_context(
+        self,
+        *,
+        view_id: str = None,
+        trial_id: int | None = None,
+        channel_name: str = None,
+        plugin: str = None,
+        domain: str = None,
+        graph_id: str = None
+    ):
+        if view_id is not None:      self._measure_scope["view_id"] = view_id
+        if trial_id is not None:     self._measure_scope["trial_id"] = trial_id
+        if channel_name is not None: self._measure_scope["channel_name"] = channel_name
+        if plugin is not None:       self._measure_scope["plugin"] = plugin
+        if domain is not None:       self._measure_scope["domain"] = domain
+        if graph_id is not None:     self._measure_scope["graph_id"] = graph_id
+        self._apply_measure_scope_to_service()
+
+    def _apply_measure_scope_to_service(self):
+        try:
+            self.measure_service.set_context(**self._measure_scope)
+        except Exception:
+            pass
 
     # ---------- rueda ----------
     def _install_wheel_shortcuts(self):
@@ -145,16 +185,11 @@ class VTKContextMenu:
                     continue
                 ch.SetZoomWithMouseWheel(True)
                 if modifiers == Qt.ControlModifier:
-                    ch.SetAxisZoom(0, True)
-                    ch.SetAxisZoom(1, False)
+                    ch.SetAxisZoom(0, True);  ch.SetAxisZoom(1, False)
                 elif modifiers == Qt.ShiftModifier:
-                    ch.SetAxisZoom(0, False)
-                    ch.SetAxisZoom(1, True)
+                    ch.SetAxisZoom(0, False); ch.SetAxisZoom(1, True)
                 else:
-                    ch.SetAxisZoom(0, True)
-                    ch.SetAxisZoom(1, True)
-
-            # ejecutar comportamiento original
+                    ch.SetAxisZoom(0, True);  ch.SetAxisZoom(1, True)
             old_wheel_event(event)
 
         self.vtk_widget.wheelEvent = custom_wheel_event
@@ -163,17 +198,26 @@ class VTKContextMenu:
     def add_action(self, text, callback):
         self.custom_actions.append((text, callback))
 
+    def _can_measure_current_chart(self) -> bool:
+        ch = self._active_chart()
+        if not ch:
+            return False
+        try:
+            return ch.GetNumberOfPlots() > 0
+        except Exception:
+            return False
+
     def show_menu(self, pos):
         menu = QMenu()
 
         # Zoom
         zoom_menu = menu.addMenu("Zoom")
         zoom_menu.addAction("Horizontal (X)", lambda: self.set_zoom_mode("x"))
-        zoom_menu.addAction("Vertical (Y)", lambda: self.set_zoom_mode("y"))
+        zoom_menu.addAction("Vertical (Y)",   lambda: self.set_zoom_mode("y"))
         zoom_menu.addAction("Ambos ejes (X+Y)", lambda: self.set_zoom_mode("xy"))
         zoom_menu.addAction("Restablecer vista", self.reset_zoom)
 
-        # Medidas (delegado a servicio)
+        # Medidas
         measure_menu = menu.addMenu("Medidas")
         act_slope = measure_menu.addAction(
             "Pendiente (2 puntos – clic IZQ.)",
@@ -183,32 +227,32 @@ class VTKContextMenu:
             "Amplitud (pico-a-pico en el intervalo)",
             lambda: self.measure_service.start('amplitude')
         )
-        act_slope.setEnabled(self.measure_service.state == 'idle')
-        act_amp.setEnabled(self.measure_service.state == 'idle')
 
+        can_measure = self._measurements_enabled and self._can_measure_current_chart()
+        act_slope.setEnabled(can_measure and self.measure_service.state == 'idle')
+        act_amp.setEnabled(can_measure and self.measure_service.state == 'idle')
 
         act_cancel = measure_menu.addAction("Cancelar medición (Esc)", self.measure_service.cancel)
         act_cancel.setEnabled(self.measure_service.state != 'idle')
         measure_menu.addSeparator()
-        
+
         measure_menu.addAction("Mostrar/Ocultar todas las líneas", self.measure_service.toggle_overlay)
         measure_menu.addAction("Eliminar última medición", self.measure_service.remove_last_measurement)
         measure_menu.addAction("Eliminar TODAS las mediciones", self.measure_service.clear_all_measurements)
 
-        # Exportar (delegado a servicio)
+        # Exportar
         menu.addSeparator()
         export_img_menu = menu.addMenu("Export as image")
         export_img_menu.addAction("png",  lambda: self.export_service.export_image("png"))
         export_img_menu.addAction("jpg",  lambda: self.export_service.export_image("jpg"))
-        export_img_menu.addAction("jpegpg", lambda: self.export_service.export_image("jpeg"))
+        export_img_menu.addAction("jpeg", lambda: self.export_service.export_image("jpeg"))  # fix: 'jpegpg' -> 'jpeg'
         export_img_menu.addAction("bmp",  lambda: self.export_service.export_image("bmp"))
         export_img_menu.addAction("tiff", lambda: self.export_service.export_image("tiff"))
 
-        export_table_menu = menu.addMenu("Exportar tabla")
+        export_table_menu = menu.addMenu("Export table")
         export_table_menu.addAction("csv",  lambda: self.export_service.export_table("csv"))
         export_table_menu.addAction("json", lambda: self.export_service.export_table("json"))
         export_table_menu.addAction("xlsx", lambda: self.export_service.export_table("xlsx"))
-        export_table_menu.addAction("Exportar tabla")  # (si quieres, elimínala; era redundante)
 
         # Acciones personalizadas
         if self.custom_actions:
@@ -218,7 +262,7 @@ class VTKContextMenu:
 
         menu.exec_(self.vtk_widget.mapToGlobal(pos))
 
-    # ---------- export  ----------
+    # ---------- export ----------
     def export_image(self, fmt: str, filename: str = None):
         self.export_service.export_image(fmt, filename)
 
@@ -231,24 +275,20 @@ class VTKContextMenu:
             if not ch:
                 continue
             if mode == "x":
-                ch.SetAxisZoom(0, True)
-                ch.SetAxisZoom(1, False)
+                ch.SetAxisZoom(0, True);  ch.SetAxisZoom(1, False)
             elif mode == "y":
-                ch.SetAxisZoom(0, False)
-                ch.SetAxisZoom(1, True)
+                ch.SetAxisZoom(0, False); ch.SetAxisZoom(1, True)
             elif mode == "xy":
-                ch.SetAxisZoom(0, True)
-                ch.SetAxisZoom(1, True)
+                ch.SetAxisZoom(0, True);  ch.SetAxisZoom(1, True)
 
     def reset_zoom(self):
         for ch in self._get_charts():
             try:
                 ch.RecalculateBounds()
             except AttributeError:
-                # algunas versiones de VTK no lo soportan
                 pass
 
-    # ---------- eventos mouse----------
+    # ---------- eventos mouse ----------
     def _install_mouse_observers(self):
         iren = self.vtk_widget.GetRenderWindow().GetInteractor()
         iren.AddObserver("LeftButtonPressEvent", self._on_left_press, 1.0)
@@ -256,13 +296,11 @@ class VTKContextMenu:
         iren.AddObserver("MouseMoveEvent", self._on_mouse_move_block_hover, 1.0)
 
     def _on_left_press(self, obj, evt):
-        # Pasar coordenadas al servicio
         iren = self.vtk_widget.GetRenderWindow().GetInteractor()
         sx, sy = iren.GetEventPosition()
         self.measure_service.on_left_press(sx, sy)
 
     def _on_left_release(self, obj, evt):
-        # Si el servicio está idle, no hace nada
         if self.measure_service.state == 'idle':
             return
         iren = self.vtk_widget.GetRenderWindow().GetInteractor()
@@ -272,12 +310,9 @@ class VTKContextMenu:
     def _on_mouse_move_block_hover(self, obj, evt):
         if self.measure_service.state == 'idle':
             return
-        return 1 
+        return 1
 
-    def set_measurement_context(self, *, view_id: str, trial_id: int, channel_name: str):
-        if hasattr(self, "measure_service") and self.measure_service:
-            self.measure_service.set_context(view_id=view_id, trial_id=trial_id, channel_name=channel_name)
-
+    # ---------- hooks/contexto ----------
     def rebuild_measurement_overlays(self):
         if hasattr(self, "measure_service") and self.measure_service:
             self.measure_service.rebuild_overlays_for_current_context()
@@ -286,12 +321,24 @@ class VTKContextMenu:
         if hasattr(self, "measure_service") and self.measure_service:
             self.measure_service.clear_visual_overlays()
 
-    def on_view_rebuilt(self, chart, *, view_id: str, trial_id: int, channel_name: str):
-        print(f"[VTK_MENU] on_view_rebuilt view_id={view_id} trial_id={trial_id} ch={channel_name}")
+    def on_view_rebuilt(self, chart, *, view_id: str, trial_id: int | None, channel_name: str | None,
+        plugin: str | None = None, domain: str | None = None, graph_id: str | None = None):
+        
+        """Actualizar chart + contexto extendido y reconstruir overlays."""
         self.set_chart(chart)
         try:
-            self.vtk_widget.GetRenderWindow().Render()  # asegura bounds frescos
+            self.vtk_widget.GetRenderWindow().Render()
         except Exception:
             pass
-        self.set_measurement_context(view_id=view_id, trial_id=trial_id, channel_name=channel_name)
+
+        plugin = plugin or self.plugin_name
+
+        self.set_measurement_context(
+            view_id=view_id,
+            trial_id=trial_id,
+            channel_name=channel_name,
+            plugin=plugin,
+            domain=domain,
+            graph_id=graph_id
+        )
         self.rebuild_measurement_overlays()

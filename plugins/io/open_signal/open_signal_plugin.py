@@ -103,7 +103,21 @@ class OpenSignalPlugin(IPlugin):
         self.vtk_view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
 
         try:
-            self.vtk_menu = VTKContextMenu(None, self.vtk_interactor, parent=self.ui)
+            self.vtk_menu = VTKContextMenu(
+                chart=[],                              
+                vtk_widget=self.vtk_interactor,       
+                plugin_name="open_signal",
+                measurements_enabled=False,             
+                measure_scope={                         
+                    "view_id": "signal_loader",         
+                    "trial_id": None,
+                    "channel_name": None,          
+                    "plugin": "open_signal",
+                    "domain": "time",
+                    "graph_id": "open_signal:blank" 
+                },
+                parent=self
+            )
             self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
         except Exception as e:
             self.vtk_menu = None

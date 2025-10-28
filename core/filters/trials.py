@@ -159,10 +159,32 @@ def cut_trials_single_channel(
     if debug:
         trig_name = ds.channel_names[trig_ch] if trig_ch < len(ds.channel_names) else f"ch{trig_ch}"
         tgt_name  = ds.channel_names[channel] if channel < len(ds.channel_names) else f"ch{channel}"
-        print(f"\n[TRIALS] fs={fs} N={N} target='{tgt_name}' stim='{trig_name}' "
-              f"thr={threshold} t0={t0} t1={t1} mode={end_mode} S={stim_expected} isi={inter_stim_time}")
+        #print(f"\n[TRIALS] fs={fs} N={N} target='{tgt_name}' stim='{trig_name}' "
+        #     f"thr={threshold} t0={t0} t1={t1} mode={end_mode} S={stim_expected} isi={inter_stim_time}")
 
-    # 1) Onsets (sin antirrebote)
+    if stim_expected is not None and int(stim_expected) <= 0:
+        print(f"[TRIALS] No hay estímulos esperados (S={stim_expected})")
+        trials = y_tgt.reshape(-1, 1)
+        time_rel = np.arange(y_tgt.shape[0], dtype=np.float64) / fs
+        dur = time_rel[-1] if time_rel.size else 0.0
+        return TrialDataset(
+            source=ds.source_path, sampling_rate=fs, channel_index=channel,
+            channel_name=(ds.channel_names[channel] if channel < len(ds.channel_names) else f"ch{channel}"),
+            unit=(ds.units[channel] if channel < len(ds.units) else ""),
+            t0=0.0, t1=dur, time_rel=time_rel,
+            trials=trials, onsets_s=[], isi_s=[],
+            metadata={
+                "end_mode": end_mode,
+                "stim_per_trial": 0,          # <- importante para dejar rastro
+                "stim_detected": 0,
+                "trials_built": 1,
+                "stim_channel_index": int(trig_ch),
+                "stim_channel_name": (ds.channel_names[trig_ch] if trig_ch < len(ds.channel_names) else f"ch{trig_ch}"),
+                "pad_value": float(pad_value),
+                "note": "forced_no_stim",     # <- marca clara del flujo forzado
+            },
+        )
+        
     onsets_all = _detect_onsets_abs(y_trig, threshold, debug=debug)
     K = int(onsets_all.size)
 

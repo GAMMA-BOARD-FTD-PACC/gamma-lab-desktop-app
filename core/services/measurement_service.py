@@ -47,7 +47,14 @@ class MeasurementService:
         self._overlays = []
 
         # ---- contexto actual (para filtrar/repintar) ----
-        self._context = {"view_id": None, "trial_id": None, "channel_name": None}
+        self._context = {
+            "view_id": None,      # p.ej. "trials", "erp", "fft", "psd", "average", "loader"
+            "graph_id": None,     # UID del chart XY (si hay varios en la vista)
+            "trial_id": None,     # entero o None
+            "channel_name": None, # "CA1", "Fp1", ...
+            "plugin": None,       # "trials", "erp", "fft", "psd", "open_signal", ...
+            "domain": None,       # "time" | "frequency" | "other"
+        }
 
         # paleta para líneas
         self._palette = [
@@ -58,18 +65,22 @@ class MeasurementService:
 
     # ====================== Contexto & navegación ======================
 
-    def set_context(self, *, view_id=None, trial_id=None, channel_name=None):
-        """
-        Define el contexto actual (debe llamarse al cambiar de trial/canal/vista).
-        Luego invoca rebuild_overlays_for_current_context() para repintar.
-        """
-        if view_id is not None:
-            self._context["view_id"] = view_id
-        if trial_id is not None:
-            self._context["trial_id"] = trial_id
-        if channel_name is not None:
-            self._context["channel_name"] = channel_name
+    def set_context(self, *, view_id=None, graph_id=None, trial_id=None, channel_name=None, plugin=None, domain=None):
+        if view_id is not None:      self._context["view_id"] = view_id
+        if graph_id is not None:     self._context["graph_id"] = graph_id
+        if trial_id is not None:     self._context["trial_id"] = trial_id
+        if channel_name is not None: self._context["channel_name"] = channel_name
+        if plugin is not None:       self._context["plugin"] = plugin
+        if domain is not None:       self._context["domain"] = domain
 
+    def _context_matches(self, curr, other) -> bool:
+        for key in ("view_id", "graph_id", "trial_id", "channel_name", "plugin", "domain"):
+            a = curr.get(key); b = other.get(key)
+            if a is None or b is None:    # sólo comparamos si ambos lo tienen
+                continue
+            if a != b:
+                return False
+        return True
     def clear_visual_overlays(self):
         """
         Limpia SOLO lo visual (overlays), sin tocar el datastore.
