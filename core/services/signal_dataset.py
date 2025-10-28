@@ -24,7 +24,7 @@ class SignalDataset:
     metadata: Dict[str, Any] = field(default_factory=dict)
     vtk_table = None
 
-    trials_dataset:List[TrialDataset] = field(default_factory=list)
+    __trials_dataset:List[TrialDataset] = field(default_factory=list)
 
     discarded_trials: Dict[tuple[str, str], set[int]] = field(default_factory=dict)
 
@@ -32,7 +32,7 @@ class SignalDataset:
     def add_trial_dataset(self, trial: "TrialDataset"):
         if not isinstance(trial, TrialDataset):
             raise ValueError("trial debe ser de tipo TrialDataset")
-        self.trials_dataset.append(trial)
+        self.__trials_dataset.append(trial)
 
     def get_active_trials(self, file_name: str, channel_name: str):
         """
@@ -46,11 +46,13 @@ class SignalDataset:
         Retorna:
             TrialDataset | None: El dataset filtrado o None si no existe.
         """
+        channel_name = self.__trials_dataset[-1].channel_name  # último TD
+
         key = (file_name, channel_name)
 
         # Buscar el dataset correspondiente
         td = next(
-            (t for t in self.trials_dataset if Path(t.source).name == file_name and t.channel_name == channel_name),
+            (t for t in self.__trials_dataset if Path(t.source).name == file_name and t.channel_name == channel_name),
             None
         )
 
