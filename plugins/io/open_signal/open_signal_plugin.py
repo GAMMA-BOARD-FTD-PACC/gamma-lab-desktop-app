@@ -209,7 +209,6 @@ class OpenSignalPlugin(IPlugin):
 
         name_aux = Path(fname).name
         if store.has(name_aux):
-            print(f"Ya existe una señal con el nombre '{name_aux}'.")
             reply = QMessageBox.warning(
                 self.ui,
                 "Advertencia",
