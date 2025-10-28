@@ -149,11 +149,13 @@ class Erp_plugin(IPlugin):
             QMessageBox.warning(self.widget, "Sin señal activa", "No hay una señal activa seleccionada.")
             return None, None, None
 
-        if not getattr(self.sig, "trials_dataset", None) or len(self.sig.trials_dataset) == 0:
+        td: TrialDataset = self.sig.get_active_trials(self.sig.name, None)
+
+        if td is None or td.trials.size == 0:
             QMessageBox.warning(self.widget, "Sin trials", "La señal activa no tiene TrialDatasets.")
             return None, None, None
 
-        td: TrialDataset = self.sig.trials_dataset[-1]  # último TD
+        #td: TrialDataset = self.sig.trials_dataset[-1]  # último TD
         if not hasattr(td, "time_rel") or not hasattr(td, "trials"):
             QMessageBox.warning(self.widget, "Trials incompletos",
                                 "El TrialDataset no contiene 'time_rel' o 'trials'.")

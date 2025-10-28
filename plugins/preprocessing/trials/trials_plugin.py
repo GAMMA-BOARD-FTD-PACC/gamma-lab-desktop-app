@@ -160,7 +160,7 @@ class TrialsPlugin(IPlugin):
         """
         Escucha eventos emitidos por el Kernel.
         """
-        if topic == "signal_active_changed":
+        if topic == "signal_active_changed" or topic =="signal_added":
             print(f"Nueva señal cambiada: {payload}")
             #self._get_active_signal()
             self._populate_channels_once()

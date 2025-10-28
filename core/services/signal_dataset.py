@@ -34,7 +34,10 @@ class SignalDataset:
             raise ValueError("trial debe ser de tipo TrialDataset")
         self.__trials_dataset.append(trial)
 
-    def get_active_trials(self, file_name: str, channel_name: str):
+    def number_of_trials_dataset(self):
+        return len(self.__trials_dataset)
+
+    def get_active_trials(self, file_name: str, channel_name: str = None):
         """
         Retorna el TrialDataset activo para un archivo y canal específicos,
         aplicando los descartes definidos en self.discarded_trials.
@@ -46,7 +49,15 @@ class SignalDataset:
         Retorna:
             TrialDataset | None: El dataset filtrado o None si no existe.
         """
-        channel_name = self.__trials_dataset[-1].channel_name  # último TD
+
+        '''Cambiar en futuros desarrollos'''
+          # Tomar el último TD si no se pasa channel_name
+
+        if not self.__trials_dataset or len(self.__trials_dataset) == 0:
+            print(f"[SignalDataset] La señal '{self.name}' no tiene TrialDataset cargados aún.")
+            return None
+        
+        channel_name = self.__trials_dataset[-1].channel_name
 
         key = (file_name, channel_name)
 
@@ -97,7 +108,7 @@ class SignalDataset:
             isi_s=td.isi_s,
             metadata=td.metadata
         )
-
+        
         return filtered_dataset
 
     def discard_trial(self, source: str, channel: str, index: int):

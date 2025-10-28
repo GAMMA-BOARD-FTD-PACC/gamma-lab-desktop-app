@@ -75,7 +75,7 @@ class Average_plugin(IPlugin):
         """
         Escucha eventos emitidos por el Kernel.
         """
-        if topic == "signal_active_changed":
+        if topic == "signal_active_changed" or topic =="signal_added":
             print(f"Nueva señal cambiada: {payload}")
             self.active_signal = self._get_active_signal()        
 
@@ -109,12 +109,11 @@ class Average_plugin(IPlugin):
             QMessageBox.warning(self.widget, "Error", "No hay señal activa para calcular el promedio.")
             return
         
-        self.active_chanel = self.active_signal.channel_names[0]
         
-        trials = self.active_signal.get_active_trials(self.active_signal.name, self.active_chanel)
+        trials = self.active_signal.get_active_trials(self.active_signal.name, None)
 
         if trials is None or trials.trials.size == 0:
-            QMessageBox.warning(self.widget, "Error", f"No hay trials activos para {self.active_chanel}.")
+            QMessageBox.warning(self.widget, "Error", f"No hay trials activos para {self.active_signal.name}.")
             return
 
         # Calcular promedio por muestra (a lo largo de los trials)
