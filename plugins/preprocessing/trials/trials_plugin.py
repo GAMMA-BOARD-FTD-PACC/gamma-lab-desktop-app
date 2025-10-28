@@ -40,10 +40,12 @@ class TrialsPlugin(IPlugin):
         self.visible_trials = []
         self.last_td: TrialDataset | None = None
         self._active_ds: SignalDataset | None = None
+        
+        self.vtk_menu: VTKContextMenu | None = None
 
     # ---------------- Logs ----------------
     def _log(self, *args):
-        print("[TRIALS]", *args)
+        # print("[TRIALS]", *args)
         sys.stdout.flush()
 
     # -------------- Ciclo de vida ----------
@@ -101,6 +103,25 @@ class TrialsPlugin(IPlugin):
             self.vtk_interactor.Initialize()
         except Exception:
             pass
+        
+        if self.vtk_menu is None:
+            base_scope = {
+                "view_id": "trials",
+                "trial_id": None,
+                "channel_name": None,
+                "plugin": "trials",
+                "domain": "time",
+                "graph_id": "trials:blank"
+            }
+            self.vtk_menu = VTKContextMenu(
+                chart=None,
+                vtk_widget=self.vtk_interactor,
+                plugin_name="trials",
+                measurements_enabled=True,
+                measure_scope=base_scope,
+                parent=self.widget
+            )
+            self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
         self._log("ensure_vtk(): scheduled init")
 
     def _init_controls(self):
@@ -162,6 +183,7 @@ class TrialsPlugin(IPlugin):
         try:
             store: DataStore | None = self.kernel.get_service("DataStore")
             ds = store.get_active_signal() if store else None
+            self._active_ds = ds
             self._log("_get_active_signal:", "ok" if ds else "None")
             return ds
         except Exception as e:
@@ -169,11 +191,20 @@ class TrialsPlugin(IPlugin):
             return None
 
 
-    def _populate_channel_combo(self, ds: SignalDataset):
-        """Llena channelComboBox con nombres; userData = índice del canal."""
-        cb = getattr(self.ui, "channelComboBox", None)
-        cb.blockSignals(True)
-        cb.clear()
+    def _populate_channel_combos(self, ds: SignalDataset):
+        """
+        Llena channelComboBox y stimChannelComboBox con los mismos nombres (userData = índice).
+        - Channel → por defecto índice 0
+        - Stim Channel → por defecto último canal
+        """
+        # Obtener referencias (tolerante si UI no tiene todavía el stim combo)
+        cb_main = getattr(self.ui, "channelComboBox", None)
+        cb_stim = getattr(self.ui, "stimChannelComboBox", None)
+
+        if cb_main is None:
+            return  # nada que hacer
+
+        # Construir lista de nombres
         names = []
         try:
             if getattr(ds, "channel_names", None):
@@ -182,7 +213,7 @@ class TrialsPlugin(IPlugin):
             self._log("channel_names error:", e)
 
         if not names:
-            # Fallback: ch-1..ch-C usando shape de signals
+            # Fallback por shape
             C = 0
             try:
                 sig = getattr(ds, "signals", None)
@@ -190,22 +221,34 @@ class TrialsPlugin(IPlugin):
             except Exception:
                 C = 0
             names = [f"ch-{i+1}" for i in range(C)]
-            self._log("fallback nombres por shape:", C)
+            self._log("fallback nombres por shape:", len(names))
 
+        # Poblar principal
+        cb_main.blockSignals(True)
+        cb_main.clear()
         for i, name in enumerate(names):
-            cb.addItem(name, i)  # texto=nombre, userData=índice
+            cb_main.addItem(name, i)
+        cb_main.setCurrentIndex(0 if names else -1)
+        cb_main.blockSignals(False)
 
-        cb.setCurrentIndex(0 if names else -1)
-        cb.blockSignals(False)
-
-        #self._log("channelComboBox poblado:", cb.count(), "items",       "ejemplo:", names[:5])
+        # Poblar stim (si existe en UI)
+        if cb_stim is not None:
+            cb_stim.blockSignals(True)
+            cb_stim.clear()
+            for i, name in enumerate(names):
+                cb_stim.addItem(name, i)
+            # por defecto el ÚLTIMO canal
+            default_idx = (len(names) - 1) if names else -1
+            cb_stim.setCurrentIndex(default_idx)
+            cb_stim.setToolTip("Canal usado para detectar onsets/estímulos")
+            cb_stim.blockSignals(False)
 
 
     def _populate_channels_once(self):
         """Intenta cargar la señal activa y poblar el combo (silencioso si no hay)."""
         ds = self._get_active_signal()
         if ds:
-            self._populate_channel_combo(ds)
+            self._populate_channel_combos(ds)
         else:
             self._log("_populate_channels_once: no hay señal activa (aún)")
     
@@ -231,13 +274,21 @@ class TrialsPlugin(IPlugin):
             QMessageBox.warning(self.widget, "Parámetros",
                                 "Seleccione un canal válido.")
             return
+        
+        stim_ch = self.ui.stimChannelComboBox.currentData()
+        if stim_ch is None:
+            stim_ch = self.ui.stimChannelComboBox.currentIndex()
+        if stim_ch is None or stim_ch < 0:
+            QMessageBox.warning(self.widget, "Parámetros",
+                                "Seleccione un canal de estímulos.")
+            return
 
         th   = float(self.ui.thresholdDoubleSpinBox.value())
         t0   = float(self.ui.initialTimeDoubleSpinBox.value())
         t1   = float(self.ui.finalTimeDoubleSpinBox.value())
         mode = self.ui.endModeCombo.currentData() or "fixed"
         stim = int(self.ui.stimNumberSpinBox.value())
-        stim = None if stim <= 0 else stim
+        stim = None if stim < 0 else stim
         inter_stim_time  = float(self.ui.interStimTimeDoubleSpinBox.value())
         inter_stim_time  = None if inter_stim_time <= 0 else inter_stim_time
 
@@ -248,12 +299,18 @@ class TrialsPlugin(IPlugin):
         self._log("params →", dict(channel=int(ch), threshold=th, t0=t0, t1=t1,
                                 end_mode=mode, stim_expected=stim, inter_stim_time=inter_stim_time))
 
-        # Ejecutar corte
+        print("")
         try:
-            td: TrialDataset = cut_trials_single_channel(
-                ds=ds, channel=int(ch), threshold=th, t0=t0, t1=t1,
-                end_mode=mode, stim_expected=stim, inter_stim_time=inter_stim_time
-            )
+            td = cut_trials_single_channel(
+            ds=ds,
+            channel=int(ch),                  # canal objetivo a cortar
+            stim_channel=None if stim_ch is None else int(stim_ch),  # canal de estímulos para detectar onsets
+            threshold=th,
+            t0=t0, t1=t1,
+            end_mode=mode,
+            stim_expected=stim,
+            inter_stim_time=inter_stim_time
+        )
         except Exception as e:
             self._log("cut_trials_single_channel error:", e)
             QMessageBox.critical(self.widget, "Error",
@@ -422,13 +479,6 @@ class TrialsPlugin(IPlugin):
         ch_name = getattr(td, "channel_name", "") or "channel"
         trials_txt = ", ".join(str(i+1) for i in sel)
         self.chart.SetTitle(f"Trial {trials_txt} — {ch_name}")
-        
-        #menu global
-        try:
-            self.vtk_menu = VTKContextMenu(self.chart, self.vtk_interactor, parent=self.widget)
-
-        except Exception as e:
-            QMessageBox.information(self.widget, "Menú contextal", "Error creando el menú contextual.\n" + str(e))
 
 
         try:
@@ -436,3 +486,23 @@ class TrialsPlugin(IPlugin):
             self._log("  render OK (ContextView interactivo)")
         except Exception as e:
             self._log("Render error:", e)
+            
+        if self.vtk_menu is not None:
+            self.vtk_menu.set_chart(self.chart)
+            ds = self._get_active_signal()
+            signal_name = getattr(ds, "name", "signal")
+            trial_idx = (self.visible_trials[0] if self.visible_trials else 0)
+
+            curr_channel_name = getattr(td, "channel_name", "") or "channel"
+
+            graph_uid = f"trials:{signal_name}:{curr_channel_name}"
+            print(f"trial idx={trial_idx}")
+            self.vtk_menu.on_view_rebuilt(
+                self.chart,
+                view_id="trials",
+                trial_id=trial_idx,
+                channel_name=curr_channel_name,
+                plugin="trials",
+                domain="time",
+                graph_id=graph_uid
+            )

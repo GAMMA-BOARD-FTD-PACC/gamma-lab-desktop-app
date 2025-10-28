@@ -46,12 +46,6 @@ class Ui_OpenSignal(QtWidgets.QWidget):
         sideLayout.setContentsMargins(8, 8, 8, 8)
         sideLayout.setSpacing(10)
 
-        self.Btn_abrir_senal = QtWidgets.QPushButton("Abrir señal", self.sidebar)
-        self.Btn_abrir_senal.setObjectName("mainActionButton")
-        #self.Btn_abrir_senal.setObjectName("Btn_abrir_senal")
-        self.Btn_abrir_senal.setMinimumHeight(34)
-        sideLayout.addWidget(self.Btn_abrir_senal)
-
         self.gbChannels = QtWidgets.QGroupBox("Showed Channels", self.sidebar)
         gbLayout = QtWidgets.QVBoxLayout(self.gbChannels)
         gbLayout.setContentsMargins(8, 8, 8, 8)
@@ -66,6 +60,12 @@ class Ui_OpenSignal(QtWidgets.QWidget):
         sideLayout.addWidget(self.gbChannels, 1)
         sideLayout.addStretch(1)
 
+        self.Btn_abrir_senal = QtWidgets.QPushButton("Open Signal", self.sidebar)
+        self.Btn_abrir_senal.setObjectName("mainActionButton")
+        #self.Btn_abrir_senal.setObjectName("Btn_abrir_senal")
+        self.Btn_abrir_senal.setMinimumHeight(34)
+        sideLayout.addWidget(self.Btn_abrir_senal)
+        
         # ---------- Splitter sizes / stretch ----------
         self.sidebar.setMinimumWidth(240)
         self.sidebar.setMaximumWidth(480)

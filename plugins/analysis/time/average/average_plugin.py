@@ -12,6 +12,7 @@ import numpy as np
 from PyQt5.QtCore import Qt
 
 
+
 class Average_plugin(IPlugin):
     def __init__(self, meta:PluginMeta):
         super().__init__(meta)
@@ -22,22 +23,16 @@ class Average_plugin(IPlugin):
         self.started = False
         self.kernel = None
         self.ui = None
-
+        self.active_signal = None
+        self.active_chanel = None
 
     def initialize(self, kernel):
+        self.kernel = kernel
         print("Inicializando Average")
 
     def process(self, data: any):
         if self.vtk_widget:
             self.vtk_widget.Enable()
-
-        # print(f"Average recibió datos: {data}")
-        # if self.mainwin:
-        #     # ejemplo: mostrar mensaje en statusBar (si existe)
-        #     try:
-        #         self.mainwin.statusBar().showMessage(f"Average procesó: {data}", 3000)
-        #     except Exception:
-        #         pass
 
     def stop(self):
         print("Deteniendo Average")
@@ -48,6 +43,7 @@ class Average_plugin(IPlugin):
 
     def start(self, kernel):
         print("Iniciando Average")
+        self.kernel = kernel
         self.mainwin = kernel.get_service("MainWindow")
         if self.mainwin:
             self.started = True
@@ -93,17 +89,17 @@ class Average_plugin(IPlugin):
     def _on_calculate_average(self):
         """Carga el SignalDataset activo desde el DataStore y muestra sus TrialDataset asociados."""
 
-        active_signal = self._get_active_signal()        
-        if active_signal is None:
+        self.active_signal = self._get_active_signal()        
+        if self.active_signal is None:
             QMessageBox.warning(self.widget, "Error", "No hay señal activa para calcular el promedio.")
             return
         
-        channel_name = active_signal.channel_names[0]
+        self.active_chanel = self.active_signal.channel_names[0]
         
-        trials = active_signal.get_active_trials(active_signal.name, channel_name)
+        trials = self.active_signal.get_active_trials(self.active_signal.name, self.active_chanel)
 
         if trials is None or trials.trials.size == 0:
-            QMessageBox.warning(self.widget, "Error", f"No hay trials activos para {channel_name}.")
+            QMessageBox.warning(self.widget, "Error", f"No hay trials activos para {self.active_chanel}.")
             return
 
         # Calcular promedio por muestra (a lo largo de los trials)
@@ -181,6 +177,7 @@ class Average_plugin(IPlugin):
     
         try:
             self.vtk_menu = VTKContextMenu(chart, self.vtk_widget, parent=self.widget)
+            self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
 
         except Exception as e:
             QMessageBox.information(self.widget, "Menú contextal", "Error creando el menú contextual.\n" + str(e))

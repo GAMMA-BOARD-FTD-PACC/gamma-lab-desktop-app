@@ -25,6 +25,8 @@ class Erp_plugin(IPlugin):
         self.started = False
         self.td = None
         self.started = False
+        self.sig = None
+        self.ch_name = None
         
         # VTK widgets
         self.vtk_top: QVTKRenderWindowInteractor | None = None
@@ -142,16 +144,16 @@ class Erp_plugin(IPlugin):
             QMessageBox.warning(self.widget, "Error", "No se encontró el DataStore.")
             return None, None, None
 
-        sig: SignalDataset | None = store.get_active_signal()
-        if sig is None:
+        self.sig: SignalDataset | None = store.get_active_signal()
+        if self.sig is None:
             QMessageBox.warning(self.widget, "Sin señal activa", "No hay una señal activa seleccionada.")
             return None, None, None
 
-        if not getattr(sig, "trials_dataset", None) or len(sig.trials_dataset) == 0:
+        if not getattr(self.sig, "trials_dataset", None) or len(self.sig.trials_dataset) == 0:
             QMessageBox.warning(self.widget, "Sin trials", "La señal activa no tiene TrialDatasets.")
             return None, None, None
 
-        td: TrialDataset = sig.trials_dataset[-1]  # último TD
+        td: TrialDataset = self.sig.trials_dataset[-1]  # último TD
         if not hasattr(td, "time_rel") or not hasattr(td, "trials"):
             QMessageBox.warning(self.widget, "Trials incompletos",
                                 "El TrialDataset no contiene 'time_rel' o 'trials'.")
@@ -250,8 +252,8 @@ class Erp_plugin(IPlugin):
         self._render_butterfly(t, sel)
         self._render_heatmap(t, sel)
 
-        ch_name = getattr(td, "channel_name", "")
-        self._notify(f"ERP: {len(idx)} trials graficados. Canal: {ch_name}")
+        self.ch_name = getattr(td, "channel_name", "")
+        self._notify(f"ERP: {len(idx)} trials graficados. Canal: {self.ch_name}")
 
     def _ensure_trials_list(self, n_trials: int):
         """Reconstruye la lista si está vacía o desfasada."""
@@ -315,8 +317,8 @@ class Erp_plugin(IPlugin):
         # chart.GetAxis(vtk.vtkAxis.LEFT).SetTitle("Amplitude")
 
         try:
-            self.vtk_menu = VTKContextMenu(chart, self.vtk_top, parent=self.widget)
-            self.vtk_menu.add_action("Exportar datos", self._on_export_butterfly)
+            self.vtk_menu = VTKContextMenu(chart, self.vtk_top, self.sig.name,self.ch_name,self.meta.id, parent=self.widget)
+            #self.vtk_menu.add_action("Exportar datos", self._on_export_butterfly)
         except Exception as e:
             QMessageBox.information(self.widget, "Menú contextal", "Error creando el menú contextual.\n" + str(e))
 
@@ -330,7 +332,7 @@ class Erp_plugin(IPlugin):
         scene.ClearItems()
 
         # Datos
-        X = np.asarray(sel, dtype=np.float32)[::-1, :]  # (K, T)
+        X = np.asarray(sel, dtype=np.float32)
         K, Tn = X.shape
         print(f"\n=== DEBUG HEATMAP ===")
         print(f"Dimensiones originales: K={K} trials, Tn={Tn} samples")
@@ -413,8 +415,7 @@ class Erp_plugin(IPlugin):
         print("======================\n")
         
         try:
-            self.vtk_menu_bot = VTKContextMenu(chart, self.vtk_bot, parent=self.widget)
-            self.vtk_menu_bot.add_action("Exportar heatmap", self._on_export_heatmap)
+            self.vtk_menu_bot = VTKContextMenu(chart, self.vtk_top, self.sig.name,self.ch_name,self.meta.id, parent=self.widget)
             self.vtk_menu_bot.add_action("Cambiar LUT", self._on_change_lut)
         except Exception as e:
             QMessageBox.information(self.widget, "Menú contextual (Bottom)", f"Error creando el menú contextual.\n{e}")
@@ -426,11 +427,6 @@ class Erp_plugin(IPlugin):
         self.view_bot.GetRenderWindow().Render()
 
 # Funciones no implementadas de los menu contextuales
-    def _on_export_butterfly(self):
-        QMessageBox.information(self.widget, "Exportar", "Exportar datos del gráfico superior (no implementado).")
-
-    def _on_export_heatmap(self):
-        QMessageBox.information(self.widget, "Exportar", "Exportar heatmap (no implementado).")
 
     def _on_change_lut(self):
         QMessageBox.information(self.widget, "Cambiar LUT", "Cambiar mapa de colores (no implementado).")

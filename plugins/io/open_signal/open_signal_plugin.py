@@ -1,6 +1,7 @@
 # plugins/io/open_signal/open_signal_plugin.py
 from pathlib import Path
 from PyQt5.QtWidgets import QMessageBox
+import traceback
 
 from PyQt5 import QtCore, QtWidgets
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
@@ -34,6 +35,9 @@ class OpenSignalPlugin(IPlugin):
 
         self._charts: list[vtk.vtkChartXY] = []
         self._vtk_table = None
+        
+        self._sync_callback = None
+        self._is_syncing = False
 
     # ---------------- utils/log ----------------
     def _log(self, *args):
@@ -99,19 +103,87 @@ class OpenSignalPlugin(IPlugin):
         self.vtk_view.SetRenderWindow(self.vtk_interactor.GetRenderWindow())
         self.vtk_view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
 
-        # Crear menú contextual (sin chart al inicio)
         try:
-            self.vtk_menu = VTKContextMenu(None, self.vtk_interactor, parent=self.ui)
+            self.vtk_menu = VTKContextMenu(
+                chart=[],                              
+                vtk_widget=self.vtk_interactor,       
+                plugin_name="open_signal",
+                measurements_enabled=False,             
+                measure_scope={                         
+                    "view_id": "signal_loader",         
+                    "trial_id": None,
+                    "channel_name": None,          
+                    "plugin": "open_signal",
+                    "domain": "time",
+                    "graph_id": "open_signal:blank" 
+                },
+                parent=self
+            )
+            self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
         except Exception as e:
             self.vtk_menu = None
             QMessageBox.information(self.ui, "Menú contextual", "Error creando el menú contextual.\n" + str(e))
 
+        # callback de sincronización
+        self._setup_sync_callback()
 
         try:
             self.vtk_interactor.Initialize()
         except Exception:
             pass
         self._log("ensure_vtk(): scheduled init")
+
+    def _setup_sync_callback(self):
+        """Configura el callback para sincronizar los ejes X de todos los charts."""
+        if not self.vtk_interactor:
+            return
+
+        def sync_axes(caller, event):
+            if self._is_syncing or not self._charts:
+                return
+            self._is_syncing = True
+            try:
+                # 1) ¿Dónde está el cursor?
+                try:
+                    mx, my = self.vtk_interactor.GetEventPosition()
+                except Exception:
+                    mx, my = -1, -1
+
+                ref_chart = self._chart_at_pixel(mx, my) or self._charts[0]
+
+                ref_axis = ref_chart.GetAxis(vtk.vtkAxis.BOTTOM)
+                ref_range = [0.0, 0.0]
+                ref_axis.GetRange(ref_range)
+                x0, x1 = ref_range
+
+                ref_axis.SetBehavior(vtk.vtkAxis.AUTO)
+
+                for chart in self._charts:
+                    if chart is ref_chart:
+                        continue
+                    axis = chart.GetAxis(vtk.vtkAxis.BOTTOM)
+
+                    cur_range = [0.0, 0.0]
+                    axis.GetRange(cur_range)
+                    cx0, cx1 = cur_range
+
+                    if abs(cx0 - x0) > 1e-6 or abs(cx1 - x1) > 1e-6:
+                        axis.SetRange(x0, x1)
+                        axis.SetBehavior(vtk.vtkAxis.FIXED)
+
+                self.vtk_view.GetRenderWindow().Render()
+            finally:
+                self._is_syncing = False
+ 
+        self._sync_callback = sync_axes
+        
+        # Agregar observers para diferentes eventos de interacción
+        self.vtk_interactor.AddObserver(vtk.vtkCommand.InteractionEvent, self._sync_callback)
+        self.vtk_interactor.AddObserver(vtk.vtkCommand.MouseWheelForwardEvent, self._sync_callback)
+        self.vtk_interactor.AddObserver(vtk.vtkCommand.MouseWheelBackwardEvent, self._sync_callback)
+        self.vtk_interactor.AddObserver(vtk.vtkCommand.LeftButtonPressEvent, self._sync_callback)
+        self.vtk_interactor.AddObserver(vtk.vtkCommand.LeftButtonReleaseEvent, self._sync_callback)
+        self.vtk_interactor.AddObserver(vtk.vtkCommand.MouseMoveEvent, self._sync_callback)
 
     # ---------------- archivo / datos ----------------
     def _on_open_clicked(self):
@@ -130,13 +202,21 @@ class OpenSignalPlugin(IPlugin):
             self.kernel.register_service("FileIO", fileio)
 
         ext = Path(fname).suffix.lower()
-        if ext == ".abf":
-            ds = fileio.load_abf(fname)
-        elif ext == ".edf":
-            ds = fileio.load_edf(fname)
-        else:
-            if self.mainwin:
-                self.mainwin.statusBar().showMessage(f"Formato no soportado: {ext}", 4000)
+        try:
+            if ext == ".abf":
+                ds = fileio.load_abf(fname)
+            elif ext == ".edf":
+                ds = fileio.load_edf(fname)
+            elif ext == ".mat":
+                ds = fileio.load_mat(fname)
+            else:
+                if self.mainwin:
+                    self.mainwin.statusBar().showMessage(f"Formato no soportado: {ext}", 4000)
+                return
+        except Exception as e:
+            QMessageBox.warning(self.ui, "Error", f"Error abriendo el archivo {fname}\n{e}.")
+            self._log("_on_open_clicked error:", e)
+            traceback.print_exc()
             return
 
         store: DataStore | None = self.kernel.get_service("DataStore")
@@ -150,6 +230,9 @@ class OpenSignalPlugin(IPlugin):
         store.set_active_signal(key)
 
         self._set_dataset(ds)
+
+        self.vtk_menu.set_signal_name(ds.name)
+
         if self.mainwin:
             self.mainwin.statusBar().showMessage(f"Cargado: {fname}", 4000)
 
@@ -234,7 +317,33 @@ class OpenSignalPlugin(IPlugin):
             ax_b.SetLabelsVisible(True)
             ax_b.SetTitle("Time (s)")
 
+        # Sincronizar los rangos después del re-layout
+        self._sync_all_x_axes()
+
         rw.Render()
+
+    def _sync_all_x_axes(self):
+        """Sincroniza todos los ejes X al mismo rango."""
+        if not self._charts or self._is_syncing:
+            return
+
+        self._is_syncing = True
+        try:
+            # Rango del chart de referencia
+            ref_axis = self._charts[0].GetAxis(vtk.vtkAxis.BOTTOM)
+
+            ref_range = [0.0, 0.0]
+            ref_axis.GetRange(ref_range)
+            x0, x1 = ref_range
+
+            # Aplicar a todos los charts
+            for chart in self._charts:
+                axis = chart.GetAxis(vtk.vtkAxis.BOTTOM)
+                axis.SetRange(x0, x1)
+                axis.SetBehavior(vtk.vtkAxis.AUTO)
+        finally:
+            self._is_syncing = False
+
 
     def _render_selected(self):
         if self.current_ds is None or self.vtk_view is None:
@@ -244,8 +353,6 @@ class OpenSignalPlugin(IPlugin):
         scene = self.vtk_view.GetScene()
         scene.ClearItems()
         self._charts.clear()
-
-        
 
         sel = self._checked_indices()
         if not sel:
@@ -275,6 +382,8 @@ class OpenSignalPlugin(IPlugin):
             ax_b.SetLabelsVisible(True)
             ax_b.SetTitle("Time (s)")
 
+            ax_b.SetBehavior(vtk.vtkAxis.AUTO)
+
             unit = "Amplitude"
             if ch < len(ds.units) and ds.units[ch]:
                 unit = ds.units[ch]
@@ -283,5 +392,13 @@ class OpenSignalPlugin(IPlugin):
         self._relayout_charts()
 
         if self.vtk_menu and self._charts:
-            # Por ahora usamos el primer chart visible
             self.vtk_menu.set_chart(self._charts)
+            
+    def _chart_at_pixel(self, x: int, y: int):
+        """Devuelve el chart cuyo rectángulo contiene el punto (x, y) en coords de VTK."""
+        for ch in self._charts:
+            r = ch.GetSize()  # vtkRectf: x, y, width, height
+            if (r.GetX() <= x <= r.GetX() + r.GetWidth()
+                    and r.GetY() <= y <= r.GetY() + r.GetHeight()):
+                return ch
+        return None

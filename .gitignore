@@ -1,3 +1,27 @@
 .env
 **/__pycache__/
 
+# Entornos virtuales
+venv/
+.env/
+
+# Compilaciones
+build/
+dist/
+
+# Archivos de PyInstaller
+*.spec
+
+# Cachés de Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Configuración de IDEs
+.vscode/
+.idea/
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
