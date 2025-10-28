@@ -1,8 +1,0 @@
-id: "home"
-name: "Home"
-category: "Home"
-subcategory: "Prueba"
-version: "1.0"
-icon: "icon.png"
-logic_class: "Plugin_home"
-ui_class: ""
