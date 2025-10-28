@@ -496,7 +496,7 @@ class TrialsPlugin(IPlugin):
             curr_channel_name = getattr(td, "channel_name", "") or "channel"
 
             graph_uid = f"trials:{signal_name}:{curr_channel_name}"
-
+            print(f"trial idx={trial_idx}")
             self.vtk_menu.on_view_rebuilt(
                 self.chart,
                 view_id="trials",

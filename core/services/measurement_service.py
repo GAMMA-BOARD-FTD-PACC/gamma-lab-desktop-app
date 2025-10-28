@@ -81,6 +81,7 @@ class MeasurementService:
             if a != b:
                 return False
         return True
+    
     def clear_visual_overlays(self):
         """
         Limpia SOLO lo visual (overlays), sin tocar el datastore.
@@ -112,23 +113,6 @@ class MeasurementService:
                     self._add_overlay_for_points(mid, p1, p2, axes_snapshot=None)
                 except Exception:
                     pass
-
-    def _context_matches(self, curr, other) -> bool:
-        """
-        Regla de matching de contexto:
-        - Coinciden view_id y channel_name (si están definidos en ambos)
-        - Coincide trial_id (exacto).
-        """
-        # si alguno está None lo ignoramos para evitar falsos negativos
-        for key in ("view_id", "channel_name", "trial_id"):
-            a = curr.get(key, None)
-            b = other.get(key, None)
-            if a is None or b is None:
-                # si no tienes ese dato en algún lado, no lo usamos como filtro estricto
-                continue
-            if a != b:
-                return False
-        return True
 
     # ====================== API pública (medición) ======================
 
@@ -348,54 +332,149 @@ class MeasurementService:
     # ====================== datos para snap ======================
 
     def _load_reference_data_for_pick(self, chart):
+        print("\n[MEAS][_load_reference_data_for_pick] >>>")
+        # 1) plot de referencia
         ref_plot = None
         try:
             n = chart.GetNumberOfPlots()
-        except Exception:
-            self._ref_data = None; return
+        except Exception as e:
+            self._ref_data = None
+            return
+
         for i in range(n):
             pl = chart.GetPlot(i)
             if pl is not None:
-                ref_plot = pl; break
+                ref_plot = pl
+                break
         if ref_plot is None:
-            self._ref_data = None; return
+            self._ref_data = None
+            return
+
+        # 2) tabla
         try:
             table = ref_plot.GetInput()
-        except Exception:
+        except Exception as e:
             table = None
         if table is None:
-            self._ref_data = None; return
+            self._ref_data = None
+            return
 
+        # Utilidades
         def _col_by_name(tbl, names):
             for nm in names:
                 try:
                     arr = tbl.GetColumnByName(nm)
                     if arr is not None:
-                        return arr
+                        return arr, nm
                 except Exception:
                     pass
-            return None
+            return None, None
 
-        x_arr = _col_by_name(table, ("Time","time","X","x"))
-        y_arr = _col_by_name(table, ("Value","value","Y","y"))
-        if x_arr is None or y_arr is None:
+        # Dump columnas disponibles
+        try:
+            ncols = table.GetNumberOfColumns()
+        except Exception:
+            ncols = None
+        cols = []
+        if ncols is not None:
+            for c in range(ncols):
+                try:
+                    arr = table.GetColumn(c)
+                    cols.append(arr.GetName() if arr else f"col{c}")
+                except Exception:
+                    cols.append(f"col{c}?")
+        print(f"[MEAS] columns={cols}")
+
+        # Etiqueta del plot y contexto
+        try:
+            lbl = ref_plot.GetLabel() or ""
+        except Exception:
+            lbl = ""
+        ctx_tid = self._context.get("trial_id", None)
+        print(f"[MEAS] ctx.trial_id={ctx_tid}  plot.label='{lbl}'")
+
+        # 3) X
+        x_arr, x_src = _col_by_name(table,"time")
+        if x_arr is None:
             try:
-                x_arr = table.GetColumn(0); y_arr = table.GetColumn(1)
-            except Exception:
-                self._ref_data = None; return
+                x_arr = table.GetColumn(0)
+                x_src = "col0"
+            except Exception as e:
+                print(f"[MEAS] ERROR: no X column found: {e}")
+                self._ref_data = None
+                return
+        print(f"[MEAS] X picked -> name='{x_arr.GetName() if hasattr(x_arr,'GetName') else '?'}' src={x_src}")
 
-        nrows = min(x_arr.GetNumberOfTuples(), y_arr.GetNumberOfTuples())
+        # 4) Y con logs de decisión
+        y_arr = None
+        y_reason = None
+
+        # (A) Según contexto: trial_{tid+1}
+        if ctx_tid is not None and ctx_tid >= 0:
+            guess = f"trial_{ctx_tid+1}"
+            try:
+                y_arr = table.GetColumnByName(guess)
+                if y_arr is not None:
+                    y_reason = f"context:{guess}"
+            except Exception:
+                pass
+        print(f"[MEAS] Y(A) context guess -> {y_reason or 'no-match'}")
+
+        # (B) Según label: “Trial k”
+        if y_arr is None and lbl.lower().startswith("trial"):
+            import re
+            m = re.search(r"(\d+)", lbl)
+            if m:
+                k = int(m.group(1))
+                guess = f"trial_{k}"
+                try:
+                    arr = table.GetColumnByName(guess)
+                    if arr is not None:
+                        y_arr = arr
+                        y_reason = f"label:{guess}"
+                except Exception:
+                    pass
+        print(f"[MEAS] Y(B) label guess -> {y_reason or 'no-match'}")
+
+
+        print(f"[MEAS] Y picked -> name='{y_arr.GetName() if hasattr(y_arr,'GetName') else '?'}' reason={y_reason}")
+
+        # 5) construir ref_data y chequear tamaños
+        try:
+            nrows = min(x_arr.GetNumberOfTuples(), y_arr.GetNumberOfTuples())
+        except Exception as e:
+            print(f"[MEAS] ERROR get tuples: {e}")
+            self._ref_data = None
+            return
+        print(f"[MEAS] tuples -> X={x_arr.GetNumberOfTuples()} Y={y_arr.GetNumberOfTuples()}  used={nrows}")
+
         xs, ys = [], []
         for i in range(nrows):
-            xs.append(float(x_arr.GetValue(i)))
-            ys.append(float(y_arr.GetValue(i)))
+            try:
+                xs.append(float(x_arr.GetValue(i)))
+                ys.append(float(y_arr.GetValue(i)))
+            except Exception:
+                # si hay algún valor no convertible, lo saltamos
+                continue
+
+        # Orden y de-duplicación mínima en X
         pairs = sorted(zip(xs, ys), key=lambda t: t[0])
         xs2, ys2, last = [], [], None
         for x, y in pairs:
             if last is not None and x <= last:
                 x = last + 1e-12
             xs2.append(x); ys2.append(y); last = x
+
         self._ref_data = {'xs': xs2, 'ys': ys2}
+        print(f"[MEAS] ref_data: xs={len(xs2)} ys={len(ys2)}")
+        # Muestra algunas muestras
+        if xs2 and ys2:
+            print(f"[MEAS] ref_data head: {list(zip(xs2[:3], ys2[:3]))}")
+            print(f"[MEAS] ref_data tail: {list(zip(xs2[-3:], ys2[-3:]))}")
+        print("[MEAS][_load_reference_data_for_pick] <<<\n")
+
+
+
 
     def _pick_nearest_data_point(self, sx_click, sy_click):
         if not self._ref_data or not self._ref_data.get('xs'):

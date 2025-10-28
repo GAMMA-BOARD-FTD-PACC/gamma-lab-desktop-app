@@ -220,11 +220,11 @@ class VTKContextMenu:
         # Medidas
         measure_menu = menu.addMenu("Medidas")
         act_slope = measure_menu.addAction(
-            "Pendiente (2 puntos – clic IZQ.)",
+            "Pendiente (2 puntos)",
             lambda: self.measure_service.start('slope')
         )
         act_amp = measure_menu.addAction(
-            "Amplitud (pico-a-pico en el intervalo)",
+            "Amplitud (2 puntos)",
             lambda: self.measure_service.start('amplitude')
         )
 
@@ -236,9 +236,12 @@ class VTKContextMenu:
         act_cancel.setEnabled(self.measure_service.state != 'idle')
         measure_menu.addSeparator()
 
-        measure_menu.addAction("Mostrar/Ocultar todas las líneas", self.measure_service.toggle_overlay)
-        measure_menu.addAction("Eliminar última medición", self.measure_service.remove_last_measurement)
-        measure_menu.addAction("Eliminar TODAS las mediciones", self.measure_service.clear_all_measurements)
+        act_show_lines = measure_menu.addAction("Mostrar/Ocultar todas las líneas", self.measure_service.toggle_overlay)
+        act_show_lines.setEnabled(can_measure)
+        act_delete_last = measure_menu.addAction("Eliminar última medición", self.measure_service.remove_last_measurement)
+        act_delete_last.setEnabled(can_measure)
+        act_delete_all = measure_menu.addAction("Eliminar TODAS las mediciones", self.measure_service.clear_all_measurements)
+        act_delete_all.setEnabled(can_measure)
 
         # Exportar
         menu.addSeparator()
