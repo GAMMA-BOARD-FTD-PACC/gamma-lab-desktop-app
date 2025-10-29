@@ -10,10 +10,8 @@ from core.services.signal_dataset import SignalDataset
 from plugins.preprocessing.prepare.filter.filter_plugin_ui import Ui_Filter
 
 import vtk
-from vtkmodules.vtkCommonCore import vtkDoubleArray
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
-from vtkmodules.vtkImagingFourier import vtkImageButterworthHighPass
-from vtkmodules.vtkCommonDataModel import vtkImageData
+from scipy.signal import butter, sosfiltfilt
 
 import numpy as np
 
@@ -108,7 +106,7 @@ class Filter_plugin(IPlugin):
         self.ui.doubleSpinBox_low.setRange(0, 1000)
         self.ui.doubleSpinBox_low.setValue(0.5)
         self.ui.spinBox_order.setRange(0, 100)
-        self.ui.spinBox_order.setValue(2)
+        self.ui.spinBox_order.setValue(8)
         self.ui.type_select.addItems(["Butterworth", "Chebyshev", "Elliptic"])
 
         self.ui.pushButton_filter.clicked.connect(self.on_apply_filter)
@@ -174,20 +172,25 @@ class Filter_plugin(IPlugin):
             trials = active_signal.get_active_trials(active_signal.name, channel_name)
             if trials.trials is None:
                 raise ValueError("No active trials found")
+    
 
-            signal_data = active_signal.signals[:, 0]
+            signal_data = active_signal.signals[0, :]
             trial_data = trials.trials[:, 0]
+            fs = active_signal.sampling_rate
+            print(f"Sampling Rate: {fs} Hz")
 
             low = float(self.ui.doubleSpinBox_low.value())
             high = float(self.ui.doubleSpinBox_high.value())
             order = int(self.ui.spinBox_order.value())
+            type_filter = self.ui.type_select.currentText().lower()
 
-            filtered_signal = self.run_filter(signal_data, low, high, order)
-            filtered_trial = self.run_filter(trial_data, low, high, order)
+            filtered_signal = self.run_filter(signal_data, low, high, order, fs, type_filter)
+            filtered_trial = self.run_filter(trial_data, low, high, order, fs, type_filter)
 
-            if filtered_signal and filtered_trial:
-                self._render_filtered(filtered_signal, active_signal.sampling_rate, unit="Amplitude", type = "signal")
-                self._render_filtered(filtered_trial, active_signal.sampling_rate, unit="Amplitude", type = "trial")
+            print("[Filter] Signal preview (first 10 samples):", filtered_signal[:10])
+
+            self._render_filtered(filtered_signal, active_signal.sampling_rate, unit="Amplitude", type = "signal")
+            self._render_filtered(filtered_trial, active_signal.sampling_rate, unit="Amplitude", type = "trial")
 
         except ValueError as ve:
             QMessageBox.warning(self.widget, "Error", str(ve))
@@ -196,41 +199,34 @@ class Filter_plugin(IPlugin):
             QMessageBox.critical(self.widget, "Error", f"Unexpected error: {e}")
     # end def
 
-    def run_filter(self, signal, low, high, order, type = "butterworth"):
+    def run_filter(self, signal, low, high, order, fs, type="butterworth"):
+        """ Applies a bandpass filter to the signal."""
         try:
             signal = np.asarray(signal, dtype=np.float64)
-            N = len(signal)
-            img = vtk.vtkImageData()
-            img.SetDimensions(N, 1, 1)
-            img.AllocateScalars(vtk.VTK_DOUBLE, 2)
+            nyq = 0.5 * fs
+            lowcut = low / nyq
+            highcut = high / nyq
 
-            arr = vtkDoubleArray()
-            arr.SetNumberOfComponents(2)
-            arr.SetNumberOfTuples(N)
+            # Sanity check: ensure frequencies are valid
+            if lowcut <= 0 or highcut >= 1 or lowcut >= highcut:
+                raise ValueError(f"Invalid cutoff frequencies: low={lowcut}, high={highcut}")
 
-            for i in range(N):
-                arr.SetComponent(i, 0, float(signal[i]))
-                arr.SetComponent(i, 1, 0.0)
+            if type.lower() == "butterworth":
+                sos = butter(order, [lowcut, highcut], btype="band", output="sos")
+            else:
+                raise NotImplementedError(f"Filter '{type}' not implemented.")
 
-            img.GetPointData().SetScalars(arr)
+            # Use sosfiltfilt for numerical stability (zero-phase)
+            filtered = sosfiltfilt(sos, signal)
 
-            result = None
+            if np.any(np.isnan(filtered)):
+                raise ValueError("Filter output contains NaN values.")
 
-            if type == "butterworth":
-                butter_high = vtkImageButterworthHighPass()
-                butter_high.SetInputData(img)
-                butter_high.SetCutOff(high)
-                butter_high.SetOrder(order)
-                butter_high.Update()
+            return filtered
 
-                result = butter_high.GetOutput()
-            # end if
-
-            return result
-        
         except Exception as e:
             self._log("Error running filter:", e)
-            return None
+            return np.zeros_like(signal)
     # end def
 
     def _render_filtered(self, filtered_output, fs: float, unit: str = "Amplitude", type: str = ""):
@@ -268,27 +264,25 @@ class Filter_plugin(IPlugin):
             scene.ClearItems()
 
             # --- Validate filtered output ---
-            scalars = filtered_output.GetPointData().GetScalars()
-            if not scalars:
-                print(f"[Filter] No scalar data in filtered output ({type}).")
+            if not isinstance(filtered_output, np.ndarray):
+                print(f"[Filter] filtered_output for '{type}' is not np.ndarray")
                 return
 
-            n_points = filtered_output.GetNumberOfPoints()
-            n_components = scalars.GetNumberOfComponents()
+            # --- Build time and signal arrays for plotting ---
+            n_points = len(filtered_output)
 
-            # --- Build VTK table ---
             arr_time = vtk.vtkFloatArray()
             arr_time.SetName("Time (s)")
+
             arr_signal = vtk.vtkFloatArray()
             arr_signal.SetName("Filtered Signal")
 
             for i in range(n_points):
                 t = i / fs
-                tuple_val = scalars.GetTuple(i)
-                value = tuple_val[0] if n_components == 1 else sum(tuple_val) / n_components
                 arr_time.InsertNextValue(t)
-                arr_signal.InsertNextValue(value)
+                arr_signal.InsertNextValue(float(filtered_output[i]))
 
+            # --- Build VTK table ---
             table = vtk.vtkTable()
             table.AddColumn(arr_time)
             table.AddColumn(arr_signal)
@@ -324,7 +318,6 @@ class Filter_plugin(IPlugin):
 
         except Exception as e:
             print(f"[Filter] Error rendering {type}:", e)
-
     # end def
 
 # end class
