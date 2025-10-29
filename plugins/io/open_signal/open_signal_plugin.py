@@ -200,6 +200,29 @@ class OpenSignalPlugin(IPlugin):
         if fileio is None:
             fileio = FileIOService()
             self.kernel.register_service("FileIO", fileio)
+        
+        
+        store: DataStore | None = self.kernel.get_service("DataStore")
+        if store is None:
+            store = DataStore()
+            self.kernel.register_service("DataStore", store)
+
+        name_aux = Path(fname).name
+        if store.has(name_aux):
+            reply = QMessageBox.warning(
+                self.ui,
+                "Advertencia",
+                f"Ya existe una señal con el nombre '{name_aux}'.\n\n"
+                "Si continúa, se sobrescribirá la señal existente y se perderá el trabajo anterior.\n\n"
+                "¿Desea continuar?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply == QMessageBox.No:
+                if self.mainwin:
+                    self.mainwin.statusBar().showMessage("Carga cancelada por el usuario.", 4000)
+                return
+            
 
         ext = Path(fname).suffix.lower()
         try:
@@ -219,15 +242,11 @@ class OpenSignalPlugin(IPlugin):
             traceback.print_exc()
             return
 
-        store: DataStore | None = self.kernel.get_service("DataStore")
-        if store is None:
-            store = DataStore()
-            self.kernel.register_service("DataStore", store)
 
         key = store.add_signal(ds, ds.name)
         self._log("Guardado en DataStore:", key)
-        self.kernel.emit_event("signal_added", {"key": key})
         store.set_active_signal(key)
+        self.kernel.emit_event("signal_added", {"key": key})
 
         self._set_dataset(ds)
 

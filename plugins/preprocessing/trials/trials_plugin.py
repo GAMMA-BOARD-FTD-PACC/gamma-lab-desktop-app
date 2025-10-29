@@ -32,6 +32,9 @@ class TrialsPlugin(IPlugin):
             "inter_stim_time": 0.1
         }
 
+
+
+
         self.widget: QWidget | None = None
         self.vtk_interactor: QVTKRenderWindowInteractor | None = None
         self.vtk_view: vtk.vtkContextView | None = None
@@ -55,15 +58,22 @@ class TrialsPlugin(IPlugin):
 
     def start(self, kernel):
         self.kernel = kernel
+        #Escuchar los eventos del kernel
+        self.kernel.event.connect(self.on_kernel_event)
         self.mainwin = kernel.get_service("MainWindow")
         self._log("start: mainwin?", bool(self.mainwin))
 
     def stop(self):
         self._log("stop")
+        if self.vtk_interactor:
+            self.vtk_interactor.Disable()
 
     def process(self, data: any):
         self._log(f"process{data}")
-        self._populate_channels_once()
+        if self.vtk_interactor:
+            self.vtk_interactor.Enable()
+
+        #self._populate_channels_once()
 
     # -------------- UI ---------------------
     def get_widget(self, parent=None):
@@ -146,6 +156,17 @@ class TrialsPlugin(IPlugin):
         self._apply_interstim_ui_rules(self.ui.stimNumberSpinBox.value())
 
     
+    def on_kernel_event(self, topic: str, payload: object):
+        """
+        Escucha eventos emitidos por el Kernel.
+        """
+        if topic == "signal_active_changed" or topic =="signal_added":
+            print(f"Nueva señal cambiada: {payload}")
+            #self._get_active_signal()
+            self._populate_channels_once()
+
+
+
     def _on_stim_count_changed(self, val: int):
         """Callback cuando cambia el número de estímulos: aplica reglas al campo de ISI."""
         try:
@@ -262,7 +283,7 @@ class TrialsPlugin(IPlugin):
             return
         
         if self.ui.channelComboBox.count() == 0:
-            self._populate_channel_combo(ds)
+            self._populate_channel_combos(ds)
             if self.ui.channelComboBox.count() == 0:
                 QMessageBox.warning(self.widget, "Canales", "La señal activa no tiene canales disponibles.")
                 return
