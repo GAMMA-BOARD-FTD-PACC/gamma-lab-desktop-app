@@ -12,6 +12,7 @@ from core.plugins.meta import PluginMeta
 from core.plugins.vtk_context_menu import VTKContextMenu
 from core.services.data_store import DataStore
 from core.services.fileio import FileIOService
+from core.services.settingsService import SettingsService
 from core.services.signal_dataset import SignalDataset
 from core.vtk_adapters.adapters import dataset_to_vtk_table
 
@@ -25,6 +26,9 @@ class OpenSignalPlugin(IPlugin):
         super().__init__(meta)
         self.kernel = None
         self.mainwin = None
+        self.settings = SettingsService()
+
+        
 
         self.ui: Ui_OpenSignal | None = None
         self.vtk_interactor: QVTKRenderWindowInteractor | None = None
@@ -187,14 +191,20 @@ class OpenSignalPlugin(IPlugin):
 
     # ---------------- archivo / datos ----------------
     def _on_open_clicked(self):
+        # Recuperar última carpeta abierta desde la configuración
+        last_dir = self.settings.get("last_open_dir", str(Path.cwd()))
+
         fname, _ = QtWidgets.QFileDialog.getOpenFileName(
             self.ui,
             "Seleccionar archivo de señal",
-            "",
+            last_dir,
             "Señales (*.abf *.edf *.ebf *.mat);;Archivos ABF (*.abf);;Archivos EDF (*.edf);;Archivos EBF (*.ebf);;Archivos MAT (*.mat)"
         )
         if not fname:
             return
+        
+        # Guardar la carpeta seleccionada como última usada
+        self.settings.set("last_open_dir", str(Path(fname).parent))
 
         fileio: FileIOService | None = self.kernel.get_service("FileIO")
         if fileio is None:

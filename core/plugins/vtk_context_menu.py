@@ -6,6 +6,7 @@ import os
 
 from core.services.export_service import ExportService
 from core.services.measurement_service import MeasurementService
+from core.services.settingsService import SettingsService
 
 
 class VTKContextMenu:
@@ -48,6 +49,9 @@ class VTKContextMenu:
         self._datastore = None
         self._debug = True
 
+        # Servicio de configuración persistente
+        self.settings = SettingsService()
+
         # wiring zoom/ratón
         self._install_wheel_shortcuts()
         self._install_mouse_observers()
@@ -69,10 +73,12 @@ class VTKContextMenu:
                     self.channel_name or None,
                     self.plugin_name or "plugin")
 
+
         def _get_last_dir():
-            return VTKContextMenu.last_export_dir or os.getcwd()
+            return self.settings.get("last_export_dir", os.getcwd())
 
         def _set_last_dir(path):
+            self.settings.set("last_export_dir", path)
             VTKContextMenu.last_export_dir = path
 
         self.export_service = ExportService(
