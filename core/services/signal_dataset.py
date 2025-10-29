@@ -26,7 +26,7 @@ class SignalDataset:
 
     __trials_dataset:List[TrialDataset] = field(default_factory=list)
 
-    discarded_trials: Dict[tuple[str, str], set[int]] = field(default_factory=dict)
+    __discarded_trials: Dict[tuple[str, str], set[int]] = field(default_factory=dict)
 
 
     # Caché interna para evitar recomputar los mismos trials_dataset
@@ -45,7 +45,7 @@ class SignalDataset:
     def get_active_trials(self, file_name: str, channel_name: str = None):
         """
         Retorna el TrialDataset activo para un archivo y canal específicos,
-        aplicando los descartes definidos en self.discarded_trials.
+        aplicando los descartes definidos en self.__discarded_trials.
 
         Parámetros:
             name (str): Nombre del archivo origen.
@@ -78,7 +78,7 @@ class SignalDataset:
             return None
 
         # Obtener los descartes específicos de ese dataset
-        discarded = self.discarded_trials.get(key, set())
+        discarded = self.__discarded_trials.get(key, set())
         version = len(discarded)
 
         # Si existe en caché y no ha cambiado la versión de descartes se reutiliza
@@ -133,31 +133,31 @@ class SignalDataset:
     def discard_trial(self, source: str, channel: str, index: int):
         """Descarta un trial específico del canal indicado."""
         key = (source, channel)
-        self.discarded_trials.setdefault(key, set()).add(index)
-        print(f"discarted trials: {self.discarded_trials}:  ")
+        self.__discarded_trials.setdefault(key, set()).add(index)
+        print(f"discarted trials: {self.__discarded_trials}:  ")
         self.__invalidate_cache(key)
 
 
     def include_trial(self, source: str, channel: str, index: int):
         """Vuelve a incluir un trial previamente descartado."""
         key = (source, channel)
-        if key in self.discarded_trials:
-            self.discarded_trials[key].discard(index)
-            if not self.discarded_trials[key]:
-                del self.discarded_trials[key]  # limpia entradas vacías
+        if key in self.__discarded_trials:
+            self.__discarded_trials[key].discard(index)
+            if not self.__discarded_trials[key]:
+                del self.__discarded_trials[key]  # limpia entradas vacías
         self.__invalidate_cache(key)
 
 
     def clear_discarded_trials(self): 
         """Limpia todos los descartes y cache."""
-        self.discarded_trials.clear()
+        self.__discarded_trials.clear()
         self.__filtered_cache.clear()
         self.__discard_versions.clear()
         print("[SignalDataset] Cache y descartes limpiados")
     
     def is_trial_discarded(self, source: str, channel: str, index: int) -> bool:
         key = (source, channel)
-        return key in self.discarded_trials and index in self.discarded_trials[key]
+        return key in self.__discarded_trials and index in self.__discarded_trials[key]
 
 
     def __invalidate_cache(self, key: tuple[str, str]):
