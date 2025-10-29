@@ -4,8 +4,8 @@ from PyQt5.QtWidgets import QWidget, QMessageBox
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
 from core.plugins.vtk_context_menu import VTKContextMenu
-from core.services.data_store import DataStore
 from core.services.signal_dataset import SignalDataset
+from core.services.data_store import DataStore
 
 from plugins.preprocessing.prepare.filter.filter_plugin_ui import Ui_Filter
 
@@ -187,10 +187,8 @@ class Filter_plugin(IPlugin):
             filtered_signal = self.run_filter(signal_data, low, high, order, fs, type_filter)
             filtered_trial = self.run_filter(trial_data, low, high, order, fs, type_filter)
 
-            print("[Filter] Signal preview (first 10 samples):", filtered_signal[:10])
-
-            self._render_filtered(filtered_signal, active_signal.sampling_rate, unit="Amplitude", type = "signal")
-            self._render_filtered(filtered_trial, active_signal.sampling_rate, unit="Amplitude", type = "trial")
+            self._render_filtered(filtered_signal, active_signal.sampling_rate, unit="mV", type = "signal")
+            self._render_filtered(filtered_trial, active_signal.sampling_rate, unit="mV", type = "trial")
 
         except ValueError as ve:
             QMessageBox.warning(self.widget, "Error", str(ve))
@@ -229,7 +227,7 @@ class Filter_plugin(IPlugin):
             return np.zeros_like(signal)
     # end def
 
-    def _render_filtered(self, filtered_output, fs: float, unit: str = "Amplitude", type: str = ""):
+    def _render_filtered(self, filtered_output, fs: float, unit: str = "mV", type: str = ""):
         """
         Render filtered signal or trial using the correct vtkContextView.
         """
@@ -307,6 +305,20 @@ class Filter_plugin(IPlugin):
 
             # --- Add chart to scene ---
             scene.AddItem(chart)
+
+            # --- Contextual menu ---
+            try:
+                if type == "signal":
+                    self.vtk_menu = VTKContextMenu(chart, self.vtk_top, parent=self.widget)
+                elif type == "trial":
+                    self.vtk_menu = VTKContextMenu(chart, self.vtk_bot, parent=self.widget)
+                else:
+                    raise ValueError("Invalid type for contextual menu")
+
+                self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
+
+            except Exception as e:
+                QMessageBox.information(self.widget, "Menu", "Error creating contextual map\n" + str(e))
 
             # --- Render final ---
             try:
