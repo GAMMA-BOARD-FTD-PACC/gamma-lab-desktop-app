@@ -279,16 +279,25 @@ class AmplitudePlugin(IPlugin):
                     mid = f"amplitude-{seq:03d}"
 
                 ts = item.get("timestamp") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-                # Context (same pattern as your slope example)
+                
                 ctx = item.get("ctx") or {}
                 ch_name = ctx.get("channel_name")
-                graph_label = f"trial {ctx.get('trial_id', '')+1}"  # mirrors your slope code behavior
-
+                
+                trial_id = ctx.get("trial_id")
+                graph_from_ctx = ctx.get("graph_id")
+                
+                if isinstance(trial_id, int) and trial_id >= 0:
+                    graph_uid = f"trial {trial_id + 1}"
+                    
+                elif isinstance(graph_from_ctx, str) and graph_from_ctx.strip():
+                    graph_uid = graph_from_ctx
+                else:
+                    graph_uid = ""
+                    
                 rows.append({
                     "id": mid,
                     "ctx_channel": ch_name,
-                    "ctx_graph": graph_label,
+                    "ctx_graph": graph_uid,
                     "p1x": p1x, "p1y": p1y, "p2x": p2x, "p2y": p2y,
                     "x1": x1, "x2": x2, "n": n,
                     "y_min": y_min, "y_max": y_max, "amp_pp": amp_pp,

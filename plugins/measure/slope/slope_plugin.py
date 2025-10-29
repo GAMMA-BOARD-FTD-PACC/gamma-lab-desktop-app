@@ -268,7 +268,17 @@ class SlopePlugin(IPlugin):
 
                 ctx = item.get("ctx") or {}
                 ch_name = ctx.get("channel_name")
-                graph_uid = f"trial {ctx.get('trial_id', '')+1}"
+
+                trial_id = ctx.get("trial_id")
+                graph_from_ctx = ctx.get("graph_id")
+                
+                if isinstance(trial_id, int) and trial_id >= 0:
+                    graph_uid = f"trial {trial_id + 1}"
+                    
+                elif isinstance(graph_from_ctx, str) and graph_from_ctx.strip():
+                    graph_uid = graph_from_ctx
+                else:
+                    graph_uid = ""
 
                 rows.append({
                     "id": mid, "type": "slope",
