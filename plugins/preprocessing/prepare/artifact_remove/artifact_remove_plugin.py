@@ -1,6 +1,9 @@
 # Ubicación: plugins/preprocessing/prepare/artifact_remove/artifact_remove_plugin.py
+# VERSIÓN REFACTORIZADA Y COMPLETA (Restaurada)
+
+from vtk.util import numpy_support as nps # <--- 1. IMPORTACIÓN SEGURA AÑADIDA
 from PyQt5 import QtCore, QtWidgets
-from PyQt5.QtWidgets import QWidget, QMessageBox, QVBoxLayout
+from PyQt5.QtWidgets import QWidget, QMessageBox, QVBoxLayout, QLabel
 import numpy as np
 import vtk
 from typing import Optional, List, Set
@@ -13,631 +16,788 @@ from core.services.signal_dataset import SignalDataset
 from core.services.trial_dataset import TrialDataset
 
 from plugins.preprocessing.prepare.artifact_remove.artifact_remove_ui import Ui_ArtifactRemove
-# --- MODIFICADO: Importar la nueva función de lógica ---
+# Importar la función de lógica correcta
 from plugins.preprocessing.prepare.artifact_remove.artifact_logic import apply_modification_to_all_valid
 
-# --- Intento de importación de clases personalizadas ---
+# Intento de importación de clases personalizadas
 try:
-    # Estas clases mejoran la experiencia de usuario si están disponibles
-    from core.plugins.vtk_context_menu import VTKInteractorStyleZoomAxis, VTXContextMenu
+    # Asumiendo que esta clase existe para un mejor zoom 2D
+    from core.plugins.vtk_context_menu import VTKInteractorStyleZoomAxis
 except ImportError:
-    # Si no se encuentran, usamos las clases por defecto de VTK.
-    VTKInteractorStyleZoomAxis = vtk.vtkContextInteractorStyle
-    VTXContextMenu = None
+    # Fallback si no existe, para evitar un error de importación
+    VTKInteractorStyleZoomAxis = None 
+
+try:
+    from core.plugins.vtk_context_menu import VTKContextMenu
+except ImportError:
+    VTKContextMenu = None
 
 LOGP = "[ArtifactRemovePlugin]"
-LOGP_WIDGET = "[ArtifactRemoveWidget]"
+# --- Worker para ejecutar la lógica pesada en otro hilo ---
+class _ApplyWorker(QtCore.QObject):
+    progress = QtCore.pyqtSignal(int)      # opcional
+    # CAMBIO CRÍTICO: Usar un tipo más específico (TrialDataset) o None en la señal.
+    # Como el valor es un TrialDataset o None, usamos object, pero lo forzamos abajo.
+    finished = QtCore.pyqtSignal(object)   
+    error = QtCore.pyqtSignal(str)
 
-# --- Widget Personalizado para Recarga Automática ---
-class ArtifactRemoveWidget(QWidget):
-    """
-    Un QWidget personalizado que sabe cómo recargar su contenido
-    cada vez que se muestra, solucionando el problema de la pantalla en blanco.
-    """
-    def __init__(self, plugin: "ArtifactRemovePlugin", parent=None):
-        super().__init__(parent)
-        self.plugin = plugin
-        self.first_show = True
+    def __init__(self, kernel, mode, point_a, point_b):
+        super().__init__()
+        self.kernel = kernel
+        self.mode = mode
+        self.point_a = point_a
+        self.point_b = point_b
 
-    def showEvent(self, event):
-        """Se dispara CADA VEZ que el widget se hace visible."""
-        print(f"{LOGP_WIDGET} showEvent() triggered.")
+    @QtCore.pyqtSlot()
+    def run(self):
+        try:
+            # Import dentro del hilo para evitar dependencias cruzadas al importar el plugin
+            from plugins.preprocessing.prepare.artifact_remove.artifact_logic import apply_modification_to_all_valid
+            td = apply_modification_to_all_valid(
+                kernel=self.kernel,
+                mode=self.mode,
+                point_a=self.point_a,
+                point_b=self.point_b
+            )
+            self.finished.emit(td)
+        except Exception as e:
+            self.error.emit(f"{type(e).__name__}: {e}")
 
-        if self.first_show:
-            self.first_show = False
-            print(f"{LOGP_WIDGET} Primera muestra. No se recarga.")
-        else:
-            # En las siguientes veces que se muestra, reconstruye el VTK y recarga los datos
-            print(f"{LOGP_WIDGET} Muestra subsecuente: Recargando VTK y datos.")
-            # Asegurarse que VTK esté listo antes de cargar datos
-            self.plugin._ensure_vtk()
-            # Cargar datos después de asegurar VTK
-            self.plugin._load_and_display_trials()
-            # Habilitar interactor si existe
-            if self.plugin.vtk_interactor:
-                self.plugin.vtk_interactor.Enable()
-
-        super().showEvent(event)
-
-# --- Clase Principal del Plugin ---
+# Clase Principal del Plugin
 class ArtifactRemovePlugin(IPlugin):
     def __init__(self, meta: PluginMeta):
+        super().__init__(meta)
         self.meta = meta
         print(f"{LOGP} __init__")
-        self.kernel, self.mainwin, self.widget, self.ui = None, None, None, None
-
-        # Atributos de VTK
+        self.kernel, self.mainwin = None, None
+        self.widget: Optional[QWidget] = None
+        self.ui: Optional[Ui_ArtifactRemove] = None
         self.vtk_interactor: Optional[QVTKRenderWindowInteractor] = None
         self.vtk_view: Optional[vtk.vtkContextView] = None
         self.chart: Optional[vtk.vtkChartXY] = None
-        self.vtk_menu: Optional[VTXContextMenu] = None
+        self.vtk_menu: Optional[VTKContextMenu] = None
 
-        # Atributos de Estado
-        self.current_display_index: int = -1 # -1 significa promedio
-        self.valid_indices: List[int] = [] # Lista de índices ORIGINALES que son válidos (no descartados)
-        self.total_original_trials: int = 0 # Total de columnas en la matriz de trials actual
-        self.discarded_indices: Set[int] = set() # Set de índices ORIGINALES descartados
-        self.modified_indices: Set[int] = set() # Set de índices ORIGINALES modificados
+        # Hilo para aplicar cambios sin bloquear la UI
+        self._apply_thread = None
+        self._apply_worker = None
 
-    def initialize(self, kernel): pass
-    # process no se usa activamente en este plugin
-    def process(self, data): pass
+        # Timer para coalescer/refrescar (debounce) tras eventos del kernel
+        self._refresh_timer = QtCore.QTimer()
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.setInterval(120)  # ms
+        self._refresh_timer.timeout.connect(self._refresh_view_coalesced)
+
+        
+        # Estado
+        self.current_display_index: int = -1 # -1 = Promedio
+        self.valid_indices: List[int] = []
+        self.total_original_trials: int = 0
+        self.discarded_indices: Set[int] = set()
+        self.modified_indices: Set[int] = set()
+
+    def initialize(self, kernel): 
+        pass
+
+    def process(self, data): 
+        pass
+
+    def _refresh_view_coalesced(self):
+        """Refresca la vista una sola vez aunque lleguen varios eventos seguidos."""
+        try:
+            self._reset_state()
+            if self.vtk_interactor and not self.vtk_interactor.isEnabled():
+                try:
+                    self.vtk_interactor.Enable()
+                except Exception:
+                    pass
+            self._load_and_display_trials()
+            QtCore.QTimer.singleShot(50, self._force_render)
+        except Exception as e:
+            print(f"{LOGP} _refresh_view_coalesced error: {e}")
+
 
     def start(self, kernel):
+        """ Se llama cuando el plugin se carga inicialmente. """
         print(f"{LOGP} start()")
         self.kernel = kernel
         self.mainwin = kernel.get_service("MainWindow")
         try:
-            # Conectar a eventos relevantes para actualizar la vista
             self.kernel.event.connect(self._on_data_updated)
-            print(f"{LOGP} Conectado a eventos del kernel.")
+            print(f"{LOGP} Connected to kernel events.")
         except Exception as e:
-            print(f"{LOGP} Error al conectar a eventos: {e}")
+            print(f"{LOGP} Error connecting to events: {e}")
 
     def stop(self):
-        print(f"{LOGP} stop() - Limpiando VTK si existe, conservando UI.")
-        # Remover observadores para evitar llamadas a self._on_mouse_move después de limpiar
-        if self.vtk_view and self.vtk_view.GetInteractor():
-            try:
-                # Usar GetInteractorStyle() puede ser más robusto si el estilo cambia
-                interactor_style = self.vtk_view.GetInteractor() # O GetInteractorStyle()? Chequear API VTK
-                if interactor_style:
-                     interactor_style.RemoveObservers(vtk.vtkCommand.MouseMoveEvent)
-                     print(f"{LOGP} Observador MouseMoveEvent removido.")
-            except Exception as e:
-                 print(f"{LOGP} Error removiendo observador MouseMove: {e}")
-
-        # Limpiar la escena VTK
-        if self.vtk_view:
-            try:
-                self.vtk_view.GetScene().ClearItems()
-                print(f"{LOGP} Escena VTK limpiada.")
-            except Exception as e:
-                print(f"{LOGP} Error limpiando escena VTK: {e}")
-
-        # Deshabilitar y programar borrado del interactor Qt/VTK
-        if self.vtk_interactor:
+        """ Se llama cuando el plugin se cierra o deshabilita. """
+        print(f"{LOGP} stop() - Disabling VTK interactor.")
+        if self.vtk_interactor and self.vtk_interactor.isEnabled():
             try:
                 self.vtk_interactor.Disable()
-                self.vtk_interactor.Finalize() # Ayuda a liberar recursos
-                self.vtk_interactor.deleteLater() # Borrado seguro en Qt
-                print(f"{LOGP} Interactor VTK deshabilitado y programado para borrado.")
-            except Exception as e:
-                print(f"{LOGP} Error deshabilitando/borrando interactor VTK: {e}")
-
-        # Limpiar referencias para forzar la recreación completa en la próxima muestra
-        self.vtk_interactor = None
-        self.vtk_view = None
-        self.chart = None
-        self.vtk_menu = None
-        print(f"{LOGP} Referencias VTK limpiadas.")
-
+            except Exception as e: 
+                print(f"{LOGP} Error disabling interactor: {e}")
 
     def get_widget(self, parent=None):
+        """
+        Entrega el widget principal del plugin a la ventana principal.
+        Maneja la creación inicial y la reutilización.
+        """
+        
+        # --- CREACIÓN INICIAL ---
         if self.widget is None:
-            print(f"{LOGP} get_widget(): Creando UI y VTK por primera vez...")
-            # Usar el widget personalizado que maneja showEvent
-            self.widget = ArtifactRemoveWidget(self, parent)
-            self.ui = Ui_ArtifactRemove()
-            self.ui.setupUi(self.widget)
-
-            # Configurar VTK (solo si no existe)
-            self._ensure_vtk()
-            # Conectar controles de la UI
-            self._wire_controls()
-            # Carga inicial de datos
-            print(f"{LOGP} get_widget(): Cargando datos iniciales...")
-            self._load_and_display_trials()
-            # Asegurar estado inicial de Point B
-            self._on_mode_changed(self.ui.artifact_panel.mode_combo.currentText())
-
-        # Siempre reasignar padre por si cambia el contenedor
-        self.widget.setParent(parent)
-
-        # Habilitar interactor si existe (puede haber sido deshabilitado en stop)
-        if self.vtk_interactor:
+            print(f"{LOGP} get_widget(): Creating UI for the first time...")
+            
+            self.widget = QWidget(parent)
+            
             try:
-                 if not self.vtk_interactor.isEnabled():
-                      self.vtk_interactor.Enable()
-                      print(f"{LOGP} Interactor VTK re-habilitado.")
+                self.ui = Ui_ArtifactRemove()
+                self.ui.setupUi(self.widget)
+                self._wire_controls()
+
+                if self.kernel is None:
+                    if hasattr(parent, 'kernel'): 
+                        self.kernel = parent.kernel
+                    if self.kernel:
+                        print(f"{LOGP} Kernel obtained in get_widget.")
+                        self.mainwin = self.kernel.get_service("MainWindow")
+                        try: 
+                            self.kernel.event.connect(self._on_data_updated)
+                            print(f"{LOGP} Connected events in get_widget.")
+                        except Exception as e: 
+                            print(f"{LOGP} Error connecting events: {e}")
+                    else: 
+                        raise RuntimeError("Kernel not available.")
+
+                # No llamamos a _ensure_vtk() aquí.
+                # Se llamará la primera vez desde _plot_curve
+
+                print(f"{LOGP} get_widget(): Loading initial data...")
+                self._load_and_display_trials()
+                if self.ui and self.ui.artifact_panel:
+                    self._on_mode_changed(self.ui.artifact_panel.mode_combo.currentText())
+
+            except Exception as e: 
+                error_message = f"Failed to initialize Remove Artifact plugin:\n{type(e).__name__}: {e}"
+                print(f"{LOGP} CRITICAL ERROR during initial setup: {e}")
+                QMessageBox.critical(self.widget, "Plugin Initialization Error", error_message)
+                self._cleanup_vtk_references()
+                self.widget.deleteLater() 
+                self.widget = None
+                self.ui = None
+                return None 
+
+        # --- REUTILIZACIÓN DEL WIDGET ---
+        else:
+            print(f"{LOGP} get_widget(): Reusing existing UI.")
+            self.widget.setParent(parent)
+            
+            try:
+                if self.vtk_interactor and not self.vtk_interactor.isEnabled():
+                    self.vtk_interactor.Enable()
+                
+                print(f"{LOGP} get_widget(): Reloading data...")
+                self._load_and_display_trials()
+                QtCore.QTimer.singleShot(50, self._force_render) 
+                
             except Exception as e:
-                 print(f"{LOGP} Error re-habilitando interactor: {e}")
+                print(f"{LOGP} Error re-ensuring VTK or reloading data: {e}")
+                self._clear_render(f"Error reloading view:\n{e}")
 
         return self.widget
 
-    # --- Lógica de la Interfaz de Usuario ---
+    def _force_render(self):
+        """ Intenta forzar un renderizado si el widget está visible. """
+        if self.vtk_interactor and self.vtk_view and self.widget and self.widget.isVisible():
+            try: 
+                print(f"{LOGP} DEBUG: Forcing Render.")
+                self.vtk_view.GetRenderWindow().Render()
+                print(f"{LOGP} DEBUG: Render successful.")
+            except Exception as e: 
+                print(f"{LOGP} Error during forced render: {e}")
 
     def _wire_controls(self):
-        """Conecta señales y slots de los controles del panel."""
+        """ Conecta señales de la UI a slots. """
+        if not self.ui or not hasattr(self.ui, 'artifact_panel'):
+            print(f"{LOGP} Error: UI o artifact_panel no inicializado en _wire_controls.")
+            return
+            
         panel = self.ui.artifact_panel
         panel.apply_button.clicked.connect(self._on_apply_changes)
         panel.prev_button.clicked.connect(self._go_to_previous_trial)
         panel.next_button.clicked.connect(self._go_to_next_trial)
-        # Conectar cambio de modo para mostrar/ocultar Point B
         panel.mode_combo.currentTextChanged.connect(self._on_mode_changed)
-        print(f"{LOGP} Controles UI conectados.")
+        
+        print(f"{LOGP} UI Controls connected.")
 
-    # --- AÑADIDO: Mostrar/ocultar Point B según el modo ---
     def _on_mode_changed(self, mode_text: str):
-         """Actualiza la visibilidad del Point B basado en el modo seleccionado."""
-         show_point_b = (mode_text == "Interpolate")
-         self.ui.artifact_panel.point_b_label.setVisible(show_point_b)
-         self.ui.artifact_panel.point_b.setVisible(show_point_b)
-         # print(f"{LOGP} Modo cambiado a '{mode_text}'. Point B visible: {show_point_b}")
-
-    # --- MODIFICADO: Llamar a la nueva lógica ---
-    def _on_apply_changes(self):
-        """Se ejecuta al presionar 'Apply'. Llama a la lógica para modificar todos los trials."""
-        panel = self.ui.artifact_panel
-        mode_text = panel.mode_combo.currentText()
-        mode = 'cut' if mode_text == "Cut From Start" else 'interpolate'
-
-        # --- VALIDACIÓN: Solo aplicar desde la vista promedio ---
-        if self.current_display_index != -1:
-            QMessageBox.warning(self.widget, "Acción no Válida",
-                                "La modificación de artefactos ahora se aplica a todos los trials válidos simultáneamente.\n\n"
-                                "Por favor, navegue a la vista 'Promedio' (Average)\n"
-                                "(usando 'Next'/'Previous' hasta que el estado lo indique)\n"
-                                "para definir los puntos y aplicar el cambio globalmente.")
+        """ Actualiza visibilidad de Point B según el modo. """
+        if not self.ui or not hasattr(self.ui, 'artifact_panel'): 
             return
-        # --- FIN VALIDACIÓN ---
+            
+        panel = self.ui.artifact_panel
+        show_point_b = (mode_text == "Interpolate Interval")
+        
+        getattr(panel, 'label_b', QWidget()).setVisible(show_point_b)
+        getattr(panel, 'point_b', QWidget()).setVisible(show_point_b)
+        
+        label_a = getattr(panel, 'label_a', None)
+        if label_a:
+            label_a.setText("Cut until (s):" if mode_text == "Cut From Start" else "Point A (s):")
+
+    def _on_apply_changes(self):
+        """Lanza la modificación en un hilo para no bloquear la UI."""
+        if not self.ui or not self.widget:
+            return
+
+        panel = self.ui.artifact_panel
+
+        if self.current_display_index != -1:
+            QMessageBox.warning(self.widget, "Invalid Action",
+                                 "Apply changes only from the 'Average' view (Index -1).")
+            return
 
         try:
-            # Obtener puntos A y B del panel
-            point_a_str = panel.point_a.text().strip()
-            point_b_str = panel.point_b.text().strip() if mode == 'interpolate' else "0.0"
+            mode_text = panel.mode_combo.currentText()
+            mode = 'cut' if mode_text == "Cut From Start" else 'interpolate'
 
-            if not point_a_str: raise ValueError("Punto A no puede estar vacío.")
+            point_a_str = panel.point_a.text().strip()
+            if not point_a_str:
+                raise ValueError("Point A cannot be empty.")
             point_a = float(point_a_str)
 
+            point_b = 0.0
             if mode == 'interpolate':
-                 if not point_b_str: raise ValueError("Punto B no puede estar vacío para interpolar.")
-                 point_b = float(point_b_str)
-                 if point_a == point_b: raise ValueError("Punto A y Punto B deben ser diferentes para interpolar.")
-            else:
-                 point_b = 0.0 # No se usa para 'cut'
+                point_b_str = panel.point_b.text().strip()
+                if not point_b_str:
+                    raise ValueError("Point B cannot be empty for interpolation.")
+                point_b = float(point_b_str)
+                if point_a == point_b:
+                    raise ValueError("Points A and B cannot be the same.")
 
-            print(f"{LOGP} Solicitando aplicar '{mode}' globalmente con A={point_a}, B={point_b}")
+            # --- Feedback y bloqueo de reentradas
+            panel.apply_button.setEnabled(False)
+            panel.mode_combo.setEnabled(False)
+            panel.prev_button.setEnabled(False)
+            panel.next_button.setEnabled(False)
+            if self.vtk_interactor:
+                try:
+                    self.vtk_interactor.Disable()
+                except Exception:
+                    pass
+            self._clear_render("")
 
-            # --- LLAMAR A LA NUEVA FUNCIÓN DE LÓGICA ---
-            modified_td = apply_modification_to_all_valid(
-                kernel=self.kernel,
-                mode=mode,
-                point_a=point_a,
-                point_b=point_b
-            )
-            # --- FIN LLAMADA ---
+            # --- Crear y lanzar worker en un QThread
+            self._apply_thread = QtCore.QThread(self.widget)
+            self._apply_worker = _ApplyWorker(self.kernel, mode, point_a, point_b)
+            self._apply_worker.moveToThread(self._apply_thread)
 
-            if modified_td:
-                message = f"Modo '{mode}' aplicado exitosamente a todos los trials válidos aplicables."
-                # El evento 'trials_generated' emitido por la lógica
-                # activará _on_data_updated, que llamará a _load_and_display_trials.
-                QMessageBox.information(self.widget, "Éxito", message)
-            else:
-                 # La lógica devuelve None si no hubo cambios efectivos
-                 QMessageBox.information(self.widget, "Sin Cambios",
-                                         "No se realizaron modificaciones (quizás los puntos estaban fuera de rango o no afectaron trials válidos).")
+            # Conexiones
+            self._apply_thread.started.connect(self._apply_worker.run)
+            # Conexión directa a un callable Python normal (sin decorador @pyqtSlot)
+            self._apply_worker.finished.connect(self._on_apply_finished) 
+            self._apply_worker.error.connect(self._on_apply_error)
 
-        except ValueError as ve: # Capturar errores de conversión o validación
-             QMessageBox.critical(self.widget, "Error de Parámetros", f"Valor inválido: {ve}")
-        except RuntimeError as re: # Capturar errores de DataStore, señal no encontrada, etc.
-             QMessageBox.critical(self.widget, "Error de Datos", f"No se pudo procesar: {re}")
-        except Exception as e: # Capturar otros errores inesperados
-             QMessageBox.critical(self.widget, "Error Inesperado", f"Ocurrió un error inesperado: {e}")
-             print(f"{LOGP} Error inesperado en _on_apply_changes: {e}") # Log para debug
+            # Limpieza automática
+            self._apply_worker.finished.connect(self._apply_thread.quit)
+            self._apply_worker.finished.connect(self._apply_worker.deleteLater)
+            self._apply_thread.finished.connect(self._apply_thread.deleteLater)
+            self._apply_worker.error.connect(self._apply_thread.quit)
+            self._apply_worker.error.connect(self._apply_worker.deleteLater)
 
+            self._apply_thread.start()
 
-    # --- Lógica de Navegación y Carga de Datos ---
+        except ValueError as ve:
+            QMessageBox.critical(self.widget, "Parameter Error", str(ve))
+        except RuntimeError as re:
+            QMessageBox.critical(self.widget, "Data Error", str(re))
+        except Exception as e:
+            QMessageBox.critical(self.widget, "Error", f"An unexpected error occurred: {e}")
+            print(f"{LOGP} Error on apply: {e}")
 
     def _go_to_previous_trial(self):
-        """Navega al trial anterior o al promedio."""
         num_valid = len(self.valid_indices)
-        if num_valid == 0: return # No hay nada que mostrar
-
-        current_original_index = -1
-        if self.current_display_index != -1: # Si estábamos viendo un trial individual
-             current_original_index = self.valid_indices[self.current_display_index]
-
-        if self.current_display_index == 0: # Si estábamos en el primer válido, ir al promedio
-             self.current_display_index = -1
-        elif self.current_display_index == -1: # Si estábamos en el promedio, ir al último válido
-             self.current_display_index = num_valid - 1
-        else: # Ir al anterior válido
-             self.current_display_index -= 1
-
-        print(f"{LOGP} Navegando a display_index: {self.current_display_index}")
+        idx_before = self.current_display_index
+        if num_valid == 0: 
+            return
+            
+        if self.current_display_index == 0:
+            self.current_display_index = -1 
+        elif self.current_display_index == -1:
+            self.current_display_index = num_valid - 1 
+        else:
+            self.current_display_index -= 1
+            
+        print(f"{LOGP} Nav Prev: {idx_before} -> {self.current_display_index}")
         self._load_and_display_trials()
+        # **Añadido para asegurar la actualización gráfica después de la navegación**
+        QtCore.QTimer.singleShot(50, self._force_render)
 
     def _go_to_next_trial(self):
-        """Navega al siguiente trial o al promedio."""
         num_valid = len(self.valid_indices)
-        if num_valid == 0: return
-
-        current_original_index = -1
-        if self.current_display_index != -1:
-             current_original_index = self.valid_indices[self.current_display_index]
-
-        if self.current_display_index == num_valid - 1: # Si estábamos en el último válido, ir al promedio
-             self.current_display_index = -1
-        elif self.current_display_index == -1: # Si estábamos en el promedio, ir al primer válido
-             self.current_display_index = 0
-        else: # Ir al siguiente válido
-             self.current_display_index += 1
-
-        print(f"{LOGP} Navegando a display_index: {self.current_display_index}")
+        idx_before = self.current_display_index
+        if num_valid == 0: 
+            return
+            
+        if self.current_display_index == num_valid - 1:
+            self.current_display_index = -1 
+        elif self.current_display_index == -1:
+            self.current_display_index = 0 
+        else:
+            self.current_display_index += 1
+            
+        print(f"{LOGP} Nav Next: {idx_before} -> {self.current_display_index}")
         self._load_and_display_trials()
+        # **Añadido para asegurar la actualización gráfica después de la navegación**
+        QtCore.QTimer.singleShot(50, self._force_render)
 
+    # --- Carga de Datos y Lógica de Ploteo ---
 
-    # --- MODIFICADO: Lógica de carga y visualización ---
     def _load_and_display_trials(self):
-        """Carga el TrialDataset actual, determina qué mostrar (promedio o individual) y lo plotea."""
-        print(f"{LOGP} _load_and_display_trials() llamado.")
-        if not self.kernel: return self._clear_render("Kernel no disponible.")
+        """ Carga los datos del trial actual (o promedio) y los muestra. """
+        print(f"{LOGP} _load_and_display_trials(). Index: {self.current_display_index}")
+        
+        if not self.kernel:
+            print(f"{LOGP} Info: Kernel missing.")
+            return self._clear_render("Kernel missing.")
+            
         store = self.kernel.get_service("DataStore")
-        if not store: return self._clear_render("Error: DataStore no disponible.")
-
+        if not store:
+            print(f"{LOGP} Info: DataStore missing.")
+            return self._clear_render("DataStore missing.")
+            
         active_signal = store.get_active_signal()
         if not isinstance(active_signal, SignalDataset):
-            return self._clear_render("No hay señal activa cargada.")
+            print(f"{LOGP} Info: No active signal.")
+            self._reset_state()
+            return self._clear_render("No active signal selected.")
 
-        # Obtener el ÚLTIMO (más reciente) TrialDataset de la lista
         current_td: Optional[TrialDataset] = None
         if active_signal.trials_dataset:
             current_td = active_signal.trials_dataset[-1]
-            # Obtener info de descarte y modificación actualizada
-            file_name = Path(current_td.source).name if current_td.source else "unknown"
-            discard_key = (file_name, current_td.channel_name)
-            self.discarded_indices = active_signal.discarded_trials.get(discard_key, set())
+            f_name = Path(current_td.source).name if current_td.source else "?"
+            d_key = (f_name, current_td.channel_name)
+            
+            self.discarded_indices = active_signal.discarded_trials.get(d_key, set())
+            if not isinstance(self.discarded_indices, set):
+                self.discarded_indices = set()
 
-            # Leer metadatos de modificación (asegurando que sea un set)
-            mods_from_meta = current_td.metadata.get("modified_trials", set())
-            if isinstance(mods_from_meta, set):
-                 self.modified_indices = mods_from_meta
-            else: # Intentar convertir si no es set
-                 try: self.modified_indices = set(mods_from_meta)
-                 except TypeError: self.modified_indices = set() # Fallback a set vacío
-
+            mods = current_td.metadata.get("modified_trials", set())
+            if isinstance(mods, set):
+                self.modified_indices = mods
+            else:
+                try: 
+                    self.modified_indices = set(mods)
+                except TypeError: 
+                    self.modified_indices = set()
+            
             self.total_original_trials = current_td.trials.shape[1]
             self.valid_indices = [i for i in range(self.total_original_trials) if i not in self.discarded_indices]
-            print(f"{LOGP} Trials cargados: Total={self.total_original_trials}, Descartados={len(self.discarded_indices)}, Válidos={len(self.valid_indices)}, Modificados={len(self.modified_indices)}")
         else:
-            self._reset_state() # Limpiar estado si no hay trials
-            return self._clear_render("Fallo: No se encontraron datos de trials en la señal.")
+            print(f"{LOGP} Info: No trial data found.")
+            self._reset_state()
+            return self._clear_render("No trial data in active signal.\n(Please run 'Trials' first).")
 
-        num_valid_indices = len(self.valid_indices)
+        num_valid = len(self.valid_indices)
+        if not (-1 <= self.current_display_index < num_valid):
+            self.current_display_index = -1 
 
-        # Ajustar índice de display actual si está fuera de rango [ -1, num_valid_indices - 1 ]
-        if not (-1 <= self.current_display_index < num_valid_indices):
-            print(f"{LOGP} Índice {self.current_display_index} fuera de rango. Reseteando a promedio (-1).")
-            self.current_display_index = -1 # Ir al promedio por defecto
+        status, data, title = "", None, ""
+        t = current_td.time_rel # Obtener t (tiempo)
 
-        status_text, display_data, title = "", None, ""
-        # Seleccionar solo las columnas válidas para el promedio
-        # Usar iloc/fancy indexing es más seguro que boolean mask si hay NaNs inesperados
-        valid_trial_columns = current_td.trials[:, self.valid_indices]
-
-        # Determinar si el botón Apply debe estar activo
-        # (Solo activo si estamos en modo promedio Y hay trials válidos)
-        apply_enabled = (self.current_display_index == -1 and num_valid_indices > 0)
-        if self.ui: self.ui.artifact_panel.apply_button.setEnabled(apply_enabled)
-
-
-        if self.current_display_index == -1: # --- Mostrar Promedio ---
-            if num_valid_indices == 0:
-                 self._reset_state() # Limpiar estado si no hay válidos
-                 return self._clear_render("Todos los trials están descartados. No se puede mostrar promedio.")
-
-            # Calcular promedio ignorando NaNs (importante si hay cortes 'cut')
-            # nanmean devuelve NaN si una columna entera es NaN, lo cual es correcto
-            display_data = np.nanmean(valid_trial_columns, axis=1)
-            title = f"Promedio de {num_valid_indices} Válidos - {current_td.channel_name}"
-            status_text = f"Viendo Promedio / {num_valid_indices} Válidos ({self.total_original_trials} Totales)"
-
-        else: # --- Mostrar Trial Individual ---
+        valid_cols = None
+        if num_valid > 0:
             try:
-                # Obtener el índice ORIGINAL correspondiente al índice de display actual
-                original_index = self.valid_indices[self.current_display_index]
-                # Mostrar datos del trial actual (desde la matriz original/actual)
-                display_data = current_td.trials[:, original_index]
-                status_suffix = " (modificado)" if original_index in self.modified_indices else ""
-                title = f"Trial Original {original_index + 1} - {current_td.channel_name}"
-                # Mostrar índice relativo a los válidos + índice original
-                status_text = (f"Viendo Válido {self.current_display_index + 1}/{num_valid_indices} "
-                               f"(Orig. {original_index + 1}{status_suffix}) / {self.total_original_trials} Totales")
-            except IndexError:
-                 print(f"{LOGP} ERROR: IndexError al acceder a valid_indices[{self.current_display_index}]. Reseteando a promedio.")
-                 self.current_display_index = -1
-                 # Volver a llamar para mostrar el promedio
-                 self._load_and_display_trials()
-                 return
+                valid_cols = current_td.trials[:, self.valid_indices]
             except Exception as e:
-                 print(f"{LOGP} ERROR inesperado al acceder a trial individual: {e}. Reseteando a promedio.")
-                 self.current_display_index = -1
-                 self._load_and_display_trials()
-                 return
+                print(f"{LOGP} Error selecting valid trials: {e}")
+                self._reset_state()
+                return self._clear_render("Error selecting trials.")
 
+        apply_ok = (self.current_display_index == -1 and num_valid > 0)
+        if self.ui:
+            self.ui.artifact_panel.apply_button.setEnabled(apply_ok)
 
-        # Actualizar etiqueta de estado en la UI
-        if self.ui: self.ui.artifact_panel.trial_status_label.setText(status_text)
+        if self.current_display_index == -1: # Modo Promedio
+            if num_valid == 0:
+                print(f"{LOGP} Info: All trials discarded.")
+                self._reset_state()
+                return self._clear_render("All trials discarded.")
+            if valid_cols is None: 
+                return self._clear_render("Error getting valid trials.")
+                
+            data = np.nanmean(valid_cols, axis=1)
+            title = f"Average ({num_valid} Valid) - {current_td.channel_name}"
+            status = f"Viewing Average / {num_valid} Valid ({self.total_original_trials} Total)"
+        
+        else: # Modo Individual
+            try:
+                orig_idx = self.valid_indices[self.current_display_index]
+                data = current_td.trials[:, orig_idx]
+                suffix = " (mod)" if orig_idx in self.modified_indices else ""
+                title = f"Trial {orig_idx + 1} - {current_td.channel_name}"
+                status = f"Viewing Valid {self.current_display_index+1}/{num_valid} (Orig. {orig_idx+1}{suffix}) / {self.total_original_trials} Total"
+            except Exception as e:
+                print(f"{LOGP} Error accessing trial: {e}. Resetting.")
+                self._reset_state()
+                self._load_and_display_trials() 
+                return
 
-        # Plotear la curva (promedio o individual)
-        # Asegurarse que VTK esté listo ANTES de plotear
-        self._ensure_vtk()
-        self._plot_curve(current_td.time_rel, display_data, title)
+        if self.ui:
+            self.ui.artifact_panel.trial_status_label.setText(status)
+        
+        # --- sanity check: t (tiempo) vs y (data) ---
+        if not isinstance(t, np.ndarray):
+            t = np.asarray(t)
+        if not isinstance(data, np.ndarray):
+            data = np.asarray(data)
 
+        if t.ndim != 1:
+            raise RuntimeError(f"time_rel debe ser 1D, recibido shape={t.shape}")
+        if data.ndim != 1:
+            raise RuntimeError(f"serie a graficar debe ser 1D, recibido shape={data.shape}")
+        if t.shape[0] != data.shape[0]:
+            # Intento de autocorrección común si las trials están transpuestas
+            # (samples, trials) es lo esperado. Si vino (trials, samples), avisamos.
+            raise RuntimeError(
+                f"Inconsistencia: len(t)={t.shape[0]} y len(y)={data.shape[0]}. "
+                "Revisa la forma de trials: se espera (samples, trials)."
+            )
+        # --- fin sanity check ---
+
+        self._plot_curve(t, data, title)
 
     # --- Lógica de Visualización VTK ---
 
+    # --- INICIO SOLUCIÓN DEFINITIVA (V_FINAL) ---
     def _ensure_vtk(self):
-        """Prepara el entorno de VTK si aún no está inicializado."""
-        # Si ya existe, no hacer nada para evitar recreaciones innecesarias
-        if self.vtk_view is not None and self.vtk_interactor is not None:
-            # print(f"{LOGP} _ensure_vtk(): VTK ya existe.")
-            # Asegurarse que el interactor esté en el layout correcto (por si acaso)
-            layout = self.ui.plotArea.layout()
-            if layout and layout.indexOf(self.vtk_interactor) == -1:
-                 print(f"{LOGP} _ensure_vtk(): Re-añadiendo interactor al layout.")
-                 layout.addWidget(self.vtk_interactor)
-            return
+        """ 
+        Asegura que el interactor y la vista VTK existan y estén en el layout.
+        Esta versión restaura la interacción 2D correcta para EVITAR DEFORMACIÓN
+        y DESHABILITA el observador de mouse para EVITAR CRASH.
+        """
+        
+        # 1. Chequear si ya existe (lógica nuestra, pero es segura)
+        if (self.vtk_interactor and self.vtk_view and 
+            self.ui.plotArea.layout() and 
+            self.ui.plotArea.layout().indexOf(self.vtk_interactor) != -1):
+            
+            if not self.vtk_interactor.isEnabled():
+                try: 
+                    self.vtk_interactor.Enable()
+                except Exception as e:
+                    print(f"{LOGP} Error re-enabling VTK: {e}")
+            return # Ya está listo
 
-        print(f"{LOGP} _ensure_vtk(): Configurando VTK por primera vez...")
-        container = self.ui.plotArea
-
-        # Asegurar que el contenedor tenga un layout
-        layout = container.layout()
-        if layout is None:
-            layout = QVBoxLayout(container)
-            layout.setContentsMargins(0, 0, 0, 0)
-            container.setLayout(layout) # Establecer el layout en el contenedor
-
-        # Crear e añadir el interactor Qt/VTK
-        self.vtk_interactor = QVTKRenderWindowInteractor(container)
-        layout.addWidget(self.vtk_interactor)
-
-        # Crear la vista de contexto VTK
-        self.vtk_view = vtk.vtkContextView()
-        self.vtk_view.SetRenderWindow(self.vtk_interactor.GetRenderWindow())
-        self.vtk_view.GetRenderer().SetBackground(vtk.vtkNamedColors().GetColor3d("WhiteSmoke"))
-
-        # Configurar interactor para coordenadas y zoom/pan
-        # Dejar que vtkContextView use su estilo por defecto y añadir observador
+        print(f"{LOGP} _ensure_vtk(): Setting up VTK...")
+        
         try:
-             interactor = self.vtk_view.GetInteractor()
-             if interactor:
-                  # Remover observadores previos si existen (seguridad)
-                  interactor.RemoveObservers(vtk.vtkCommand.MouseMoveEvent)
-                  # Añadir observador para mostrar coordenadas
-                  interactor.AddObserver(vtk.vtkCommand.MouseMoveEvent, self._on_mouse_move)
-                  print(f"{LOGP} Observador 'MouseMoveEvent' añadido al interactor por defecto.")
-             else:
-                  print(f"{LOGP} Advertencia: No se pudo obtener interactor de vtk_view.")
+            # 2. Lógica de layout (estilo FFT para robustez)
+            self.vtk_interactor = QVTKRenderWindowInteractor(self.ui.plotArea)
+            self.ui.plotArea.setLayout(QtWidgets.QVBoxLayout())
+            self.ui.plotArea.layout().setContentsMargins(0, 0, 0, 0)
+            self.ui.plotArea.layout().addWidget(self.vtk_interactor)
+            print(f"{LOGP} VTK Interactor embedded.")
+
+            self.vtk_view = vtk.vtkContextView()
+            
+            # LOG 1: Antes de SetRenderWindow
+            print(f"{LOGP} DEBUG: Setting RenderWindow on vtkContextView.")
+            self.vtk_view.SetRenderWindow(self.vtk_interactor.GetRenderWindow())
+            # LOG 2: Después de SetRenderWindow
+            print(f"{LOGP} DEBUG: RenderWindow set. Setting background.")
+            
+            self.vtk_view.GetRenderer().SetBackground(vtk.vtkNamedColors().GetColor3d("WhiteSmoke"))
+
+            # 3. CORRECCIÓN DE DEFORMACIÓN/CRASH (Decisión Drástica):
+            # Se ha ELIMINADO la línea self.vtk_view.SetInteractor(self.vtk_interactor)
+            # para evitar la doble conexión y el conflicto de bucle de eventos que causaba el crash.
+            print(f"{LOGP} Using QVTKRenderWindowInteractor directly.")
+            
+            # --- INICIO DEL ARREGLO DE ZOOM (NO DEFORMANTE) ---
+            # Se obtiene el interactor de VTK para establecer el estilo 2D (Context).
+            # LOG 3: Antes de GetInteractor
+            print(f"{LOGP} DEBUG: Attempting to get VTK Interactor.")
+            interactor = self.vtk_interactor.GetRenderWindow().GetInteractor()
+            # LOG 4: Después de GetInteractor
+            print(f"{LOGP} DEBUG: VTK Interactor object retrieved: {interactor is not None}")
+            
+            if interactor and not interactor.GetInteractorStyle():
+                # Esta es la línea crítica que asegura el zoom 2D correcto y la estabilidad.
+                # LOG 5: Antes de SetInteractorStyle
+                print(f"{LOGP} DEBUG: Setting vtkContextInteractorStyle.")
+                interactor.SetInteractorStyle(vtk.vtkContextInteractorStyle())
+                # LOG 6: Después de SetInteractorStyle
+                print(f"{LOGP} Explicitly set vtkContextInteractorStyle to fix zoom deformation and crash.")
+            # --- FIN DEL ARREGLO DE ZOOM ---
+            
+            # 4. CORRECCIÓN DE CRASH:
+            # NO añadimos el observador de MouseMoveEvent.
+            print(f"{LOGP} MouseMove observer is DISABLED to prevent interaction crash.")
+            
+            # LOG 7: Antes de Initialize
+            print(f"{LOGP} DEBUG: Calling Initialize.")
+            self.vtk_interactor.Initialize()
+            # LOG 8: Después de Initialize
+            print(f"{LOGP} DEBUG: Initialize finished.")
+            
+            # Se elimina self.vtk_interactor.Start() para evitar conflicto con el bucle de eventos de Qt.
+            # self.vtk_interactor.Start() 
+            print(f"{LOGP} VTK Initialized.")
+            
         except Exception as e:
-             print(f"{LOGP} Error configurando observador MouseMove: {e}")
+            print(f"{LOGP} CRITICAL VTK Setup Error: {e}")
+            self._cleanup_vtk_references()
+            if self.ui and self.ui.plotArea:
+                lbl = QLabel(f"VTK Error:\n{e}", self.ui.plotArea)
+                lbl.setAlignment(QtCore.Qt.AlignCenter)
+                if self.ui.plotArea.layout():
+                    self.ui.plotArea.layout().addWidget(lbl)
+    # --- FIN SOLUCIÓN DEFINITIVA (V_FINAL) ---
 
-        # Inicializar el widget Qt/VTK
-        try:
-             # Necesario para que el render funcione correctamente
-             self.vtk_interactor.Initialize()
-             # Render inicial opcional
-             self.vtk_interactor.Start()
-             print(f"{LOGP} Interactor VTK inicializado y arrancado.")
-        except Exception as e:
-             print(f"{LOGP} Error inicializando/arrancando interactor VTK: {e}")
+    def _cleanup_vtk_references(self):
+       """ Limpia referencias VTK para evitar memory leaks. """
+       self.vtk_interactor = None
+       self.vtk_view = None
+       self.chart = None
+       self.vtk_menu = None
+       print(f"{LOGP} VTK references cleaned.")
 
+    # --- INICIO CORRECCIÓN CRASH ---
+    # La función _on_mouse_move está deshabilitada
+    # porque su observador fue eliminado en _ensure_vtk.
+    #
+    # def _on_mouse_move(self, style_obj, event):
+    #     """ Muestra coordenadas en la barra de estado. """
+    #     
+    #     try:
+    #         if style_obj.GetState() != 0:
+    #             return 
+    #         ...
+    #     except Exception as e:
+    #         print(f"{LOGP} Error in _on_mouse_move: {e}")
+    # --- FIN CORRECCIÓN CRASH ---
 
-    def _on_mouse_move(self, interactor, event):
-        """Muestra las coordenadas del ratón en la barra de estado."""
-        # Añadir chequeos de seguridad
-        if not self.chart or not self.mainwin or not self.vtk_view or not interactor: return
-        pos = interactor.GetEventPosition()
-        coords = vtk.vtkVector2f()
-        try:
-            # Intentar obtener transformación del plot actual
-            # Puede fallar si no hay plots o durante transiciones
-            plot_item = self.chart.GetPlot(0) # Asumir que usamos el plot 0
-            transform = plot_item.GetTransform() if plot_item else None
-
-            # Usar la transformación de los ejes como fallback si la del plot falla
-            if not transform:
-                 transform = self.chart.GetPlotTransform() # Transformación general de ejes
-
-            if transform:
-                 # Invertir transformación para obtener coordenadas de datos
-                 inverse_transform = transform.GetInverse()
-                 if inverse_transform:
-                      inverse_transform.TransformPoint(pos, coords)
-                      message = f"Tiempo: {coords[0]:.4f} s, Amplitud: {coords[1]:.6f}"
-                      # Usar statusBar() directamente si mainwin es QMainWindow
-                      if hasattr(self.mainwin, 'statusBar'):
-                           self.mainwin.statusBar().showMessage(message)
-                      else: # Fallback si mainwin no es QMainWindow (raro)
-                           print(message)
-                 #else: print(f"{LOGP} No se pudo obtener inversa de la transformación.")
-            #else: print(f"{LOGP} No se pudo obtener transformación del chart.")
-        except Exception as e:
-             # Silenciar errores comunes durante redraws o si no hay datos
-             # print(f"{LOGP} Error en _on_mouse_move: {e}")
-             pass
 
     def _plot_curve(self, t: np.ndarray, y: np.ndarray, title: str = ""):
-        """Dibuja una única curva (promedio o trial) en el chart VTK."""
-        # Asegurar que VTK esté listo
-        self._ensure_vtk()
+        """ Dibuja los arrays 't' y 'y' en el chart VTK. """
+        
+        if self.vtk_view is None:
+            self._ensure_vtk()
+
         if not self.vtk_view or not self.vtk_interactor:
-             print(f"{LOGP} Error: VTK no está listo para plotear.")
-             return self._clear_render("Error interno de VTK.")
+            if self.widget: 
+                QMessageBox.critical(self.widget, "VTK Error", "Failed to initialize VTK view.")
+            return
 
-        # Limpiar la escena anterior
-        scene = self.vtk_view.GetScene()
-        scene.ClearItems()
-        # Restaurar fondo por si _clear_render lo cambió
-        self.vtk_view.GetRenderer().SetBackground(vtk.vtkNamedColors().GetColor3d("WhiteSmoke"))
-
-        # Crear tabla VTK para los datos
-        table = vtk.vtkTable()
-        arr_t = vtk.vtkFloatArray(); arr_t.SetName("Time (s)")
-        arr_y = vtk.vtkFloatArray(); arr_y.SetName("Amplitude")
-        table.AddColumn(arr_t); table.AddColumn(arr_y)
-
-        # Filtrar NaNs para evitar problemas en VTK
-        # (Aunque nanmean ya los maneja, el plot individual puede tenerlos)
-        valid_mask = ~np.isnan(y) if y is not None else np.array([False])
-        if np.any(valid_mask):
-             t_valid, y_valid = t[valid_mask], y[valid_mask]
-             n_points = len(t_valid)
-             table.SetNumberOfRows(n_points)
-             # Llenar tabla (más eficiente con SetVoidArray si es posible, pero esto es más simple)
-             for i in range(n_points):
-                  table.SetValue(i, 0, t_valid[i])
-                  table.SetValue(i, 1, y_valid[i])
-        else: # Si todos son NaN o y es None
-             print(f"{LOGP} No hay datos válidos para plotear.")
-             table.SetNumberOfRows(0)
-             # Podríamos mostrar un mensaje aquí usando _clear_render
-             # return self._clear_render("No hay datos válidos en este trial/promedio.")
-
-
-        # Crear el chart y añadirlo a la escena
-        self.chart = vtk.vtkChartXY()
-        scene.AddItem(self.chart)
-
-        # Añadir el plot de línea
-        plot = self.chart.AddPlot(vtk.vtkChart.LINE)
-        plot.SetInputData(table, "Time (s)", "Amplitude") # Usar nombres de columna
-        plot.SetWidth(1.5)
-        # Cambiar color según si es promedio o individual
-        color_name = "Crimson" if self.current_display_index == -1 else "SteelBlue"
-        plot.GetPen().SetColor(vtk.vtkNamedColors().GetColor4ub(color_name))
-
-        # Configurar título y ejes
-        self.chart.SetTitle(title)
-        axis_bottom = self.chart.GetAxis(vtk.vtkAxis.BOTTOM); axis_bottom.SetTitle("Tiempo (s)")
-        axis_left = self.chart.GetAxis(vtk.vtkAxis.LEFT); axis_left.SetTitle("Amplitud")
-        # Habilitar rejilla
-        axis_bottom.SetGridVisible(True); axis_left.SetGridVisible(True)
-
-        # Añadir menú contextual si está disponible
-        if VTXContextMenu and self.vtk_interactor and self.chart:
-             try:
-                 # Remover menú anterior si existe
-                 if hasattr(self, 'vtk_menu') and self.vtk_menu:
-                      # self.vtk_menu.destroy() # ¿Necesario? Chequear API
-                      pass
-                 self.vtk_menu = VTXContextMenu(self.chart, self.vtk_interactor, parent=self.widget)
-                 # Acción básica para resetear vista
-                 self.vtk_menu.add_action("Reset Zoom", self.chart.RecalculateBounds)
-                 # Podrías añadir más acciones aquí
-             except Exception as e:
-                  print(f"{LOGP} Error creando menú contextual VTK: {e}")
-
-        # Forzar el renderizado de la ventana VTK
         try:
-             # Recalcular límites antes de renderizar
-             self.chart.RecalculateBounds()
-             self.vtk_view.GetRenderWindow().Render()
-             # print(f"{LOGP} Renderizado completado.")
+            scene = self.vtk_view.GetScene()
+            scene.ClearItems()
+            renderer = self.vtk_view.GetRenderer()
+            
+            # CORRECCIÓN: Asegurarse de que los actores 2D (mensajes de texto) se limpien.
+            renderer.GetActors2D().RemoveAllItems() 
+            
+            # NUEVO: Forzar un renderizado inmediato para limpiar la caché visual del mensaje de texto.
+            self.vtk_view.GetRenderWindow().Render() 
+            
+            renderer.SetBackground(vtk.vtkNamedColors().GetColor3d("WhiteSmoke"))
+
+            # --- limpiar datos y convertir a VTK de forma segura (Reemplazo Bloque 3) ---
+            finite_mask = np.isfinite(t) & np.isfinite(y)
+            valid_mask = finite_mask.copy()
+            
+            t_valid = t[valid_mask]
+            y_valid = y[valid_mask]
+            
+            n_points = t_valid.shape[0]
+
+            if n_points == 0:
+                raise RuntimeError("No hay puntos válidos para graficar (NaN/Inf).")
+            
+            # Conversión segura a VTK (sin SetVoidArray)
+            vtk_t = nps.numpy_to_vtk(t_valid.astype(np.float64), deep=True)  # usa double para evitar overflow
+            vtk_t.SetName("Time (s)")
+            vtk_y = nps.numpy_to_vtk(y_valid.astype(np.float64), deep=True)  # idem
+            vtk_y.SetName("Amplitude")
+
+            table = vtk.vtkTable()
+            table.AddColumn(vtk_t)
+            table.AddColumn(vtk_y)
+
+            self.chart = vtk.vtkChartXY()
+            scene.AddItem(self.chart)
+            plot = self.chart.AddPlot(vtk.vtkChart.LINE)
+            plot.SetInputData(table, "Time (s)", "Amplitude")
+            plot.SetWidth(1.5)
+
+            color = "Crimson" if self.current_display_index == -1 else "SteelBlue"
+            plot.GetPen().SetColor(vtk.vtkNamedColors().GetColor4ub(color))
+
+            self.chart.SetTitle(title)
+            axis_b = self.chart.GetAxis(vtk.vtkAxis.BOTTOM); axis_b.SetTitle("Time (s)")
+            axis_l = self.chart.GetAxis(vtk.vtkAxis.LEFT);   axis_l.SetTitle("Amplitude")
+            axis_b.SetGridVisible(True); axis_l.SetGridVisible(True)
+
+            # Si los valores son absurdamente grandes, advierte en log
+            max_abs = float(np.nanmax(np.abs(y_valid)))
+            if not np.isfinite(max_abs) or max_abs > 1e12:
+                print(f"{LOGP} WARNING: amplitud muy grande (|y| max ≈ {max_abs:.3e}). Revisa unidades/escala de la señal.")
+
+            self.chart.RecalculateBounds()
+            print(f"{LOGP} _plot_curve: Plot '{title}' con {n_points} puntos válidos (carga segura).")
+            # --- FIN Reemplazo Bloque 3 ---
+
+        except RuntimeError as re:
+            # Manejar el error de "No hay puntos válidos" o de inconsistencia de shape
+            print(f"{LOGP} _plot_curve: Error al plotear (runtime): {re}")
+            self.chart = None
+            txt = vtk.vtkTextActor()
+            txt.SetInput(f"No data to display for:\n{title}\nError: {re}")
+            prop = txt.GetTextProperty()
+            prop.SetColor(0.2, 0.2, 0.2); prop.SetJustificationToCentered()
+            prop.SetVerticalJustificationToCentered(); prop.SetFontSize(16)
+            
+            size = renderer.GetSize()
+            txt.SetPosition(size[0] / 2, size[1] / 2)
+            renderer.AddActor2D(txt)
+            
         except Exception as e:
-             print(f"{LOGP} Error durante el renderizado VTK: {e}")
+            print(f"{LOGP} Error during _plot_curve: {e}")
+            self._clear_render(f"Error plotting:\n{e}")
 
     # --- Funciones de utilidad ---
+
     def _reset_state(self):
-        """Resetea el estado interno del plugin."""
-        print(f"{LOGP} Reseteando estado...")
+        """ Resetea el estado interno del plugin. """
+        print(f"{LOGP} Resetting state...")
         self.current_display_index = -1
         self.valid_indices = []
         self.total_original_trials = 0
         self.discarded_indices = set()
         self.modified_indices = set()
-        # Opcional: Limpiar campos de texto A y B en la UI
-        # if self.ui:
-        #      self.ui.artifact_panel.point_a.setText("0.0")
-        #      self.ui.artifact_panel.point_b.setText("0.0")
-
-    def _find_active_trials_dataset(self) -> Optional[TrialDataset]:
-        """Encuentra el TrialDataset más reciente para la señal y canal activos."""
-        # Esta función parece redundante si _load_and_display_trials ya obtiene el último
-        # Podría simplificarse o eliminarse si no se usa en otro lugar.
-        if not self.kernel: return None
-        store = self.kernel.get_service("DataStore")
-        if not store: return None
-        active_signal = store.get_active_signal()
-        # Asegurarse que trials_dataset no esté vacío
-        if isinstance(active_signal, SignalDataset) and active_signal.trials_dataset:
-            # Devolver el último (más reciente)
-            return active_signal.trials_dataset[-1]
-        return None
+        
+        if self.ui:
+            try:
+                self.ui.artifact_panel.trial_status_label.setText("Status: N/A")
+                self.ui.artifact_panel.point_a.setText("0.0")
+                self.ui.artifact_panel.point_b.setText("0.0")
+                self.ui.artifact_panel.apply_button.setEnabled(False)
+            except Exception as e:
+                print(f"{LOGP} Error resetting UI state: {e}")
 
     def _clear_render(self, message=""):
-        """Limpia la ventana VTK y opcionalmente muestra un mensaje."""
-        print(f"{LOGP} Limpiando render. Mensaje: '{message}'")
-        # Asegurar que VTK esté listo
-        self._ensure_vtk()
+        """ Limpia la vista VTK y muestra un mensaje opcional. """
+        
+        if self.vtk_view is None:
+            self._ensure_vtk()
+        
         if not self.vtk_view or not self.vtk_interactor:
-             print(f"{LOGP} Error: No se puede limpiar render, VTK no está listo.")
-             return
-
-        scene = self.vtk_view.GetScene()
-        scene.ClearItems() # Limpiar plots, etc.
-        # Limpiar actores 2D (como mensajes previos)
-        renderer = self.vtk_view.GetRenderer()
-        renderer.RemoveAllViewProps() # Esto quita actores 2D y 3D
-
-        # Poner fondo oscuro para indicar estado vacío/error
-        renderer.SetBackground(0.1, 0.1, 0.15)
-
-        if message: # Añadir nuevo mensaje si se proporcionó
-            text_actor = vtk.vtkTextActor()
-            text_actor.SetInput(message)
-            prop = text_actor.GetTextProperty()
-            prop.SetColor(0.9, 0.9, 0.9) # Color claro
-            prop.SetJustificationToCentered()
-            prop.SetVerticalJustificationToCentered()
-            prop.SetFontSize(16)
-            # Centrar el actor en la ventana
-            text_actor.SetPosition(renderer.GetSize()[0]/2, renderer.GetSize()[1]/2)
-            renderer.AddActor2D(text_actor)
-
-        # Renderizar el estado limpio
+            print(f"{LOGP} VTK not available to clear.")
+            return
+            
+        print(f"{LOGP} Clearing render. Msg: '{message}'")
         try:
-             self.vtk_view.GetRenderWindow().Render()
+            scene = self.vtk_view.GetScene()
+            scene.ClearItems()
+            renderer = self.vtk_view.GetRenderer()
+            
+            # El actor de texto de carga se añade aquí, así que hay que asegurarse de que se borre.
+            # Ya lo estamos haciendo en _plot_curve y GetActors2D().RemoveAllItems() se encarga.
+            renderer.GetActors2D().RemoveAllItems()
+            
+            renderer.SetBackground(vtk.vtkNamedColors().GetColor3d("WhiteSmoke"))
+            
+            if message:
+                txt = vtk.vtkTextActor()
+                txt.SetInput(message)
+                prop = txt.GetTextProperty()
+                prop.SetColor(0.2, 0.2, 0.2)
+                prop.SetJustificationToCentered()
+                prop.SetVerticalJustificationToCentered()
+                prop.SetFontSize(16)
+                
+                size = renderer.GetSize()
+                if size[0] > 0 and size[1] > 0:
+                   txt.SetPosition(size[0] / 2, size[1] / 2)
+                else:
+                   txt.SetPosition(200, 200) 
+                    
+                renderer.AddActor2D(txt)
+                
+            self.vtk_view.GetRenderWindow().Render()
         except Exception as e:
-             print(f"{LOGP} Error renderizando estado limpio: {e}")
-
+            print(f"{LOGP} Error during _clear_render: {e}")
 
     def _on_data_updated(self, topic: str, payload: object):
-        """Se ejecuta cuando el DataStore emite un evento."""
-        # Eventos que indican un cambio en los trials o la señal activa
-        if topic in ["signal_added", "active_signal_changed", "trials_generated", "trial_discard_updated"]:
-            # Solo actualizar si el widget de este plugin es visible
-            if self.widget and self.widget.isVisible():
-                print(f"{LOGP} Evento '{topic}' recibido mientras visible. Reseteando y actualizando vista...")
-                # Resetear el índice y estado interno
+        """Escucha eventos del kernel y agrupa refrescos (debounce) para evitar lag o bloqueos."""
+        try:
+            if topic in ["signal_added", "active_signal_changed", "trials_generated", "trial_discard_updated"]:
+                if self.widget and self.widget.isVisible():
+                    print(f"{LOGP} Event '{topic}' received. Coalescing update...")
+
+                    # En lugar de refrescar de inmediato, programamos un refresh único en 120 ms.
+                    # Esto evita múltiples renders seguidos cuando el kernel dispara varios eventos.
+                    if hasattr(self, "_refresh_timer"):
+                        self._refresh_timer.start()
+                    else:
+                        # fallback si el timer aún no existe
+                        self._reset_state()
+                        if self.vtk_interactor and not self.vtk_interactor.isEnabled():
+                            try:
+                                self.vtk_interactor.Enable()
+                            except Exception:
+                                pass
+                        self._load_and_display_trials()
+                        QtCore.QTimer.singleShot(50, self._force_render)
+        except Exception as e:
+            print(f"{LOGP} Error in _on_data_updated: {e}")
+
+    def _on_apply_finished(self, modified_td):
+        """Señal: el worker terminó correctamente."""
+        print(f"{LOGP} finished received, type={type(modified_td)}")
+        try:
+            if modified_td:
+                QMessageBox.information(self.widget, "Success", "Changes applied to all valid trials.")
+            else:
+                QMessageBox.information(self.widget, "No Changes", "No modifications were applied.")
+        finally:
+            # Rehabilitar UI y refrescar
+            try:
+                if self.vtk_interactor:
+                    try:
+                        self.vtk_interactor.Enable()
+                    except Exception:
+                        pass
+                panel = self.ui.artifact_panel
+                panel.apply_button.setEnabled(True)
+                panel.mode_combo.setEnabled(True)
+                panel.prev_button.setEnabled(True)
+                panel.next_button.setEnabled(True)
+
+                # Recarga y render forzado
                 self._reset_state()
-                # Habilitar interactor por si acaso
-                if self.vtk_interactor: self.vtk_interactor.Enable()
-                # Recargar y mostrar (probablemente el promedio ahora)
                 self._load_and_display_trials()
-            #else:
-            #    print(f"{LOGP} Evento '{topic}' recibido mientras NO visible. Ignorando.")
+                QtCore.QTimer.singleShot(50, self._force_render)
+            except Exception as e:
+                print(f"{LOGP} _on_apply_finished UI restore error: {e}")
+
+    def _on_apply_error(self, msg):
+        """Señal: el worker reportó un error."""
+        try:
+            QMessageBox.critical(self.widget, "Apply Error", msg)
+        finally:
+            try:
+                if self.vtk_interactor:
+                    try:
+                        self.vtk_interactor.Enable()
+                    except Exception:
+                        pass
+                panel = self.ui.artifact_panel
+                panel.apply_button.setEnabled(True)
+                panel.mode_combo.setEnabled(True)
+                panel.prev_button.setEnabled(True)
+                panel.next_button.setEnabled(True)
+                QtCore.QTimer.singleShot(50, self._force_render)
+            except Exception as e:
+                print(f"{LOGP} _on_apply_error UI restore error: {e}")
 
 # --- FIN DEL ARCHIVO ---
