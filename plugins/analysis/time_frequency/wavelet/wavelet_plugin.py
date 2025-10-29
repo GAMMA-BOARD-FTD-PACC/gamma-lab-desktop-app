@@ -32,10 +32,10 @@ class Wavelet_plugin(IPlugin):
     # end def
 
     # =====================================================
-    # === Ciclo de vida del plugin
+    # === Plugin lifecycle
     # =====================================================
     def initialize(self, kernel):
-        print("Inicializando Wavelet")
+        print("Initializing Wavelet")
     # end def
 
     def process(self, data: any):
@@ -147,7 +147,7 @@ class Wavelet_plugin(IPlugin):
             interactor = self.vtk_widget.GetRenderWindow().GetInteractor()
             if interactor and not interactor.GetInitialized():
                 interactor.Initialize()
-
+            # end if
 
         except Exception as e:
             self._log("Error ensure_vtk:", e)
@@ -302,7 +302,7 @@ class Wavelet_plugin(IPlugin):
     # end def
 
     # =====================================================
-    # === Render escalograma 2D en VTK
+    # === Render 2D scalogram in VTK
     # =====================================================
     def render_scalogram(self, t, freqs, scalogram, title="Scalogram", log_scale=False):
         if not self.vtk_widget:
