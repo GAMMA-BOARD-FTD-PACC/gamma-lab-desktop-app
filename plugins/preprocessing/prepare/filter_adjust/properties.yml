@@ -1,8 +1,0 @@
-id: "filter_adjust"
-name: "Filter & Adjust"
-category: "Preprocessing"
-subcategory: "Prepare"
-version: "1.0"
-icon: "icn_filter_adjust.png"
-logic_class: "FiltersAdjustPlugin"
-ui_class: ""
