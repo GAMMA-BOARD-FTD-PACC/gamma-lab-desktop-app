@@ -128,10 +128,18 @@ class MeasurementService:
         return self._state
 
     def start(self, measure_type: str):
-        allowed = {"slope", "derivative", "amplitude"}
+        allowed = {"slope", "slope_all_trials", "amplitude"}
         if measure_type not in allowed:
             measure_type = "slope"
-            
+        
+        if measure_type == "slope_all_trials" and self._context.get("plugin") != "trials":
+            try:
+                QMessageBox.information(self.parent, "Medición",
+                                        "Esta medición solo está disponible en el plugin de Trials.")
+            except Exception:
+                pass
+            return False
+    
         if self._state != 'idle':
             try:
                 QMessageBox.information(self.parent, "Medición", "Ya hay una medición en curso. Completa o cancélala (Esc).")
@@ -333,11 +341,12 @@ class MeasurementService:
 
     def _load_reference_data_for_pick(self, chart):
         print("\n[MEAS][_load_reference_data_for_pick] >>>")
-        # 1) plot de referencia
+
+        # 1) Reference plot
         ref_plot = None
         try:
             n = chart.GetNumberOfPlots()
-        except Exception as e:
+        except Exception:
             self._ref_data = None
             return
 
@@ -350,96 +359,103 @@ class MeasurementService:
             self._ref_data = None
             return
 
-        # 2) tabla
+        # 2) Table
         try:
             table = ref_plot.GetInput()
-        except Exception as e:
+        except Exception:
             table = None
         if table is None:
             self._ref_data = None
             return
 
-        # Utilidades
-        def _col_by_name(tbl, names):
-            for nm in names:
-                try:
-                    arr = tbl.GetColumnByName(nm)
-                    if arr is not None:
-                        return arr, nm
-                except Exception:
-                    pass
-            return None, None
+        # Utilities
+        def _col_by_name(tbl, name: str):
+            if not name:
+                return None
+            try:
+                return tbl.GetColumnByName(name)
+            except Exception:
+                return None
 
-        # Dump columnas disponibles
+        # Columns dump (debug)
         try:
             ncols = table.GetNumberOfColumns()
         except Exception:
-            ncols = None
+            ncols = 0
         cols = []
-        if ncols is not None:
-            for c in range(ncols):
-                try:
-                    arr = table.GetColumn(c)
-                    cols.append(arr.GetName() if arr else f"col{c}")
-                except Exception:
-                    cols.append(f"col{c}?")
+        for c in range(ncols):
+            try:
+                arr = table.GetColumn(c)
+                cols.append(arr.GetName() if arr else f"col{c}")
+            except Exception:
+                cols.append(f"col{c}?")
         print(f"[MEAS] columns={cols}")
 
-        # Etiqueta del plot y contexto
+        # Plot label & context
         try:
             lbl = ref_plot.GetLabel() or ""
         except Exception:
             lbl = ""
-        ctx_tid = self._context.get("trial_id", None)
+        ctx = self._context or {}
+        ctx_tid = ctx.get("trial_id", None)
         print(f"[MEAS] ctx.trial_id={ctx_tid}  plot.label='{lbl}'")
 
-        # 3) X
-        x_arr, x_src = _col_by_name(table,"time")
+        # 3) X selection: common time names, else column 0
+        x_candidates = ["time", "Time (s)", "Time", "t", "x"]
+        x_arr = None
+        x_src = None
+        for nm in x_candidates:
+            x_arr = _col_by_name(table, nm)
+            if x_arr is not None:
+                x_src = nm
+                break
         if x_arr is None:
-            try:
-                x_arr = table.GetColumn(0)
-                x_src = "col0"
-            except Exception as e:
-                print(f"[MEAS] ERROR: no X column found: {e}")
+            if ncols >= 1:
+                try:
+                    x_arr = table.GetColumn(0)
+                    x_src = "col0"
+                except Exception as e:
+                    print(f"[MEAS] ERROR: no X column found: {e}")
+                    self._ref_data = None
+                    return
+            else:
+                print("[MEAS] ERROR: table has no columns.")
                 self._ref_data = None
                 return
         print(f"[MEAS] X picked -> name='{x_arr.GetName() if hasattr(x_arr,'GetName') else '?'}' src={x_src}")
 
-        # 4) Y con logs de decisión
+        # 4) Y selection
         y_arr = None
         y_reason = None
 
-        # (A) Según contexto: trial_{tid+1}
-        if ctx_tid is not None and ctx_tid >= 0:
+        # (A) Trials path: use trial_{tid+1} when trial_id is provided
+        if ctx_tid is not None and isinstance(ctx_tid, int) and ctx_tid >= 0:
             guess = f"trial_{ctx_tid+1}"
             try:
-                y_arr = table.GetColumnByName(guess)
-                if y_arr is not None:
+                arr = table.GetColumnByName(guess)
+                if arr is not None:
+                    y_arr = arr
                     y_reason = f"context:{guess}"
             except Exception:
                 pass
-        print(f"[MEAS] Y(A) context guess -> {y_reason or 'no-match'}")
+            print(f"[MEAS] Y(A) context guess -> {y_reason or 'no-match'}")
 
-        # (B) Según label: “Trial k”
-        if y_arr is None and lbl.lower().startswith("trial"):
-            import re
-            m = re.search(r"(\d+)", lbl)
-            if m:
-                k = int(m.group(1))
-                guess = f"trial_{k}"
-                try:
-                    arr = table.GetColumnByName(guess)
-                    if arr is not None:
-                        y_arr = arr
-                        y_reason = f"label:{guess}"
-                except Exception:
-                    pass
-        print(f"[MEAS] Y(B) label guess -> {y_reason or 'no-match'}")
-
-
+        # (B) Non-trials (or if (A) failed): pick **second column** (index 1)
+        if y_arr is None:
+            if ncols < 2:
+                print("[MEAS] ERROR: expected at least 2 columns (time + series).")
+                self._ref_data = None
+                return
+            try:
+                y_arr = table.GetColumn(1)
+                y_reason = "second-column"
+            except Exception as e:
+                print(f"[MEAS] ERROR: could not read second column: {e}")
+                self._ref_data = None
+                return
         print(f"[MEAS] Y picked -> name='{y_arr.GetName() if hasattr(y_arr,'GetName') else '?'}' reason={y_reason}")
 
-        # 5) construir ref_data y chequear tamaños
+        # 5) Build ref_data using min length
         try:
             nrows = min(x_arr.GetNumberOfTuples(), y_arr.GetNumberOfTuples())
         except Exception as e:
@@ -454,10 +470,10 @@ class MeasurementService:
                 xs.append(float(x_arr.GetValue(i)))
                 ys.append(float(y_arr.GetValue(i)))
             except Exception:
-                # si hay algún valor no convertible, lo saltamos
+                # skip non-convertible rows
                 continue
 
-        # Orden y de-duplicación mínima en X
+        # Sort by X and minimally de-duplicate
         pairs = sorted(zip(xs, ys), key=lambda t: t[0])
         xs2, ys2, last = [], [], None
         for x, y in pairs:
@@ -467,13 +483,10 @@ class MeasurementService:
 
         self._ref_data = {'xs': xs2, 'ys': ys2}
         print(f"[MEAS] ref_data: xs={len(xs2)} ys={len(ys2)}")
-        # Muestra algunas muestras
         if xs2 and ys2:
             print(f"[MEAS] ref_data head: {list(zip(xs2[:3], ys2[:3]))}")
             print(f"[MEAS] ref_data tail: {list(zip(xs2[-3:], ys2[-3:]))}")
         print("[MEAS][_load_reference_data_for_pick] <<<\n")
-
-
 
 
     def _pick_nearest_data_point(self, sx_click, sy_click):
@@ -525,13 +538,12 @@ class MeasurementService:
 
     # ====================== persistencia ======================
 
-    def _save_measurement(self, result, p1, p2):
+    def _save_measurement(self, result, p1, p2, override_ctx=None):
         t = str(result.get("type", "measure"))
         lst = self.ds_get("measurements", None)
         if not isinstance(lst, list):
             lst = []
 
-        # secuencia por tipo
         prefix, seq = f"{t}-", 0
         for it in lst:
             if isinstance(it, dict) and it.get("type") == t:
@@ -544,14 +556,17 @@ class MeasurementService:
         seq += 1
         meas_id = f"{t}-{seq:03d}"
 
-        # contexto actual
         ctx = {
             "view_id": self._context.get("view_id"),
+            "graph_id": self._context.get("graph_id"),
             "trial_id": self._context.get("trial_id"),
             "channel_name": self._context.get("channel_name"),
+            "plugin": self._context.get("plugin"),
+            "domain": self._context.get("domain"),
         }
+        if isinstance(override_ctx, dict):
+            ctx.update({k: v for k, v in override_ctx.items() if v is not None})
 
-        # registro base común
         p1x, p1y = float(p1[0]), float(p1[1])
         p2x, p2y = float(p2[0]), float(p2[1])
         base = {
@@ -563,28 +578,22 @@ class MeasurementService:
             "ctx": ctx,
         }
 
-        # métricas genéricas útiles
         dx = p2x - p1x
         dy = p2y - p1y
-
-        # fusionar resultado específico de la medición
-        # (esto asegura que x1, x2, y_min, y_max, amp_pp, etc. se conserven)
         rec = {**base, **{k: v for k, v in (result or {}).items() if k != "type"}}
 
-        # sólo añadir campos de slope si aplica
         if t == "slope":
             rec.setdefault("dx", float(dx))
             rec.setdefault("dy", float(dy))
-            # si no viene calculada:
             if "slope" not in rec:
                 rec["slope"] = float(dy / dx) if dx != 0 else float("inf")
             if "dist" not in rec:
                 rec["dist"] = float((dx*dx + dy*dy) ** 0.5)
 
-        # Nota: para 'amplitude' NO tocamos ni sobreescribimos x1/x2/y_min/...
         lst.append(rec)
         self.ds_set("measurements", lst)
         return meas_id
+
 
 
     # ====================== cierre de medición ======================
@@ -646,6 +655,55 @@ class MeasurementService:
                 )
             except Exception:
                 pass
+        
+        elif kind == 'slope_all_trials':
+            if not self._ref_data or not self._ref_data.get('xs'):
+                ch = self.get_active_chart()
+                if not ch:
+                    self.cancel(); return
+                self._load_reference_data_for_pick(ch)
+                if not self._ref_data or not self._ref_data.get('xs'):
+                    try:
+                        QMessageBox.information(self.parent, "Medición",
+                            "No hay datos para estimar índices en X.")
+                    except Exception:
+                        pass
+                    self.cancel(); return
+
+            i1 = self._nearest_index(x1)
+            i2 = self._nearest_index(x2)
+            if i1 is None or i2 is None:
+                try:
+                    QMessageBox.information(self.parent, "Medición",
+                        "No se pudieron determinar los índices de los puntos.")
+                except Exception:
+                    pass
+                self.cancel(); return
+
+            if i1 == i2:
+                try:
+                    QMessageBox.information(self.parent, "Medición",
+                        "Los dos puntos caen en el mismo índice; dx=0.")
+                except Exception:
+                    pass
+                # seguimos adelante para que no deje rastro de estado
+                self.cancel(); return
+
+            ids = self._compute_and_save_slopes_each_trial_by_index(
+                min(i1, i2), max(i1, i2),
+                make_overlays_for_current=False  # pon True si quieres overlay solo del trial visible
+            )
+
+            try:
+                QMessageBox.information(
+                    self.parent, "Pendientes por trial",
+                    f"Se generaron {len(ids)} mediciones (una por trial)."
+                )
+            except Exception:
+                pass
+
+            self._state = 'idle'
+            self._current = None
 
         else:
             # tipo no soportado (por si queda rastro de 'derivative')
@@ -904,3 +962,82 @@ class MeasurementService:
 
         xs = self._ref_data['xs']; ys = self._ref_data['ys']
         return amplitude_in_window(xs, ys, x1, x2)
+    
+    def _nearest_index(self, x_target):
+        # requiere self._ref_data cargado (xs ordenados)
+        xs = self._ref_data.get('xs') if self._ref_data else None
+        if not xs:
+            return None
+        i = bisect.bisect_left(xs, x_target)
+        cand = []
+        if i > 0: cand.append(i-1)
+        if i < len(xs): cand.append(i)
+        # elegir el más cercano en X
+        best_i, best_d = None, None
+        for j in cand:
+            d = abs(xs[j] - x_target)
+            if best_d is None or d < best_d:
+                best_d, best_i = d, j
+        return best_i
+
+    def _compute_and_save_slopes_each_trial_by_index(self, i1, i2, make_overlays_for_current=False):
+        ch = self.get_active_chart()
+        if not ch or ch.GetNumberOfPlots() == 0:
+            return []
+
+        ref_plot = ch.GetPlot(0)
+        table = ref_plot.GetInput()
+        if table is None:
+            return []
+
+        x_arr = table.GetColumnByName("time") or table.GetColumn(0)
+        if x_arr is None:
+            return []
+
+        t1 = float(x_arr.GetValue(i1))
+        t2 = float(x_arr.GetValue(i2))
+        dx = float(t2 - t1)
+        if dx == 0:
+            return []
+
+        ncols = table.GetNumberOfColumns()
+        meas_ids = []
+
+        for c in range(1, ncols):
+            col = table.GetColumn(c)
+            if not col:
+                continue
+            name = col.GetName() if hasattr(col, "GetName") else f"col{c}"
+            if not name or not name.startswith("trial_"):
+                continue
+
+            y1 = float(col.GetValue(i1))
+            y2 = float(col.GetValue(i2))
+
+            # métrica estándar “slope” con tus utilidades
+            res = two_point_metrics((t1, y1), (t2, y2), kind='slope')
+            # agrega metadatos útiles
+            res["trial_name"] = name
+            # mapea trial_k (1-based) a trial_id (0-based)
+            try:
+                k = int(name.split("_")[1])
+                trial_id_zero_based = k - 1
+            except Exception:
+                trial_id_zero_based = None
+
+            mid = self._save_measurement(
+                res,
+                (t1, y1),
+                (t2, y2),
+                override_ctx={"trial_id": trial_id_zero_based}
+            )
+            meas_ids.append(mid)
+
+            if make_overlays_for_current and self._context.get("trial_id") == trial_id_zero_based:
+                try:
+                    self._add_overlay_for_points(mid, (t1, y1), (t2, y2))
+                except Exception:
+                    pass
+
+        return meas_ids
+

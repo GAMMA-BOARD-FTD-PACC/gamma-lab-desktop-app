@@ -121,7 +121,7 @@ class OpenSignalPlugin(IPlugin):
                     "domain": "time",
                     "graph_id": "open_signal:blank" 
                 },
-                parent=self
+                parent=self.ui
             )
             self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
         except Exception as e:

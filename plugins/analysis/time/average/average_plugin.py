@@ -26,6 +26,7 @@ class Average_plugin(IPlugin):
         self.ui = None
         self.active_signal = None
         self.active_chanel = None
+        self.vtk_menu: VTKContextMenu | None = None
 
     def initialize(self, kernel):
         self.kernel = kernel
@@ -188,17 +189,23 @@ class Average_plugin(IPlugin):
         chart.SetTitle(f"Average - {channel_name or ''}")
 
         # --- Menú contextual---
-    
-        try:
-            self.vtk_menu = VTKContextMenu(chart, self.vtk_widget, parent=self.widget)
-            self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
 
-        except Exception as e:
-            QMessageBox.information(self.widget, "Menú contextal", "Error creando el menú contextual.\n" + str(e))
-            
-        # Agregar acción personalizada (por ejemplo: mostrar estadísticas)
-        self.vtk_menu.add_action("Mostrar estadísticas", self.on_show_stats)   
-
+        ds = self.active_signal
+        signal_name = getattr(ds, "name", "signal")
+        ch_name = channel_name or "channel"
+        graph_uid = f"average"
+        
+        if self.vtk_menu is not None:
+            self.vtk_menu.on_view_rebuilt(
+                chart,
+                view_id="average",
+                trial_id=None,
+                channel_name=f"{signal_name}:{ch_name}",
+                plugin="average",
+                domain="time",
+                graph_id=graph_uid
+            )
+        # --- Fin menú contextual---
 
         # Forzar render
         try:
@@ -231,6 +238,31 @@ class Average_plugin(IPlugin):
         self.view.SetRenderWindow(self.vtk_widget.GetRenderWindow())
         self.view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
         self.vtk_widget.Initialize()
+        
+        # Menú
+        if self.vtk_menu is None:
+            base_scope = {
+                "view_id": "average",
+                "graph_id": "average:blank",
+                "trial_id": None,           
+                "channel_name": None,       
+                "plugin": "average",
+                "domain": "time",
+            }
+            try:
+                self.vtk_menu = VTKContextMenu(
+                    chart=None,
+                    vtk_widget=self.vtk_widget,
+                    plugin_name="average",
+                    measurements_enabled=True,
+                    measure_scope=base_scope,
+                    parent=self.widget
+                )
+                self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
+                self.vtk_menu.add_action("Mostrar estadísticas", self.on_show_stats)
+            except Exception as e:
+                QMessageBox.information(self.widget, "Context menu",
+                                        "Error creating context menu.\n" + str(e))
 
 
    

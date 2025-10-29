@@ -33,7 +33,9 @@ class ExportService:
                 base_name = f"{signal_name}_{channel_name}_{plugin_name}_{stamp}.{format}"
             else:
                 base_name = f"{signal_name}_{plugin_name}_{stamp}.{format}"
-
+            
+            print(f"[Export] names -> signal='{signal_name}', channel='{channel_name}', plugin='{plugin_name}'")
+            
             initial_path = os.path.join(self._get_last_dir(), base_name)
 
             if not filename:
@@ -94,7 +96,7 @@ class ExportService:
                 f"{signal_name}_{channel_name}_{plugin_name}_{stamp}.{fmt}"
                 if channel_name else f"{signal_name}_{plugin_name}_{stamp}.{fmt}"
             )
-
+            print(f"[Export] names -> signal='{signal_name}', channel='{channel_name}', plugin='{plugin_name}'")
             initial_path = os.path.join(self._get_last_dir(), base_name)
 
             if not filename:
