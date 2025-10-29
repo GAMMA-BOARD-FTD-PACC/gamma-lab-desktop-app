@@ -1,14 +1,14 @@
 # Ubicación: plugins/preprocessing/prepare/artifact_remove/artifact_remove_plugin.py
 # VERSIÓN REFACTORIZADA Y COMPLETA (Restaurada)
 
-from vtk.util import numpy_support as nps # <--- 1. IMPORTACIÓN SEGURA AÑADIDA
+from vtk.util import numpy_support as nps # Importación segura para VTK/NumPy
 from PyQt5 import QtCore, QtWidgets
 from PyQt5.QtWidgets import QWidget, QMessageBox, QVBoxLayout, QLabel
 import numpy as np
 import vtk
 from typing import Optional, List, Set
-from pathlib import Path
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
+from types import SimpleNamespace # Para el helper de trials
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
@@ -21,13 +21,6 @@ from plugins.preprocessing.prepare.artifact_remove.artifact_logic import apply_m
 
 # Intento de importación de clases personalizadas
 try:
-    # Asumiendo que esta clase existe para un mejor zoom 2D
-    from core.plugins.vtk_context_menu import VTKInteractorStyleZoomAxis
-except ImportError:
-    # Fallback si no existe, para evitar un error de importación
-    VTKInteractorStyleZoomAxis = None 
-
-try:
     from core.plugins.vtk_context_menu import VTKContextMenu
 except ImportError:
     VTKContextMenu = None
@@ -35,9 +28,7 @@ except ImportError:
 LOGP = "[ArtifactRemovePlugin]"
 # --- Worker para ejecutar la lógica pesada en otro hilo ---
 class _ApplyWorker(QtCore.QObject):
-    progress = QtCore.pyqtSignal(int)      # opcional
-    # CAMBIO CRÍTICO: Usar un tipo más específico (TrialDataset) o None en la señal.
-    # Como el valor es un TrialDataset o None, usamos object, pero lo forzamos abajo.
+    progress = QtCore.pyqtSignal(int)
     finished = QtCore.pyqtSignal(object)   
     error = QtCore.pyqtSignal(str)
 
@@ -51,7 +42,6 @@ class _ApplyWorker(QtCore.QObject):
     @QtCore.pyqtSlot()
     def run(self):
         try:
-            # Import dentro del hilo para evitar dependencias cruzadas al importar el plugin
             from plugins.preprocessing.prepare.artifact_remove.artifact_logic import apply_modification_to_all_valid
             td = apply_modification_to_all_valid(
                 kernel=self.kernel,
@@ -77,18 +67,14 @@ class ArtifactRemovePlugin(IPlugin):
         self.chart: Optional[vtk.vtkChartXY] = None
         self.vtk_menu: Optional[VTKContextMenu] = None
 
-        # Hilo para aplicar cambios sin bloquear la UI
         self._apply_thread = None
         self._apply_worker = None
 
-        # Timer para coalescer/refrescar (debounce) tras eventos del kernel
         self._refresh_timer = QtCore.QTimer()
         self._refresh_timer.setSingleShot(True)
-        self._refresh_timer.setInterval(120)  # ms
+        self._refresh_timer.setInterval(120) # ms
         self._refresh_timer.timeout.connect(self._refresh_view_coalesced)
 
-        
-        # Estado
         self.current_display_index: int = -1 # -1 = Promedio
         self.valid_indices: List[int] = []
         self.total_original_trials: int = 0
@@ -137,12 +123,8 @@ class ArtifactRemovePlugin(IPlugin):
                 print(f"{LOGP} Error disabling interactor: {e}")
 
     def get_widget(self, parent=None):
-        """
-        Entrega el widget principal del plugin a la ventana principal.
-        Maneja la creación inicial y la reutilización.
-        """
+        """ Entrega el widget principal del plugin a la ventana principal. """
         
-        # --- CREACIÓN INICIAL ---
         if self.widget is None:
             print(f"{LOGP} get_widget(): Creating UI for the first time...")
             
@@ -167,9 +149,6 @@ class ArtifactRemovePlugin(IPlugin):
                     else: 
                         raise RuntimeError("Kernel not available.")
 
-                # No llamamos a _ensure_vtk() aquí.
-                # Se llamará la primera vez desde _plot_curve
-
                 print(f"{LOGP} get_widget(): Loading initial data...")
                 self._load_and_display_trials()
                 if self.ui and self.ui.artifact_panel:
@@ -185,7 +164,6 @@ class ArtifactRemovePlugin(IPlugin):
                 self.ui = None
                 return None 
 
-        # --- REUTILIZACIÓN DEL WIDGET ---
         else:
             print(f"{LOGP} get_widget(): Reusing existing UI.")
             self.widget.setParent(parent)
@@ -234,14 +212,17 @@ class ArtifactRemovePlugin(IPlugin):
             return
             
         panel = self.ui.artifact_panel
-        show_point_b = (mode_text == "Interpolate Interval")
+        show_point_b = (mode_text == "Interpolate Interval" or mode_text == "Blank Interval")
         
         getattr(panel, 'label_b', QWidget()).setVisible(show_point_b)
         getattr(panel, 'point_b', QWidget()).setVisible(show_point_b)
         
         label_a = getattr(panel, 'label_a', None)
         if label_a:
-            label_a.setText("Cut until (s):" if mode_text == "Cut From Start" else "Point A (s):")
+            if mode_text == "Cut From Start":
+                 label_a.setText("Cut until (s):")
+            else:
+                 label_a.setText("Point A (s):")
 
     def _on_apply_changes(self):
         """Lanza la modificación en un hilo para no bloquear la UI."""
@@ -257,7 +238,8 @@ class ArtifactRemovePlugin(IPlugin):
 
         try:
             mode_text = panel.mode_combo.currentText()
-            mode = 'cut' if mode_text == "Cut From Start" else 'interpolate'
+            # Ajuste de modo basado en la lógica de modificación de valores.
+            mode = 'blank' if mode_text in ("Cut From Start", "Blank Interval") else 'interpolate'
 
             point_a_str = panel.point_a.text().strip()
             if not point_a_str:
@@ -265,13 +247,16 @@ class ArtifactRemovePlugin(IPlugin):
             point_a = float(point_a_str)
 
             point_b = 0.0
-            if mode == 'interpolate':
+            if mode == 'interpolate' or mode_text == "Blank Interval": # Si es interpolación o blanking por intervalo (debe tener B)
                 point_b_str = panel.point_b.text().strip()
                 if not point_b_str:
-                    raise ValueError("Point B cannot be empty for interpolation.")
-                point_b = float(point_b_str)
-                if point_a == point_b:
-                    raise ValueError("Points A and B cannot be the same.")
+                    # En el modo "Cut From Start", B no es obligatorio, por eso se omite el raise aquí.
+                    if mode_text != "Cut From Start":
+                         raise ValueError("Point B cannot be empty for interval modification.")
+                else:
+                    point_b = float(point_b_str)
+                    if point_a == point_b and mode_text != "Cut From Start":
+                        raise ValueError("Points A and B cannot be the same.")
 
             # --- Feedback y bloqueo de reentradas
             panel.apply_button.setEnabled(False)
@@ -292,7 +277,6 @@ class ArtifactRemovePlugin(IPlugin):
 
             # Conexiones
             self._apply_thread.started.connect(self._apply_worker.run)
-            # Conexión directa a un callable Python normal (sin decorador @pyqtSlot)
             self._apply_worker.finished.connect(self._on_apply_finished) 
             self._apply_worker.error.connect(self._on_apply_error)
 
@@ -315,10 +299,9 @@ class ArtifactRemovePlugin(IPlugin):
 
     def _go_to_previous_trial(self):
         num_valid = len(self.valid_indices)
-        idx_before = self.current_display_index
-        if num_valid == 0: 
+        if num_valid <= 0: 
             return
-            
+        idx_before = self.current_display_index
         if self.current_display_index == 0:
             self.current_display_index = -1 
         elif self.current_display_index == -1:
@@ -328,15 +311,13 @@ class ArtifactRemovePlugin(IPlugin):
             
         print(f"{LOGP} Nav Prev: {idx_before} -> {self.current_display_index}")
         self._load_and_display_trials()
-        # **Añadido para asegurar la actualización gráfica después de la navegación**
         QtCore.QTimer.singleShot(50, self._force_render)
 
     def _go_to_next_trial(self):
         num_valid = len(self.valid_indices)
-        idx_before = self.current_display_index
-        if num_valid == 0: 
+        if num_valid <= 0: 
             return
-            
+        idx_before = self.current_display_index
         if self.current_display_index == num_valid - 1:
             self.current_display_index = -1 
         elif self.current_display_index == -1:
@@ -346,136 +327,178 @@ class ArtifactRemovePlugin(IPlugin):
             
         print(f"{LOGP} Nav Next: {idx_before} -> {self.current_display_index}")
         self._load_and_display_trials()
-        # **Añadido para asegurar la actualización gráfica después de la navegación**
         QtCore.QTimer.singleShot(50, self._force_render)
 
-    # --- Carga de Datos y Lógica de Ploteo ---
-
-    def _load_and_display_trials(self):
-        """ Carga los datos del trial actual (o promedio) y los muestra. """
-        print(f"{LOGP} _load_and_display_trials(). Index: {self.current_display_index}")
-        
-        if not self.kernel:
-            print(f"{LOGP} Info: Kernel missing.")
-            return self._clear_render("Kernel missing.")
-            
+    # --- HELPERS PARA OBTENER TRIALS ACTIVOS ---
+    def _get_active_signal_and_name(self):
         store = self.kernel.get_service("DataStore")
         if not store:
-            print(f"{LOGP} Info: DataStore missing.")
-            return self._clear_render("DataStore missing.")
-            
-        active_signal = store.get_active_signal()
-        if not isinstance(active_signal, SignalDataset):
-            print(f"{LOGP} Info: No active signal.")
-            self._reset_state()
-            return self._clear_render("No active signal selected.")
-
-        current_td: Optional[TrialDataset] = None
-        if active_signal.trials_dataset:
-            current_td = active_signal.trials_dataset[-1]
-            f_name = Path(current_td.source).name if current_td.source else "?"
-            d_key = (f_name, current_td.channel_name)
-            
-            self.discarded_indices = active_signal.discarded_trials.get(d_key, set())
-            if not isinstance(self.discarded_indices, set):
-                self.discarded_indices = set()
-
-            mods = current_td.metadata.get("modified_trials", set())
-            if isinstance(mods, set):
-                self.modified_indices = mods
-            else:
-                try: 
-                    self.modified_indices = set(mods)
-                except TypeError: 
-                    self.modified_indices = set()
-            
-            self.total_original_trials = current_td.trials.shape[1]
-            self.valid_indices = [i for i in range(self.total_original_trials) if i not in self.discarded_indices]
-        else:
-            print(f"{LOGP} Info: No trial data found.")
-            self._reset_state()
-            return self._clear_render("No trial data in active signal.\n(Please run 'Trials' first).")
-
-        num_valid = len(self.valid_indices)
-        if not (-1 <= self.current_display_index < num_valid):
-            self.current_display_index = -1 
-
-        status, data, title = "", None, ""
-        t = current_td.time_rel # Obtener t (tiempo)
-
-        valid_cols = None
-        if num_valid > 0:
-            try:
-                valid_cols = current_td.trials[:, self.valid_indices]
-            except Exception as e:
-                print(f"{LOGP} Error selecting valid trials: {e}")
-                self._reset_state()
-                return self._clear_render("Error selecting trials.")
-
-        apply_ok = (self.current_display_index == -1 and num_valid > 0)
-        if self.ui:
-            self.ui.artifact_panel.apply_button.setEnabled(apply_ok)
-
-        if self.current_display_index == -1: # Modo Promedio
-            if num_valid == 0:
-                print(f"{LOGP} Info: All trials discarded.")
-                self._reset_state()
-                return self._clear_render("All trials discarded.")
-            if valid_cols is None: 
-                return self._clear_render("Error getting valid trials.")
-                
-            data = np.nanmean(valid_cols, axis=1)
-            title = f"Average ({num_valid} Valid) - {current_td.channel_name}"
-            status = f"Viewing Average / {num_valid} Valid ({self.total_original_trials} Total)"
+            raise RuntimeError("DataStore missing.")
+        sd = store.get_active_signal()
+        if not isinstance(sd, SignalDataset):
+            raise RuntimeError("No active signal selected.")
+        sig_name = getattr(sd, "name", None) or getattr(sd, "signal_name", None) or getattr(sd, "id", None)
+        if not sig_name and hasattr(sd, "get_name"):
+            sig_name = sd.get_name()
+        if not sig_name:
+            raise RuntimeError("Active Signal has no name.")
+        return sd, sig_name
         
-        else: # Modo Individual
-            try:
-                orig_idx = self.valid_indices[self.current_display_index]
-                data = current_td.trials[:, orig_idx]
-                suffix = " (mod)" if orig_idx in self.modified_indices else ""
-                title = f"Trial {orig_idx + 1} - {current_td.channel_name}"
-                status = f"Viewing Valid {self.current_display_index+1}/{num_valid} (Orig. {orig_idx+1}{suffix}) / {self.total_original_trials} Total"
-            except Exception as e:
-                print(f"{LOGP} Error accessing trial: {e}. Resetting.")
-                self._reset_state()
-                self._load_and_display_trials() 
-                return
+    def _get_current_channel_name(self, sd: SignalDataset) -> str:
+        """
+        Devuelve el nombre de canal a usar para get_active_trials.
+        """
+        # 1) último TrialDataset
+        try:
+            tds = getattr(sd, "trials_dataset", None)
+            if tds and len(tds) > 0:
+                last_td = tds[-1]
+                ch = getattr(last_td, "channel_name", None)
+                if ch:
+                    return str(ch)
+        except Exception:
+            pass
+
+        # 2) lista de nombres conocida
+        try:
+            names = getattr(sd, "channel_names", None)
+            if names and len(names) > 0:
+                return str(names[0])
+        except Exception:
+            pass
+
+        # 3) fallback si hay señales
+        sig = getattr(sd, "signals", None)
+        if sig is not None and getattr(sig, "shape", None) and sig.shape[0] > 0:
+            # si no hay nombres, asumimos "ch-1"
+            return "ch-1"
+
+        raise RuntimeError("No channel selected/found. Generate Trials first or select a channel.")
+
+
+    def _fetch_active_trials(self):
+        sd, sig_name = self._get_active_signal_and_name()
+        if not hasattr(sd, "get_active_trials"):
+            raise RuntimeError("SignalDataset.get_active_trials(...) not available.")
+
+        # NUEVO: resolver canal
+        channel_name = self._get_current_channel_name(sd)
+
+        # Llamada correcta (con canal)
+        result = sd.get_active_trials(sig_name, channel_name)
+
+        td = None; meta = {}
+        if isinstance(result, TrialDataset):
+            td = result
+        elif isinstance(result, (list, tuple)):
+            for it in result:
+                if isinstance(it, TrialDataset):
+                    td = it
+                elif isinstance(it, dict):
+                    meta.update(it)
+        elif isinstance(result, dict):
+            meta.update(result)
+            trials = meta.get("trials"); time_rel = meta.get("time_rel")
+            if trials is not None and time_rel is not None:
+                td = SimpleNamespace(
+                    trials=np.asarray(trials),
+                    time_rel=np.asarray(time_rel),
+                    channel_name=meta.get("channel_name", "Unknown"),
+                    metadata=meta,
+                )
+        if td is None:
+            raise RuntimeError("get_active_trials() returned an unsupported format.")
+
+        trials = np.asarray(td.trials)
+        time_rel = np.asarray(getattr(td, "time_rel", meta.get("time_rel", None)))
+        if time_rel is None:
+            raise RuntimeError("Active trials missing time_rel.")
+        if trials.ndim != 2:
+            raise RuntimeError(f"Active trials must be 2D. Got {trials.shape}.")
+
+        n_total = int(meta.get("total_trials", getattr(td, "total_trials", trials.shape[1])))
+        orig_idx = meta.get("orig_indices", getattr(td, "orig_indices", None))
+        if orig_idx is None:
+            orig_idx = list(range(trials.shape[1]))
+        else:
+            orig_idx = list(map(int, orig_idx))
+            
+        # NUEVO: usar channel_name resuelto si el resultado no lo trae
+        chan = getattr(td, "channel_name", meta.get("channel_name", channel_name))
+
+        return SimpleNamespace(
+            time_rel=time_rel,
+            trials=trials,
+            orig_indices=orig_idx,
+            channel_name=chan,
+            total_trials=n_total,
+        )
+
+    # --- Carga de Datos y Lógica de Ploteo ---
+    def _load_and_display_trials(self):
+        """Carga trials activos vía get_active_trials y muestra promedio o individual."""
+        print(f"{LOGP} _load_and_display_trials(). Index: {self.current_display_index}")
+        if not self.kernel:
+            return self._clear_render("Kernel missing.")
+        try:
+            active = self._fetch_active_trials()
+        except Exception as e:
+            msg = str(e)
+            print(f"{LOGP} fetch active trials error: {msg}")
+            self._reset_state()
+            # 3. Mensaje claro cuando aún no hay trials
+            if "No channel selected" in msg or "Generate Trials" in msg or "not available" in msg:
+                return self._clear_render("No trial data. Please generate Trials first (Preprocessing → Trials).")
+            return self._clear_render(msg)
+
+
+        t = np.asarray(active.time_rel)
+        trials = np.asarray(active.trials)          # (Ns, Tact)
+        orig_indices = list(active.orig_indices)    # mapeo a índices originales
+        total_trials = int(active.total_trials)
+        channel_name = active.channel_name
+
+        Tact = trials.shape[1]
+        if Tact == 0:
+            self._reset_state()
+            return self._clear_render("No active trials for this signal.")
+        if not (-1 <= self.current_display_index < Tact):
+            self.current_display_index = -1
+
+        # 4. Poblar valid_indices para navegación
+        self.valid_indices = list(range(Tact))
+        self.total_original_trials = int(total_trials) 
+
+        if self.ui:
+            self.ui.artifact_panel.apply_button.setEnabled(self.current_display_index == -1 and Tact > 0)
+
+        if self.current_display_index == -1:
+            y = np.nanmean(trials, axis=1)
+            title = f"Average ({Tact} Valid) - {channel_name}"
+            status = f"Viewing Average / {Tact} Valid ({total_trials} Total)"
+        else:
+            idx = self.current_display_index
+            y = trials[:, idx]
+            orig_idx = orig_indices[idx] if idx < len(orig_indices) else idx
+            title = f"Trial {orig_idx + 1} - {channel_name}"
+            status = f"Viewing Valid {idx + 1}/{Tact} (Orig. {orig_idx + 1}) / {total_trials} Total"
 
         if self.ui:
             self.ui.artifact_panel.trial_status_label.setText(status)
-        
-        # --- sanity check: t (tiempo) vs y (data) ---
-        if not isinstance(t, np.ndarray):
-            t = np.asarray(t)
-        if not isinstance(data, np.ndarray):
-            data = np.asarray(data)
 
-        if t.ndim != 1:
-            raise RuntimeError(f"time_rel debe ser 1D, recibido shape={t.shape}")
-        if data.ndim != 1:
-            raise RuntimeError(f"serie a graficar debe ser 1D, recibido shape={data.shape}")
-        if t.shape[0] != data.shape[0]:
-            # Intento de autocorrección común si las trials están transpuestas
-            # (samples, trials) es lo esperado. Si vino (trials, samples), avisamos.
-            raise RuntimeError(
-                f"Inconsistencia: len(t)={t.shape[0]} y len(y)={data.shape[0]}. "
-                "Revisa la forma de trials: se espera (samples, trials)."
-            )
-        # --- fin sanity check ---
+        if t.ndim != 1 or y.ndim != 1:
+            return self._clear_render(f"Invalid shapes: time={t.shape}, data={y.shape}")
+        if t.shape[0] != y.shape[0]:
+            return self._clear_render(f"Length mismatch: time={t.shape[0]}, data={y.shape[0]}")
 
-        self._plot_curve(t, data, title)
+        self._plot_curve(t, y, title)
 
     # --- Lógica de Visualización VTK ---
-
-    # --- INICIO SOLUCIÓN DEFINITIVA (V_FINAL) ---
     def _ensure_vtk(self):
         """ 
         Asegura que el interactor y la vista VTK existan y estén en el layout.
-        Esta versión restaura la interacción 2D correcta para EVITAR DEFORMACIÓN
-        y DESHABILITA el observador de mouse para EVITAR CRASH.
         """
         
-        # 1. Chequear si ya existe (lógica nuestra, pero es segura)
         if (self.vtk_interactor and self.vtk_view and 
             self.ui.plotArea.layout() and 
             self.ui.plotArea.layout().indexOf(self.vtk_interactor) != -1):
@@ -490,7 +513,6 @@ class ArtifactRemovePlugin(IPlugin):
         print(f"{LOGP} _ensure_vtk(): Setting up VTK...")
         
         try:
-            # 2. Lógica de layout (estilo FFT para robustez)
             self.vtk_interactor = QVTKRenderWindowInteractor(self.ui.plotArea)
             self.ui.plotArea.setLayout(QtWidgets.QVBoxLayout())
             self.ui.plotArea.layout().setContentsMargins(0, 0, 0, 0)
@@ -499,48 +521,29 @@ class ArtifactRemovePlugin(IPlugin):
 
             self.vtk_view = vtk.vtkContextView()
             
-            # LOG 1: Antes de SetRenderWindow
             print(f"{LOGP} DEBUG: Setting RenderWindow on vtkContextView.")
             self.vtk_view.SetRenderWindow(self.vtk_interactor.GetRenderWindow())
-            # LOG 2: Después de SetRenderWindow
             print(f"{LOGP} DEBUG: RenderWindow set. Setting background.")
             
             self.vtk_view.GetRenderer().SetBackground(vtk.vtkNamedColors().GetColor3d("WhiteSmoke"))
 
-            # 3. CORRECCIÓN DE DEFORMACIÓN/CRASH (Decisión Drástica):
-            # Se ha ELIMINADO la línea self.vtk_view.SetInteractor(self.vtk_interactor)
-            # para evitar la doble conexión y el conflicto de bucle de eventos que causaba el crash.
             print(f"{LOGP} Using QVTKRenderWindowInteractor directly.")
             
-            # --- INICIO DEL ARREGLO DE ZOOM (NO DEFORMANTE) ---
-            # Se obtiene el interactor de VTK para establecer el estilo 2D (Context).
-            # LOG 3: Antes de GetInteractor
             print(f"{LOGP} DEBUG: Attempting to get VTK Interactor.")
             interactor = self.vtk_interactor.GetRenderWindow().GetInteractor()
-            # LOG 4: Después de GetInteractor
             print(f"{LOGP} DEBUG: VTK Interactor object retrieved: {interactor is not None}")
             
             if interactor and not interactor.GetInteractorStyle():
-                # Esta es la línea crítica que asegura el zoom 2D correcto y la estabilidad.
-                # LOG 5: Antes de SetInteractorStyle
                 print(f"{LOGP} DEBUG: Setting vtkContextInteractorStyle.")
                 interactor.SetInteractorStyle(vtk.vtkContextInteractorStyle())
-                # LOG 6: Después de SetInteractorStyle
                 print(f"{LOGP} Explicitly set vtkContextInteractorStyle to fix zoom deformation and crash.")
-            # --- FIN DEL ARREGLO DE ZOOM ---
             
-            # 4. CORRECCIÓN DE CRASH:
-            # NO añadimos el observador de MouseMoveEvent.
             print(f"{LOGP} MouseMove observer is DISABLED to prevent interaction crash.")
             
-            # LOG 7: Antes de Initialize
             print(f"{LOGP} DEBUG: Calling Initialize.")
             self.vtk_interactor.Initialize()
-            # LOG 8: Después de Initialize
             print(f"{LOGP} DEBUG: Initialize finished.")
             
-            # Se elimina self.vtk_interactor.Start() para evitar conflicto con el bucle de eventos de Qt.
-            # self.vtk_interactor.Start() 
             print(f"{LOGP} VTK Initialized.")
             
         except Exception as e:
@@ -551,7 +554,6 @@ class ArtifactRemovePlugin(IPlugin):
                 lbl.setAlignment(QtCore.Qt.AlignCenter)
                 if self.ui.plotArea.layout():
                     self.ui.plotArea.layout().addWidget(lbl)
-    # --- FIN SOLUCIÓN DEFINITIVA (V_FINAL) ---
 
     def _cleanup_vtk_references(self):
        """ Limpia referencias VTK para evitar memory leaks. """
@@ -560,21 +562,6 @@ class ArtifactRemovePlugin(IPlugin):
        self.chart = None
        self.vtk_menu = None
        print(f"{LOGP} VTK references cleaned.")
-
-    # --- INICIO CORRECCIÓN CRASH ---
-    # La función _on_mouse_move está deshabilitada
-    # porque su observador fue eliminado en _ensure_vtk.
-    #
-    # def _on_mouse_move(self, style_obj, event):
-    #     """ Muestra coordenadas en la barra de estado. """
-    #     
-    #     try:
-    #         if style_obj.GetState() != 0:
-    #             return 
-    #         ...
-    #     except Exception as e:
-    #         print(f"{LOGP} Error in _on_mouse_move: {e}")
-    # --- FIN CORRECCIÓN CRASH ---
 
 
     def _plot_curve(self, t: np.ndarray, y: np.ndarray, title: str = ""):
@@ -593,15 +580,14 @@ class ArtifactRemovePlugin(IPlugin):
             scene.ClearItems()
             renderer = self.vtk_view.GetRenderer()
             
-            # CORRECCIÓN: Asegurarse de que los actores 2D (mensajes de texto) se limpien.
             renderer.GetActors2D().RemoveAllItems() 
             
-            # NUEVO: Forzar un renderizado inmediato para limpiar la caché visual del mensaje de texto.
+            # Corrección del mensaje persistente: forzar render después de limpiar actores 2D
             self.vtk_view.GetRenderWindow().Render() 
             
             renderer.SetBackground(vtk.vtkNamedColors().GetColor3d("WhiteSmoke"))
 
-            # --- limpiar datos y convertir a VTK de forma segura (Reemplazo Bloque 3) ---
+            # --- limpiar datos y convertir a VTK de forma segura (nps.numpy_to_vtk) ---
             finite_mask = np.isfinite(t) & np.isfinite(y)
             valid_mask = finite_mask.copy()
             
@@ -613,10 +599,9 @@ class ArtifactRemovePlugin(IPlugin):
             if n_points == 0:
                 raise RuntimeError("No hay puntos válidos para graficar (NaN/Inf).")
             
-            # Conversión segura a VTK (sin SetVoidArray)
-            vtk_t = nps.numpy_to_vtk(t_valid.astype(np.float64), deep=True)  # usa double para evitar overflow
+            vtk_t = nps.numpy_to_vtk(t_valid.astype(np.float64), deep=True)
             vtk_t.SetName("Time (s)")
-            vtk_y = nps.numpy_to_vtk(y_valid.astype(np.float64), deep=True)  # idem
+            vtk_y = nps.numpy_to_vtk(y_valid.astype(np.float64), deep=True)
             vtk_y.SetName("Amplitude")
 
             table = vtk.vtkTable()
@@ -637,17 +622,14 @@ class ArtifactRemovePlugin(IPlugin):
             axis_l = self.chart.GetAxis(vtk.vtkAxis.LEFT);   axis_l.SetTitle("Amplitude")
             axis_b.SetGridVisible(True); axis_l.SetGridVisible(True)
 
-            # Si los valores son absurdamente grandes, advierte en log
             max_abs = float(np.nanmax(np.abs(y_valid)))
             if not np.isfinite(max_abs) or max_abs > 1e12:
                 print(f"{LOGP} WARNING: amplitud muy grande (|y| max ≈ {max_abs:.3e}). Revisa unidades/escala de la señal.")
 
             self.chart.RecalculateBounds()
             print(f"{LOGP} _plot_curve: Plot '{title}' con {n_points} puntos válidos (carga segura).")
-            # --- FIN Reemplazo Bloque 3 ---
 
         except RuntimeError as re:
-            # Manejar el error de "No hay puntos válidos" o de inconsistencia de shape
             print(f"{LOGP} _plot_curve: Error al plotear (runtime): {re}")
             self.chart = None
             txt = vtk.vtkTextActor()
@@ -700,8 +682,6 @@ class ArtifactRemovePlugin(IPlugin):
             scene.ClearItems()
             renderer = self.vtk_view.GetRenderer()
             
-            # El actor de texto de carga se añade aquí, así que hay que asegurarse de que se borre.
-            # Ya lo estamos haciendo en _plot_curve y GetActors2D().RemoveAllItems() se encarga.
             renderer.GetActors2D().RemoveAllItems()
             
             renderer.SetBackground(vtk.vtkNamedColors().GetColor3d("WhiteSmoke"))
@@ -734,12 +714,9 @@ class ArtifactRemovePlugin(IPlugin):
                 if self.widget and self.widget.isVisible():
                     print(f"{LOGP} Event '{topic}' received. Coalescing update...")
 
-                    # En lugar de refrescar de inmediato, programamos un refresh único en 120 ms.
-                    # Esto evita múltiples renders seguidos cuando el kernel dispara varios eventos.
                     if hasattr(self, "_refresh_timer"):
                         self._refresh_timer.start()
                     else:
-                        # fallback si el timer aún no existe
                         self._reset_state()
                         if self.vtk_interactor and not self.vtk_interactor.isEnabled():
                             try:
@@ -799,5 +776,3 @@ class ArtifactRemovePlugin(IPlugin):
                 QtCore.QTimer.singleShot(50, self._force_render)
             except Exception as e:
                 print(f"{LOGP} _on_apply_error UI restore error: {e}")
-
-# --- FIN DEL ARCHIVO ---
