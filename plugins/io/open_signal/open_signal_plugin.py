@@ -1,6 +1,7 @@
 # plugins/io/open_signal/open_signal_plugin.py
 from pathlib import Path
 from PyQt5.QtWidgets import QMessageBox
+import traceback
 
 from PyQt5 import QtCore, QtWidgets
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
@@ -11,6 +12,7 @@ from core.plugins.meta import PluginMeta
 from core.plugins.vtk_context_menu import VTKContextMenu
 from core.services.data_store import DataStore
 from core.services.fileio import FileIOService
+from core.services.settingsService import SettingsService
 from core.services.signal_dataset import SignalDataset
 from core.vtk_adapters.adapters import dataset_to_vtk_table
 
@@ -24,6 +26,9 @@ class OpenSignalPlugin(IPlugin):
         super().__init__(meta)
         self.kernel = None
         self.mainwin = None
+        self.settings = SettingsService()
+
+        
 
         self.ui: Ui_OpenSignal | None = None
         self.vtk_interactor: QVTKRenderWindowInteractor | None = None
@@ -186,39 +191,72 @@ class OpenSignalPlugin(IPlugin):
 
     # ---------------- archivo / datos ----------------
     def _on_open_clicked(self):
+        # Recuperar última carpeta abierta desde la configuración
+        last_dir = self.settings.get("last_open_dir", str(Path.cwd()))
+
         fname, _ = QtWidgets.QFileDialog.getOpenFileName(
             self.ui,
             "Seleccionar archivo de señal",
-            "",
+            last_dir,
             "Señales (*.abf *.edf *.ebf *.mat);;Archivos ABF (*.abf);;Archivos EDF (*.edf);;Archivos EBF (*.ebf);;Archivos MAT (*.mat)"
         )
         if not fname:
             return
+        
+        # Guardar la carpeta seleccionada como última usada
+        self.settings.set("last_open_dir", str(Path(fname).parent))
 
         fileio: FileIOService | None = self.kernel.get_service("FileIO")
         if fileio is None:
             fileio = FileIOService()
             self.kernel.register_service("FileIO", fileio)
-
-        ext = Path(fname).suffix.lower()
-        if ext == ".abf":
-            ds = fileio.load_abf(fname)
-        elif ext == ".edf":
-            ds = fileio.load_edf(fname)
-        else:
-            if self.mainwin:
-                self.mainwin.statusBar().showMessage(f"Formato no soportado: {ext}", 4000)
-            return
-
+        
+        
         store: DataStore | None = self.kernel.get_service("DataStore")
         if store is None:
             store = DataStore()
             self.kernel.register_service("DataStore", store)
 
+        name_aux = Path(fname).name
+        if store.has(name_aux):
+            reply = QMessageBox.warning(
+                self.ui,
+                "Advertencia",
+                f"Ya existe una señal con el nombre '{name_aux}'.\n\n"
+                "Si continúa, se sobrescribirá la señal existente y se perderá el trabajo anterior.\n\n"
+                "¿Desea continuar?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply == QMessageBox.No:
+                if self.mainwin:
+                    self.mainwin.statusBar().showMessage("Carga cancelada por el usuario.", 4000)
+                return
+            
+
+        ext = Path(fname).suffix.lower()
+        try:
+            if ext == ".abf":
+                ds = fileio.load_abf(fname)
+            elif ext == ".edf":
+                ds = fileio.load_edf(fname)
+            elif ext == ".mat":
+                ds = fileio.load_mat(fname)
+            else:
+                if self.mainwin:
+                    self.mainwin.statusBar().showMessage(f"Formato no soportado: {ext}", 4000)
+                return
+        except Exception as e:
+            QMessageBox.warning(self.ui, "Error", f"Error abriendo el archivo {fname}\n{e}.")
+            self._log("_on_open_clicked error:", e)
+            traceback.print_exc()
+            return
+
+
         key = store.add_signal(ds, ds.name)
         self._log("Guardado en DataStore:", key)
-        self.kernel.emit_event("signal_added", {"key": key})
         store.set_active_signal(key)
+        self.kernel.emit_event("signal_added", {"key": key})
 
         self._set_dataset(ds)
 

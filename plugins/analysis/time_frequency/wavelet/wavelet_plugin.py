@@ -8,15 +8,14 @@ from scipy.interpolate import interp1d
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
+from core.plugins.vtk_context_menu import VTKContextMenu
 from core.services.signal_dataset import SignalDataset
-
-# Importaciones de tu proyecto (mantener)
 from core.services.data_store import DataStore
 from plugins.analysis.time_frequency.wavelet.wavelet_plugin_ui import Ui_Wavelet
 
 
 class Wavelet_plugin(IPlugin):
-    """Plugin de análisis tiempo-frecuencia (Wavelet CWT con PyWavelets + visualización VTK)."""
+    """Time-Frequency Analysis Plugin (Wavelet CWT with PyWavelets + VTK Visualization)"""
 
     def __init__(self, meta: PluginMeta):
         super().__init__(meta)
@@ -25,39 +24,49 @@ class Wavelet_plugin(IPlugin):
         self.vtk_widget = None
         self.renwin = None
         self.started = False
+        self.kernel = None
         self.ui = None
+        self.vtk_menu = None
         self._context_view = None
         self._vtk_renderer = None
+    # end def
 
     # =====================================================
-    # === Ciclo de vida del plugin
+    # === Plugin lifecycle
     # =====================================================
     def initialize(self, kernel):
-        print("Inicializando Wavelet")
+        print("Initializing Wavelet")
+    # end def
 
     def process(self, data: any):
-        if self.mainwin:
-            try:
-                self.mainwin.statusBar().showMessage(f"Wavelet procesó: {data}", 3000)
-            except Exception:
-                pass
+        if self.vtk_widget:
+            self.vtk_widget.Enable()
+
+        if self.vtk_widget and self.vtk_widget.GetRenderWindow():
+            interactor = self.vtk_widget.GetRenderWindow().GetInteractor()
+            interactor.Enable()
+    # end def
 
     def start(self, kernel):
+        self.kernel = kernel
         self.mainwin = kernel.get_service("MainWindow")
         if self.mainwin:
             self.started = True
+    # end def
 
     def stop(self):
         if self.vtk_widget and self.vtk_widget.GetRenderWindow():
             interactor = self.vtk_widget.GetRenderWindow().GetInteractor()
             if interactor:
                 interactor.Disable()
+    # end def
 
     def _log(self, *args):
         print("[Wavelet]", *args)
+    # end def
 
     # =====================================================
-    # === Creación del widget UI + VTK
+    # === Create widget UI + VTK
     # =====================================================
     def get_widget(self, parent=None):
         if self.widget is not None:
@@ -68,7 +77,20 @@ class Wavelet_plugin(IPlugin):
         self.ui = Ui_Wavelet()
         self.ui.setupUi(self.widget)
 
-        # --- Configuración de interfaz ---
+        self.init_controls()
+        self.ensure_vtk()
+
+        return self.widget
+    # end def
+
+    # =====================================================
+    # === Utilities
+    # =====================================================
+    def init_controls(self):
+        self.ui.splitter.setStretchFactor(0, 0)
+        self.ui.splitter.setStretchFactor(1, 1)
+        self.ui.splitter.widget(1).setMaximumWidth(300)
+
         self.ui.sampleDensitySpinBox.setRange(1, 10000)
         self.ui.sampleDensitySpinBox.setValue(1000)
         self.ui.highFrequencySpinBox.setRange(0, 10000)
@@ -90,62 +112,76 @@ class Wavelet_plugin(IPlugin):
             lambda state: self.ui.scaleComboBox.setEnabled(state == Qt.Checked)
         )
 
-        # --- Contenedor VTK ---
-        vtk_layout = QVBoxLayout(self.ui.frame)
-        vtk_layout.setContentsMargins(0, 0, 0, 0)
-        self.vtk_widget = QVTKRenderWindowInteractor(self.ui.frame)
-        vtk_layout.addWidget(self.vtk_widget)
-
-        self.renwin = self.vtk_widget.GetRenderWindow()
-        self._context_view = vtk.vtkContextView()
-        self._context_view.SetRenderWindow(self.renwin)
-        self._context_view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
-
         self.ui.createWaveletButton.clicked.connect(self.on_create_wavelet)
-        return self.widget
+    # end def
 
-    # =====================================================
-    # === Utilidades
-    # =====================================================
     def ensure_vtk(self):
-        """Asegura que la vista 2D de VTK esté correctamente inicializada."""
-        if not self.vtk_widget or not self.renwin:
-            return
-        if not self._context_view:
-            self._context_view = vtk.vtkContextView()
-            self._context_view.SetRenderWindow(self.renwin)
-        renderer = self._context_view.GetRenderer()
-        renderer.SetBackground(0.98, 0.98, 0.98)
-        self._vtk_renderer = renderer
+        """Initialize VTK components for rendering."""
+        try:
+            if self.vtk_widget and self._context_view and self.renwin:
+                return
+
+            # --- Create VTK Widget ---
+            if not self.vtk_widget:
+                vtk_layout = QVBoxLayout(self.ui.frame)
+                vtk_layout.setContentsMargins(0, 0, 0, 0)
+
+                self.vtk_widget = QVTKRenderWindowInteractor(self.ui.frame)
+                vtk_layout.addWidget(self.vtk_widget)
+
+            # --- Create Render Window ---
+            if not self.renwin:
+                self.renwin = self.vtk_widget.GetRenderWindow()
+
+            # --- Create Context View ---
+            if not self._context_view:
+                self._context_view = vtk.vtkContextView()
+                self._context_view.SetRenderWindow(self.renwin)
+
+            # --- Config renderer ---
+            renderer = self._context_view.GetRenderer()
+            renderer.SetBackground(0.98, 0.98, 0.98)
+            self._vtk_renderer = renderer
+
+            # --- Initialize interactor ---
+            interactor = self.vtk_widget.GetRenderWindow().GetInteractor()
+            if interactor and not interactor.GetInitialized():
+                interactor.Initialize()
+            # end if
+
+        except Exception as e:
+            self._log("Error ensure_vtk:", e)
+    # end def
 
     def _get_active_signal(self) -> SignalDataset | None:
-        """Devuelve la señal activa."""
+        """ Returns active signal from DataStore """
         try:
             store: DataStore | None = self.mainwin.kernel.get_service("DataStore")
             if store is None:
-                QMessageBox.warning(self.widget, "Error", "No se encontró el DataStore.")
+                QMessageBox.warning(self.widget, "Error", "DataStore Not Found.")
                 return
             ds = store.get_active_signal() if store else None
             return ds
         except Exception as e:
-            print("[Wavelet] Error al obtener señal:", e)
+            print("[Wavelet] Error getting signal", e)
             return None
+    # end def
 
     # =====================================================
-    # === Lógica principal: CWT + Render
+    # === Main Logic: CWT + Render
     # =====================================================
     def on_create_wavelet(self):
-        """Carga la señal activa, calcula el CWT y renderiza el escalograma."""
+        """ Load active signal, compute CWT wavelet and render scalogram in VTK """
         active_signal = self._get_active_signal()
         if active_signal is None:
-            QMessageBox.warning(self.widget, "Error", "No hay señal activa.")
+            QMessageBox.warning(self.widget, "Error", "No active signal found.")
             return
 
         channel_name = active_signal.channel_names[0]
         trials = active_signal.get_active_trials(active_signal.name, channel_name)
         t = trials.time_rel
         if t is None or len(t) < 2:
-            QMessageBox.warning(self.widget, "Error", "No hay información de tiempo suficiente.")
+            QMessageBox.warning(self.widget, "Error", "No enough information on time.")
             return
 
         try:
@@ -163,7 +199,6 @@ class Wavelet_plugin(IPlugin):
         normalize = self.ui.normalizeCheckBox.isChecked()
         scaled = self.ui.scaleCheckBox.isChecked()
         norm_method = self.ui.normalizeComboBox.currentText().lower()
-        # scale_method = self.ui.scaleComboBox.currentText().lower() # No se usa
 
         scalogram, times, freqs = self.compute_wavelet(sig, fs_calculado, fs, fmin, fmax, cycles)
 
@@ -171,22 +206,20 @@ class Wavelet_plugin(IPlugin):
             scalogram = self.normalize_tf(scalogram, norm_method)
         
         if scaled:
-            # Remuestrea el escalograma y obtiene las nuevas frecuencias logarítmicas
             scalogram, freqs = self._scale_log(scalogram, freqs)
 
-        self.ensure_vtk()
         self.render_scalogram(times, freqs, scalogram, "Scalogram Wavelet (Morlet)", scaled)
+    # end def
 
     # =====================================================
-    # === Cálculo del Wavelet
+    # === Wavelet Calculation
     # =====================================================
     def compute_wavelet(self, sig, fs_calculado, fs, fmin, fmax, num_cycles):
-        """Calcula la transformada continua de wavelet (Morlet compleja)."""
+        """Compute the Continuous Wavelet Transform (CWT) using Morlet wavelet."""
         freq_seg = 2 * int(fmax - fmin)
         factor = int(round(fs_calculado / fs))
         sig = sig[::factor]
 
-        # Las frecuencias se generan en orden descendente ([::-1])
         freq_axis = np.linspace(fmin, fmax, freq_seg)[::-1] 
         wavelet = f"cmor{num_cycles}-1.0"
         central_freq = pywt.central_frequency(wavelet)
@@ -197,12 +230,13 @@ class Wavelet_plugin(IPlugin):
         time_axis = np.arange(len(sig)) / fs
 
         return scalogram, time_axis, freq_axis
+    # end def
 
     # =====================================================
-    # === Normalización y Escalado
+    # === Normalization and Scaling
     # =====================================================
     def normalize_tf(self, tf, method="z-score"):
-        """Normaliza el mapa tiempo-frecuencia."""
+        """Normalize the time-frequency map."""
         base_mean = np.mean(tf, axis=1, keepdims=True)
         base_std = np.std(tf, axis=1, ddof=0, keepdims=True)
         base_min = np.min(tf)
@@ -221,10 +255,11 @@ class Wavelet_plugin(IPlugin):
             denom = base_max - base_min
             return (tf - base_min) / denom
         else:
-            raise ValueError("Método no reconocido.")
+            raise ValueError("Not recognized method.")
+    # end def
 
     def _scale_log(self, scalogram, freqs):
-        """Remuestrea el escalograma para que las filas estén espaciadas logarítmicamente."""
+        """Resample the scalogram so that rows are spaced logarithmically."""
         freqs_numeric = np.asarray(freqs, dtype=np.float64)
         
         fmin = np.min(freqs_numeric[freqs_numeric > 0])
@@ -243,20 +278,18 @@ class Wavelet_plugin(IPlugin):
         freqs_orig_sorted = np.sort(freqs_numeric)
         
         for i in range(scalogram.shape[1]):
-            # data_col: Se debe desinvertir el scalogram (filas) para que se alinee con freqs_orig_sorted
             data_col = np.flipud(scalogram[:, i]) 
             
             interp_func = interp1d(freqs_orig_sorted, data_col, kind='linear', fill_value='extrapolate')
             scalogram_new[:, i] = interp_func(freqs_new)
-            
-        # freqs_new está ordenado de forma ascendente (fmin a fmax), reflejando las nuevas filas.
+
         return scalogram_new, freqs_new
+    # end def
 
     def _get_log_ticks_coords(self, f_min_log, f_max_log):
         start = np.floor(f_min_log)
         end = np.ceil(f_max_log)
-        
-        # Genera las coordenadas logarítmicas de los ticks (ej: 0.0, 0.5, 1.0...)
+
         tick_coords = np.arange(start, end + 0.5, 0.5) 
         tick_coords = tick_coords[(tick_coords >= f_min_log) & (tick_coords <= f_max_log)]
             
@@ -266,10 +299,10 @@ class Wavelet_plugin(IPlugin):
             labels.append(f"{label_val:.1f}") 
                 
         return tick_coords, labels
-        # end def
+    # end def
 
     # =====================================================
-    # === Render escalograma 2D en VTK
+    # === Render 2D scalogram in VTK
     # =====================================================
     def render_scalogram(self, t, freqs, scalogram, title="Scalogram", log_scale=False):
         if not self.vtk_widget:
@@ -279,7 +312,7 @@ class Wavelet_plugin(IPlugin):
         scene = context_view.GetScene()
         scene.ClearItems()
         
-        # === 1. Preprocesamiento y Asignación de Límites ===
+        # --- Preprocessing and Assignment ---
         n_freqs, n_times = scalogram.shape
         t0, t_end = float(t[0]), float(t[-1])
         dt = (t_end - t0) / n_times if n_times > 1 else 1.0
@@ -288,15 +321,15 @@ class Wavelet_plugin(IPlugin):
             Z = np.nan_to_num(scalogram.astype(np.float32))
             ax_title = "Frequency (Hz) - Log"
             
-            # Calcular los límites en escala LOG10
-            f0_orig = float(freqs[0]) if freqs[0] > 0 else 1e-6 # Asegurar > 0
+            # Calculate limits in LOG10 scale
+            f0_orig = float(freqs[0]) if freqs[0] > 0 else 1e-6
             f_end_orig = float(freqs[-1])
             
             f0_coord = np.log10(f0_orig)
             f_end_coord = np.log10(f_end_orig)
             df_coord = (f_end_coord - f0_coord) / n_freqs if n_freqs > 1 else 1.0
             
-            # VTK usa coordenadas LOG10
+            # VTK uses LOG10 coordinates directly
             f0_range, f_end_range = f0_coord, f_end_coord
             df_spacing = df_coord
 
@@ -304,12 +337,12 @@ class Wavelet_plugin(IPlugin):
             Z = np.flipud(np.nan_to_num(scalogram.astype(np.float32)))
             ax_title = "Frequency (Hz)"
             
-            # Usar valores de frecuencia reales (lineales)
+            # Ranges in linear scale
             f0_range = float(freqs[0])
             f_end_range = float(freqs[-1])
             df_spacing = (f_end_range - f0_range) / n_freqs if n_freqs > 1 else 1.0
             
-        # === 2. Configuración de vtkImageData ===
+        # --- Configure vtkImageData ---
         img = vtk.vtkImageData()
         img.SetDimensions(n_times, n_freqs, 1)
         img.SetSpacing(dt, df_spacing, 1.0)
@@ -322,29 +355,28 @@ class Wavelet_plugin(IPlugin):
                 img.SetScalarComponentFromFloat(i, j, 0, 0, Z[j, i])
         img.Modified()
 
-        # Calcula límites y LUT
+        # --- Calculate limits and LUT ---
         vmin, vmax = np.min(Z), np.max(Z)
         vmin, vmax = np.round([vmin, vmax], 2)
         lut = self._build_lut("viridis", vmin, vmax)
         
-        # Configuración del Chart
+        # --- Create 2D Chart ---
         chart = vtk.vtkChartHistogram2D()
         chart.SetInputData(img, 0)
         chart.SetTransferFunction(lut)
 
         ax_bottom, ax_left = chart.GetAxis(vtk.vtkAxis.BOTTOM), chart.GetAxis(vtk.vtkAxis.LEFT)
+        ax_bottom.SetBehavior(0)
         ax_bottom.SetTitle("Time (s)")
-        ax_bottom.SetRange(t0, t_end) # Rango de tiempo siempre lineal
+        ax_bottom.SetRange(t0, t_end)
         
-        # --- 3. Configuración del Eje Y ---
+        # --- Y Axis Configuration ---
         ax_left.SetTitle(ax_title)
+        ax_left.SetBehavior(0)  
         ax_left.SetLogScale(False)
-        ax_left.SetRange(f0_range, f_end_range) # Usar rango (logarítmico o lineal)
+        ax_left.SetRange(f0_range, f_end_range)
 
         if log_scale:
-            # Etiquetado logarítmico (Coordenadas ya están en log10)
-            
-            # LLAMADA CORREGIDA: Pasar los límites LOG10 y usar la función correcta
             tick_values, tick_labels = self._get_log_ticks_coords(f0_range, f_end_range) 
             
             tick_positions_array = vtk.vtkDoubleArray()
@@ -366,8 +398,18 @@ class Wavelet_plugin(IPlugin):
         ax_left.GetLabelProperties().SetColor(0, 0, 0)
 
         scene.AddItem(chart)
+        
+        # --- Contextual menu ---
+        try:
+            self.vtk_menu = VTKContextMenu(chart, self.vtk_widget, parent=self.widget)
+            self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
+
+        except Exception as e:
+            QMessageBox.information(self.widget, "Menu", "Error creating contextual map\n" + str(e))
+            
         context_view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
         context_view.GetRenderWindow().Render()
+    # end def
 
     # =====================================================
     # === Colormap LUT
@@ -382,19 +424,18 @@ class Wavelet_plugin(IPlugin):
         for i in range(N):
             t = i / (N - 1)
 
-            # --- Jet clásico suavizado ---
+            # --- JET ---
             if t < 0.125:
-                r, g, b = 0, 0, 0.5 + 0.5 * (t / 0.125)      # azul oscuro → azul brillante
+                r, g, b = 0, 0, 0.5 + 0.5 * (t / 0.125)      # bright blue
             elif t < 0.375:
-                r, g, b = 0, (t - 0.125) / 0.25, 1           # azul → cyan
+                r, g, b = 0, (t - 0.125) / 0.25, 1           # cyan
             elif t < 0.625:
-                r, g, b = (t - 0.375) / 0.25, 1, 1 - (t - 0.375) / 0.25  # cyan → verde → amarillo
+                r, g, b = (t - 0.375) / 0.25, 1, 1 - (t - 0.375) / 0.25  # green
             elif t < 0.875:
-                r, g, b = 1, 1 - (t - 0.625) / 0.25, 0        # amarillo → rojo
+                r, g, b = 1, 1 - (t - 0.625) / 0.25, 0        # yellow
             else:
-                r, g, b = 1, 0.15 * (1 - (t - 0.875) / 0.125), 0  # rojo brillante, sin oscurecer
+                r, g, b = 1, 0.15 * (1 - (t - 0.875) / 0.125), 0  # bright red
 
-            # Suavizado leve de saturación
             r = 0.9 * r + 0.03
             g = 0.9 * g + 0.03
             b = 0.9 * b + 0.03
@@ -402,6 +443,7 @@ class Wavelet_plugin(IPlugin):
             lut.SetTableValue(i, r, g, b, 1.0)
 
         return lut
+    # end def
 
     # =====================================================
     # === Convertir LUT a CTF
@@ -421,22 +463,5 @@ class Wavelet_plugin(IPlugin):
             x = vmin + (vmax - vmin) * (i / (n - 1))
             ctf.AddRGBPoint(x, *rgba[:3])
         return ctf
-
-
-    def _get_active_signal(self) -> SignalDataset | None:
-        """Devuelve la señal activa"""
-        try:
-            store: DataStore | None = self.mainwin.kernel.get_service("DataStore")
-            if store is None:
-                QMessageBox.warning(self.widget, "Error", "No se encontró el DataStore.")
-                return
-            ds = store.get_active_signal() if store else None
-            if not ds:
-                print("[Average] No hay señal activa registrada en el DataStore.")
-                return
-
-            self._log("_get_active_signal:", "ok" if ds else "None")
-            return ds
-        except Exception as e:
-            self._log("_get_active_signal error:", e)
-            return None
+    # end def
+# end class

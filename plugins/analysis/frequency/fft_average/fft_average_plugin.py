@@ -154,12 +154,17 @@ class Fft_average_plugin(IPlugin):
             QMessageBox.warning(self.widget, "Error", "No se encontró el DataStore.")
             return None, None, None
 
-        self.active_signal = store.get_active_signal()
-        if not self.active_signal or not getattr(self.active_signal, "trials_dataset", None):
-            self._log("No hay señal activa o no tiene TrialDataset.")
+        self.active_signal: SignalDataset = store.get_active_signal()
+        if self.active_signal is None:
+            QMessageBox.warning(self.widget, "Sin señal activa", "No hay una señal activa seleccionada.")
             return None, None, None
 
-        td = self.active_signal.trials_dataset[-1] 
+        td = self.active_signal.get_active_trials(self.active_signal.name, None)
+
+        if td is None or td.trials.size == 0:
+            QMessageBox.warning(self.widget, "Error", f"No hay trials activos para {self.active_signal.name}.")
+            return None, None, None
+
         fs = float(getattr(td, "sampling_rate", 0.0))
         X  = np.asarray(getattr(td, "trials", None), dtype=np.float64)  # (Ns, T)
         ch = getattr(td, "channel_name", "")
