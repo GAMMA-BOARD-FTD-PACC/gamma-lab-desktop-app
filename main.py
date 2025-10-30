@@ -2,6 +2,7 @@
 from pathlib import Path
 import sys
 from PyQt5.QtWidgets import QApplication
+import resources_rc
 
 from core.kernel import Kernel
 from app.view.main_window import MainWindow
