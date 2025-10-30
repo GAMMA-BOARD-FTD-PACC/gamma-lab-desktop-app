@@ -3,5 +3,8 @@
         <file>assets/icons/input/up-btn.png</file>
         <file>assets/icons/input/down-btn.png</file>
         <file>assets/icons/input/check-btn.png</file>
+
+        <file>assets/fonts/Inter.ttf</file>
+        <file>assets/fonts/Rubik.ttf</file>
     </qresource>
 </RCC>
