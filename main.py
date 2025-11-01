@@ -2,6 +2,8 @@
 from pathlib import Path
 import sys
 from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QFontDatabase, QFont
+import resources_rc
 
 from core.kernel import Kernel
 from app.view.main_window import MainWindow
@@ -14,8 +16,14 @@ from core.services.fileio import FileIOService
 
 def main():
     app = QApplication(sys.argv)
+   
+    fid = QFontDatabase.addApplicationFont(":/assets/fonts/Inter.ttf")
+    families = QFontDatabase.applicationFontFamilies(fid)
+    default_family = families[0] if families else "Inter"
+    
+    app.setFont(QFont(default_family, 10))
     app.setStyleSheet(loadStyleSheet())
-
+    
     kernel = Kernel()
 
     # 1) Servicios core
