@@ -28,9 +28,7 @@ class Fft_average_plugin(IPlugin):
 
         self.active_signal: SignalDataset | None = None
         
-    def initialize(self, kernel):
-        self.kernel = kernel
-        self._log("initialize()")
+
 
     def start(self, kernel):
         self._log("start() - obteniendo MainWindow")
@@ -73,9 +71,6 @@ class Fft_average_plugin(IPlugin):
                 pass
         self._log(msg)
         
-    def _log(self, *args):
-        print("[FFT-AVERAGE]", *args)
-        sys.stdout.flush()
 
     ## === UI === ##
     def _wire_ui(self):

@@ -1,5 +1,5 @@
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QMessageBox
+from PyQt5.QtWidgets import QWidget, QVBoxLayout
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 import vtk
 import numpy as np
@@ -19,12 +19,8 @@ class Wavelet_plugin(IPlugin):
 
     def __init__(self, meta: PluginMeta):
         super().__init__(meta)
-        self.mainwin = None
-        self.widget = None
         self.vtk_widget = None
         self.renwin = None
-        self.started = False
-        self.kernel = None
         self.ui = None
         self.vtk_menu = None
         self._context_view = None
@@ -34,9 +30,6 @@ class Wavelet_plugin(IPlugin):
     # =====================================================
     # === Plugin lifecycle
     # =====================================================
-    def initialize(self, kernel):
-        print("Initializing Wavelet")
-    # end def
 
     def process(self, data: any):
         if self.vtk_widget:
@@ -61,10 +54,6 @@ class Wavelet_plugin(IPlugin):
                 interactor.Disable()
     # end def
 
-    def _log(self, *args):
-        print("[Wavelet]", *args)
-    # end def
-
     # =====================================================
     # === Create widget UI + VTK
     # =====================================================
@@ -76,6 +65,7 @@ class Wavelet_plugin(IPlugin):
         self.widget = QWidget(parent)
         self.ui = Ui_Wavelet()
         self.ui.setupUi(self.widget)
+        self.alerts.parent = self.widget
 
         self.init_controls()
         self.ensure_vtk()
@@ -153,35 +143,23 @@ class Wavelet_plugin(IPlugin):
             self._log("Error ensure_vtk:", e)
     # end def
 
-    def _get_active_signal(self) -> SignalDataset | None:
-        """ Returns active signal from DataStore """
-        try:
-            store: DataStore | None = self.mainwin.kernel.get_service("DataStore")
-            if store is None:
-                QMessageBox.warning(self.widget, "Error", "DataStore Not Found.")
-                return
-            ds = store.get_active_signal() if store else None
-            return ds
-        except Exception as e:
-            print("[Wavelet] Error getting signal", e)
-            return None
-    # end def
+    
 
     # =====================================================
     # === Main Logic: CWT + Render
     # =====================================================
     def on_create_wavelet(self):
         """ Load active signal, compute CWT wavelet and render scalogram in VTK """
-        active_signal = self._get_active_signal()
-        if active_signal is None:
-            QMessageBox.warning(self.widget, "Error", "No active signal found.")
+        if self.get_active_signal() is None:
             return
 
-        channel_name = active_signal.channel_names[0]
-        trials = active_signal.get_active_trials(active_signal.name, channel_name)
+        trials = self.get_active_trials()
+        if trials is None:
+            return
+        
         t = trials.time_rel
         if t is None or len(t) < 2:
-            QMessageBox.warning(self.widget, "Error", "No enough information on time.")
+            self.alerts.error(f"No enough information on time. {sig.name}.")
             return
 
         try:
@@ -405,7 +383,8 @@ class Wavelet_plugin(IPlugin):
             self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
 
         except Exception as e:
-            QMessageBox.information(self.widget, "Menu", "Error creating contextual map\n" + str(e))
+            self.alerts.info(f"Error creating contextual map\n {str(e)}", "Contextal map")
+
             
         context_view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
         context_view.GetRenderWindow().Render()

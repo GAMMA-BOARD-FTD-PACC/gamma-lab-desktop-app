@@ -34,10 +34,6 @@ class Wavelet_average_plugin(IPlugin):
     # =====================================================
     # === Lifecycle
     # =====================================================
-    def initialize(self, kernel):
-        """Initialize plugin (called by kernel)."""
-        self._log("Initializing Wavelet Average plugin")
-    # end def
 
     def process(self, data: any):
         """Optional hook; show status message if available."""
@@ -66,10 +62,6 @@ class Wavelet_average_plugin(IPlugin):
                 self._log("VTK interactor disabled.")
     # end def
 
-    def _log(self, *args):
-        """Simple logger (consistent with Wavelet plugin)."""
-        print("[Wavelet_Average]", *args)
-    # end def
 
     # =====================================================
     # === UI + VTK creation

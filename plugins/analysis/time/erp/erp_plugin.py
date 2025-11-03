@@ -1,6 +1,6 @@
 import os
 from PyQt5 import QtWidgets, QtCore
-from PyQt5.QtWidgets import QListWidgetItem, QMessageBox
+from PyQt5.QtWidgets import QListWidgetItem
 import vtk
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 import numpy as np
@@ -18,14 +18,9 @@ from core.vtk_adapters.adapters import trials_matrix_to_vtk_table
 class Erp_plugin(IPlugin):
     def __init__(self, meta: PluginMeta):
         super().__init__(meta)
-        self.mainwin = None
-        self.widget = None
         self.vtk_widget = None
         self.renwin = None
-        self.started = False
         self.td = None
-        self.started = False
-        self.sig = None
         self.ch_name = None
         
         # VTK widgets
@@ -34,9 +29,6 @@ class Erp_plugin(IPlugin):
         self.view_top: vtk.vtkContextView | None = None
         self.view_bot: vtk.vtkContextView | None = None
 
-    def initialize(self, kernel):
-        self.kernel = kernel
-        print("Inicializando ERP")
 
     def process(self, data: any):
         print(f"ERP recibió datos: {data}")
@@ -76,25 +68,13 @@ class Erp_plugin(IPlugin):
         if self.widget is None:
             self.ui = Ui_ErpPlot(parent)
             self.widget = self.ui
+            self.alerts.parent = self.widget
             self.ensure_vtk()
             self._wire_ui()
         else:
             self.widget.setParent(parent)
         return self.widget
 
-    # ----------------- logging/helpers -----------------
-    def _log(self, *args):
-        print("[ERP]", *args)
-
-    def _notify(self, msg: str):
-        try:
-            if self.mainwin:
-                self.mainwin.statusBar().showMessage(msg, 3000)
-                return
-        except Exception:
-            pass
-        self._log(msg)
-    
     # ===== VTK =====
     def ensure_vtk(self):
         # Top (butterfly)
@@ -139,34 +119,24 @@ class Erp_plugin(IPlugin):
         if not self.mainwin:
             return None, None, None
 
-        store = self.mainwin.kernel.get_service("DataStore")
-        if store is None:
-            QMessageBox.warning(self.widget, "Error", "No se encontró el DataStore.")
+        if self.get_active_signal() is None:
             return None, None, None
 
-        self.sig: SignalDataset | None = store.get_active_signal()
-        if self.sig is None:
-            QMessageBox.warning(self.widget, "Sin señal activa", "No hay una señal activa seleccionada.")
+        td = self.get_active_trials()
+        if td is None:
             return None, None, None
 
-        td: TrialDataset = self.sig.get_active_trials(self.sig.name, None)
-
-        if td is None or td.trials.size == 0:
-            QMessageBox.warning(self.widget, "Sin trials", "La señal activa no tiene TrialDatasets.")
-            return None, None, None
-
-        #td: TrialDataset = self.sig.trials_dataset[-1]  # último TD
+        #td: TrialDataset = self.active_signal.trials_dataset[-1]  # último TD
         if not hasattr(td, "time_rel") or not hasattr(td, "trials"):
-            QMessageBox.warning(self.widget, "Trials incompletos",
-                                "El TrialDataset no contiene 'time_rel' o 'trials'.")
+            self.alerts.warning("El TrialDataset no contiene 'time_rel' o 'trials'.", "Trials incompletos")
             return None, None, None
 
         t = np.asarray(td.time_rel, dtype=float)           # (Ns,)
         M = np.asarray(td.trials, dtype=float)             # (Ns, T)
 
         if M.ndim != 2 or t.ndim != 1:
-            QMessageBox.warning(self.widget, "Dimensiones inválidas",
-                                "El TrialDataset tiene dimensiones no válidas.")
+            self.alerts.warning("El TrialDataset tiene dimensiones no válidas.", "Dimensiones inválidas")
+
             return None, None, None
 
         if M.shape[0] == t.size:
@@ -174,8 +144,8 @@ class Erp_plugin(IPlugin):
         elif M.shape[1] == t.size:
             pass     # ya está como (T, Ns)
         else:
-            QMessageBox.warning(self.widget, "Inconsistencia",
-                                "time_rel no coincide con trials.")
+            self.alerts.warning("time_rel no coincide con trials.", "Inconsistencia")
+
             return None, None, None
 
         return t, M, td
@@ -235,7 +205,6 @@ class Erp_plugin(IPlugin):
     def _on_plot_clicked(self):
         t, M, td = self._load_trials_from_store()
         if t is None or M is None:
-            self._notify("No se encontró TrialDataset.")
             return
 
         n_trials, n_samples = M.shape
@@ -319,10 +288,9 @@ class Erp_plugin(IPlugin):
         # chart.GetAxis(vtk.vtkAxis.LEFT).SetTitle("Amplitude")
 
         try:
-            self.vtk_menu = VTKContextMenu(chart, self.vtk_top, self.sig.name,self.ch_name,self.meta.id, parent=self.widget)
-            #self.vtk_menu.add_action("Exportar datos", self._on_export_butterfly)
+            self.vtk_menu = VTKContextMenu(chart, self.vtk_top, self.active_signal.name,self.ch_name,self.meta.id, parent=self.widget)
         except Exception as e:
-            QMessageBox.information(self.widget, "Menú contextal", "Error creando el menú contextual.\n" + str(e))
+            self.alerts.info(f"Error creating contextual menu\n {str(e)}", "Contextual menu")
 
 
         self.view_top.GetRenderWindow().Render()
@@ -417,10 +385,10 @@ class Erp_plugin(IPlugin):
         print("======================\n")
         
         try:
-            self.vtk_menu_bot = VTKContextMenu(chart, self.vtk_top, self.sig.name,self.ch_name,self.meta.id, parent=self.widget)
+            self.vtk_menu_bot = VTKContextMenu(chart, self.vtk_top, self.active_signal.name,self.ch_name,self.meta.id, parent=self.widget)
             self.vtk_menu_bot.add_action("Cambiar LUT", self._on_change_lut)
         except Exception as e:
-            QMessageBox.information(self.widget, "Menú contextual (Bottom)", f"Error creando el menú contextual.\n{e}")
+            self.alerts.info(f"Error creando el menú contextual.\n{e}", "Menú contextual (Bottom)")
 
 
 
@@ -431,11 +399,7 @@ class Erp_plugin(IPlugin):
 # Funciones no implementadas de los menu contextuales
 
     def _on_change_lut(self):
-        QMessageBox.information(self.widget, "Cambiar LUT", "Cambiar mapa de colores (no implementado).")
-
-    def _set_zoom_mode(self, mode: str):
-        """Ejemplo: configura modo de zoom actual."""
-        self._log(f"Zoom mode: {mode}")
+        self.alerts.info("Cambiar mapa de colores (no implementado).", "Cambiar LUT")
 
 
 # Helper mini para el LUT (puedes dejar solo uno y olvidarte del resto)

@@ -1,5 +1,4 @@
 # plugins/analysis/frequency/fft/fft_plugin.py
-import sys
 from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtWidgets import QMessageBox
 import vtk
@@ -31,13 +30,6 @@ class Fft_plugin(IPlugin):
         self.active_signal: SignalDataset | None = None
 
     # ---------- util de logs ----------
-    def _log(self, *args):
-        print("[FFT]", *args)
-        sys.stdout.flush()
-
-    def initialize(self, kernel):
-        self.kernel = kernel
-        self._log("initialize()")
 
     def start(self, kernel):
         self._log("start() - obteniendo MainWindow")

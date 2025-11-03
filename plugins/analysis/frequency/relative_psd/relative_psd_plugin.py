@@ -30,12 +30,6 @@ class Relative_psd_plugin(IPlugin):
         self.active_signal: SignalDataset | None = None
 
     # ---------- util ----------
-    def _log(self, *args):
-        print("[Relative PSD]", *args)
-        sys.stdout.flush()
-
-    def initialize(self, kernel):
-        self.kernel = kernel
 
     def start(self, kernel):
         self.mainwin = kernel.get_service("MainWindow")

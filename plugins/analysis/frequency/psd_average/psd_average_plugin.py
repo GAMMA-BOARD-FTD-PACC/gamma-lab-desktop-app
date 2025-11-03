@@ -41,14 +41,6 @@ class Psd_average_plugin(IPlugin):
 
         self.active_signal: SignalDataset | None = None
 
-    # ---------- util de logs ----------
-    def _log(self, *args):
-        print("[PSD Average]", *args)
-        sys.stdout.flush()
-
-    def initialize(self, kernel):
-        self.kernel = kernel
-        self._log("initialize()")
 
     def start(self, kernel):
         self._log("start() - obteniendo MainWindow")

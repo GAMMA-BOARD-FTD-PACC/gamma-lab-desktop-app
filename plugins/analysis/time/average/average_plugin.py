@@ -1,36 +1,25 @@
-from pathlib import Path
 from core import kernel
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
 from core.plugins.vtk_context_menu import VTKContextMenu
-from core.services.data_store import DataStore
-from core.services.signal_dataset import SignalDataset
+
+
 from plugins.analysis.time.average.average_plugin_ui import Ui_Average
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QMessageBox, QMenu
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 import vtk
 import numpy as np
-from PyQt5.QtCore import Qt
 
 
 
 class Average_plugin(IPlugin):
     def __init__(self, meta:PluginMeta):
         super().__init__(meta)
-        self.mainwin = None
-        self.widget = None
         self.vtk_widget = None
         self.renwin = None
-        self.started = False
-        self.kernel = None
         self.ui = None
-        self.active_signal = None
-        self.active_chanel = None
         self.vtk_menu: VTKContextMenu | None = None
 
-    def initialize(self, kernel):
-        self.kernel = kernel
-        print("Inicializando Average")
 
     def process(self, data: any):
         if self.vtk_widget:
@@ -45,10 +34,10 @@ class Average_plugin(IPlugin):
 
     def start(self, kernel: kernel):
         print("Iniciando Average")
-        self.kernel = kernel
         self.mainwin = kernel.get_service("MainWindow")
         #Escuchar los eventos del kernel
         self.kernel.event.connect(self.on_kernel_event)
+
 
         if self.mainwin:
             self.started = True
@@ -60,9 +49,10 @@ class Average_plugin(IPlugin):
             self.widget = QWidget(parent)
             self.ui = Ui_Average()
             self.ui.setupUi(self.widget)
-            self.ensure_vtk()
-            self.active_signal = self._get_active_signal()        
+            #Asignar el widget a los alerts
+            self.alerts.parent = self.widget
 
+            self.ensure_vtk()
 
             # Conectar botón “Calculate Average”
             self.ui.mainActionButton.clicked.connect(self._on_calculate_average)
@@ -71,57 +61,25 @@ class Average_plugin(IPlugin):
             self.widget.setParent(parent)
 
         return self.widget
-    
-    def on_kernel_event(self, topic: str, payload: object):
-        """
-        Escucha eventos emitidos por el Kernel.
-        """
-        if topic == "signal_active_changed" or topic =="signal_added":
-            print(f"Nueva señal cambiada: {payload}")
-            self.active_signal = self._get_active_signal()        
 
-
-
-    def _log(self, *args):
-        print("[Average]", *args)
-
-    def _get_active_signal(self) -> SignalDataset | None:
-        """Devuelve la señal activa"""
-        try:
-            store: DataStore | None = self.mainwin.kernel.get_service("DataStore")
-            if store is None:
-                QMessageBox.warning(self.widget, "Error", "No se encontró el DataStore.")
-                return
-            ds = store.get_active_signal() if store else None
-            if not ds:
-                print("[Average] No hay señal activa registrada en el DataStore.")
-                return
-
-            self._log("_get_active_signal:", "ok" if ds else "None")
-            return ds
-        except Exception as e:
-            self._log("_get_active_signal error:", e)
-            return None
 
     def _on_calculate_average(self):
         """Carga el SignalDataset activo desde el DataStore y muestra sus TrialDataset asociados."""
 
-        if self.active_signal is None:
-            QMessageBox.warning(self.widget, "Error", "No hay señal activa para calcular el promedio.")
+        if self.get_active_signal() is None:
             return
         
         
-        trials = self.active_signal.get_active_trials(self.active_signal.name, None)
-
-        if trials is None or trials.trials.size == 0:
-            QMessageBox.warning(self.widget, "Error", f"No hay trials activos para {self.active_signal.name}.")
+        trials = self.get_active_trials()
+        if trials is None:
             return
 
         # Calcular promedio por muestra (a lo largo de los trials)
         av_data = np.mean(trials.trials, axis=1)
         t = trials.time_rel
 
-        print(f"[Average] Promedio calculado → shape: {av_data.shape} ({trials.trials.shape[1]} trials usados)")
+        self._notify(f"Promedio calculado → shape: {av_data.shape} con {trials.trials.shape[1]} trials usados")
+
         
         # Render en VTK
         self.render_average(t, av_data, trials.channel_name, trials.unit)
@@ -190,8 +148,7 @@ class Average_plugin(IPlugin):
 
         # --- Menú contextual---
 
-        ds = self.active_signal
-        signal_name = getattr(ds, "name", "signal")
+        signal_name = self.active_signal.name
         ch_name = channel_name or "channel"
         graph_uid = f"average"
         
@@ -201,8 +158,8 @@ class Average_plugin(IPlugin):
                 view_id="average",
                 trial_id=None,
                 channel_name=f"{signal_name}:{ch_name}",
-                plugin="average",
-                domain="time",
+                plugin=self.meta.id,
+                domain=self.meta.subcategory,
                 graph_id=graph_uid
             )
         # --- Fin menú contextual---
