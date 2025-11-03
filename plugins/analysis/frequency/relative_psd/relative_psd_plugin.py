@@ -1,7 +1,6 @@
 import sys
 import numpy as np
 from PyQt5 import QtWidgets, QtCore
-from PyQt5.QtWidgets import QMessageBox
 from scipy.signal import welch
 
 from core.plugins.interfaces import IPlugin
@@ -23,16 +22,8 @@ class Relative_psd_plugin(IPlugin):
 
     def __init__(self, meta: PluginMeta):
         super().__init__(meta)
-        self.kernel = None
-        self.mainwin = None
-        self.widget: QtWidgets.QWidget | None = None
         self.ui: Ui_Relative_psd | None = None
-        self.active_signal: SignalDataset | None = None
 
-    # ---------- util ----------
-
-    def start(self, kernel):
-        self.mainwin = kernel.get_service("MainWindow")
 
     def stop(self):
         pass
@@ -46,6 +37,7 @@ class Relative_psd_plugin(IPlugin):
             self.ui = Ui_Relative_psd()
             self.widget = QtWidgets.QWidget(parent)
             self.ui.setupUi(self.widget)
+            self.alerts.parent = self.widget
             self._inject_optional_controls()
             self._wire_ui()
             self._init_defaults()
@@ -153,7 +145,7 @@ class Relative_psd_plugin(IPlugin):
             if f1 >= f2:
                 raise ValueError("Fq1 (Low) debe ser menor que Fq2 (High).")
         except Exception as e:
-            QMessageBox.warning(self.widget, "Error de Parámetros", str(e))
+            self.alerts.error(f"Error de Parámetros: {str(e)}")
             return
 
         try:
@@ -162,7 +154,7 @@ class Relative_psd_plugin(IPlugin):
             )
         except Exception as e:
             self._log("Error en _compute_psd:", e)
-            QMessageBox.critical(self.widget, "Error de Cálculo", f"No se pudo calcular la PSD: {e}")
+            self.alerts.error(f"No se pudo calcular la PSD: {e}")
             return
 
         # --- Relative PSD (GF) ---
@@ -272,17 +264,16 @@ class Relative_psd_plugin(IPlugin):
     def _load_trials_from_store(self):
         if not self.mainwin:
             return None, None, None
-        store = self.mainwin.kernel.get_service("DataStore")
-        if store is None:
-            QMessageBox.warning(self.widget, "Error", "No se encontró el DataStore.")
+
+
+        if self.get_active_signal() is None:
             return None, None, None
 
-        self.active_signal = store.get_active_signal()
-        if not self.active_signal or not getattr(self.active_signal, "trials_dataset", None):
-            self._log("No hay señal activa o no tiene TrialDataset.")
+        td = self.get_active_trials()
+
+        if td is None or td.trials.size == 0:
             return None, None, None
 
-        td = self.active_signal.trials_dataset[-1]
         fs = float(getattr(td, "sampling_rate", 0.0))
         X = np.asarray(getattr(td, "trials", None), dtype=np.float64) 	# (Ns, T)
         ch = getattr(td, "channel_name", "")
@@ -325,13 +316,3 @@ class Relative_psd_plugin(IPlugin):
         freq = freq.astype(np.float64)
         self._log(f"PSD: srt={srt}, fs_eff={fs_eff:.3f} Hz, Nf={freq.size}, T_calc={pxx.shape[1]}")
         return freq, pxx, fs_eff
-
-    # ---------- util ----------
-    def _notify(self, msg: str):
-        if self.mainwin:
-            try:
-                self.mainwin.statusBar().showMessage(msg, 3000)
-                return
-            except Exception:
-                pass
-        self._log(msg)

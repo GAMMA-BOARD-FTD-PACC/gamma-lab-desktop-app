@@ -1,5 +1,5 @@
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QMessageBox
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtWidgets import QWidget, QVBoxLayout
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 import vtk
 import numpy as np
@@ -9,9 +9,8 @@ from scipy.interpolate import interp1d
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
 from core.plugins.vtk_context_menu import VTKContextMenu
-from core.services.signal_dataset import SignalDataset
-from core.services.data_store import DataStore
 from plugins.analysis.time_frequency.wavelet_average.wavelet_average_plugin_ui import Ui_Wavelet_Average
+
 
 
 class Wavelet_average_plugin(IPlugin):
@@ -19,16 +18,15 @@ class Wavelet_average_plugin(IPlugin):
 
     def __init__(self, meta: PluginMeta):
         super().__init__(meta)
-        self.mainwin = None
-        self.widget = None
         self.vtk_widget = None
         self.renwin = None
-        self.started = False
-        self.kernel = None
         self.ui = None
         self.vtk_menu = None
         self._context_view = None
         self._vtk_renderer = None
+
+        self.worker = None  # Hilo en ejecución
+
     # end def
 
     # =====================================================
@@ -37,20 +35,11 @@ class Wavelet_average_plugin(IPlugin):
 
     def process(self, data: any):
         """Optional hook; show status message if available."""
-        if self.mainwin:
-            try:
-                self.mainwin.statusBar().showMessage(f"Wavelet Average processed: {data}", 3000)
-            except Exception as e:
-                self._log("process: failed to show status message:", e)
-    # end def
-
-    def start(self, kernel):
-        """Start plugin and obtain main window reference."""
-        self.kernel = kernel
-        self.mainwin = kernel.get_service("MainWindow")
-        if self.mainwin:
-            self.started = True
-            self._log("Plugin started.")
+        if self.vtk_widget and self.vtk_widget.GetRenderWindow():
+            interactor = self.vtk_widget.GetRenderWindow().GetInteractor()
+            if interactor:
+                interactor.Enable()
+                self._log("VTK interactor enabled.")
     # end def
 
     def stop(self):
@@ -75,6 +64,8 @@ class Wavelet_average_plugin(IPlugin):
         self.widget = QWidget(parent)
         self.ui = Ui_Wavelet_Average()
         self.ui.setupUi(self.widget)
+
+        self.alerts.parent = self.widget
 
         # initialize controls and VTK container
         self._init_controls()
@@ -153,44 +144,22 @@ class Wavelet_average_plugin(IPlugin):
             self._log("ensure_vtk error:", e)
     # end def
 
-    # =====================================================
-    # === Data access
-    # =====================================================
-    def _get_active_signal(self) -> SignalDataset | None:
-        """Return the currently active SignalDataset from the DataStore."""
-        try:
-            store: DataStore | None = self.mainwin.kernel.get_service("DataStore")
-            if store is None:
-                QMessageBox.warning(self.widget, "Error", "DataStore not found.")
-                self._log("_get_active_signal: DataStore service missing.")
-                return None
-            ds = store.get_active_signal() if store else None
-            if not ds:
-                self._log("_get_active_signal: no active signal in DataStore.")
-                return None
-            self._log("_get_active_signal: active signal obtained.")
-            return ds
-        except Exception as e:
-            self._log("_get_active_signal error:", e)
-            return None
-    # end def
 
     # =====================================================
     # === Main logic: compute average CWT and render
     # =====================================================
     def on_create_wavelet(self):
         """Compute average CWT across all active trials and render the average scalogram."""
-        active_signal = self._get_active_signal()
-        if active_signal is None:
-            QMessageBox.warning(self.widget, "Error", "No active signal found.")
+        if self.get_active_signal() is None:
             return
 
-        channel_name = active_signal.channel_names[0]
-        trials = active_signal.get_active_trials(active_signal.name, channel_name)
+        trials = self.get_active_trials()
+        if trials is None:
+            return
 
         t = trials.time_rel
         if t is None or len(t) < 2:
-            QMessageBox.warning(self.widget, "Error", "Insufficient time information.")
+            self.alerts.error(f"No enough information on time. {self.active_signal.name}.")
             return
 
         try:
@@ -201,7 +170,7 @@ class Wavelet_average_plugin(IPlugin):
             if data.shape[0] < data.shape[1]:
                 data = data.T
         except Exception as e:
-            QMessageBox.warning(self.widget, "Error", f"Unable to obtain trials matrix: {e}")
+            self.alerts.error(f"Unable to obtain trials matrix: {e}")
             self._log("on_create_wavelet: failed to convert trials to array:", e)
             return
 
@@ -216,68 +185,101 @@ class Wavelet_average_plugin(IPlugin):
         scaled = self.ui.scaleCheckBox.isChecked()
         norm_method = self.ui.normalizeComboBox.currentText().lower()
 
+        self.alerts.show_spinner("Computing wavelet")
+
+        # Crear y ejecutar hilo
+        self.worker = self.WaveletWorker(
+            self, data, fs_calculado, fs, fmin, fmax, cycles, normalize, scaled, norm_method
+        )
+
+        # conectar señales
+        self.worker.log_signal.connect(self._log)
+        self.worker.notify_signal.connect(lambda level, msg: getattr(self.alerts, level)(msg))
+        self.worker.finished.connect(self._on_wavelet_done)
+
+        self.alerts.show_spinner("Computing wavelet")
+        self.worker.start()
+
         # compute scalogram per trial
-        scalograms = []
-        n_trials = data.shape[1]
-        if n_trials == 0:
-            QMessageBox.warning(self.widget, "Error", "No trials available.")
-            self._log("on_create_wavelet: no trials found.")
+        # scalograms = []
+        # n_trials = data.shape[1]
+        # if n_trials == 0:
+        #     self.alerts.warning(self.widget, "No trials available.")
+        #     self._log("on_create_wavelet: no trials found.")
+        #     return
+
+        # self._log(f"Computing wavelet for {n_trials} trials...")
+
+        # for trial_idx in range(n_trials):
+        #     try:
+        #         sig = np.nan_to_num(data[:, trial_idx], nan=0.0, posinf=0.0, neginf=0.0)
+        #         scalogram, times, freqs = self.compute_wavelet(sig, fs_calculado, fs, fmin, fmax, cycles)
+        #         if scalogram is None or scalogram.size == 0:
+        #             self._log(f"  Trial {trial_idx+1}/{n_trials}: empty scalogram, skipping.")
+        #             self._log(f"  Trial {trial_idx+1}/{n_trials}: min={np.min(scalogram):.4f}, max={np.max(scalogram):.4f}")
+        #             continue
+        #         scalograms.append(scalogram)
+        #         self._log(f"  Trial {trial_idx+1}/{n_trials}: min={np.min(scalogram):.4f}, max={np.max(scalogram):.4f}")
+        #     except Exception as e:
+        #         self._log(f"  Trial {trial_idx+1}/{n_trials} failed:", e)
+
+        # if len(scalograms) == 0:
+        #     self.alerts.error("No valid scalograms computed.")
+        #     self._log("on_create_wavelet: no valid scalograms after processing trials.")
+        #     return
+
+        # # stack and compute average
+        # try:
+        #     stacked = np.stack(scalograms, axis=0)  # shape: (n_valid_trials, n_freqs, n_times)
+        #     avg_scalogram = np.mean(stacked, axis=0)  # shape: (n_freqs, n_times)
+        #     self._log(f"Average scalogram computed: min={np.min(avg_scalogram):.4f}, max={np.max(avg_scalogram):.4f}")
+        # except Exception as e:
+        #     self._log("Error while stacking/averaging scalograms:", e)
+        #     self.alerts.error(f"Failed to compute average scalogram: {e}")
+        #     return
+
+        # # optional normalization
+        # if normalize:
+        #     try:
+        #         avg_scalogram = self.normalize_tf(avg_scalogram, norm_method)
+        #         self._log(f"Normalization applied: method={norm_method}")
+        #     except Exception as e:
+        #         self._log("Normalization failed:", e)
+
+        # # optional log scaling (resample rows logarithmically)
+        # if scaled:
+        #     try:
+        #         avg_scalogram, freqs = self._scale_log(avg_scalogram, freqs)
+        #         self._log("Log scaling applied.")
+        #     except Exception as e:
+        #         self._log("Log scaling failed:", e)
+
+        # # ensure VTK and render
+        # self.ensure_vtk()
+        # try:
+        #     self.render_scalogram(times, freqs, avg_scalogram, "Wavelet Average (Morlet)", scaled)
+        #     self._log("Rendering complete.")
+        #     self.alerts.hide_spinner()
+        # except Exception as e:
+        #     self._log("Render failed:", e)
+        #     self.alerts.error(f"Rendering failed: {e}")
+    # end def
+
+    def _on_wavelet_done(self, times, freqs, avg_scalogram, scaled, error):
+        """Callback cuando el hilo termina el cálculo."""
+        self.alerts.hide_spinner()
+
+        if error:
+            self.alerts.error(f"Failed to compute wavelet: {error}")
             return
 
-        self._log(f"Computing wavelet for {n_trials} trials...")
-
-        for trial_idx in range(n_trials):
-            try:
-                sig = np.nan_to_num(data[:, trial_idx], nan=0.0, posinf=0.0, neginf=0.0)
-                scalogram, times, freqs = self.compute_wavelet(sig, fs_calculado, fs, fmin, fmax, cycles)
-                if scalogram is None or scalogram.size == 0:
-                    self._log(f"  Trial {trial_idx+1}/{n_trials}: empty scalogram, skipping.")
-                    continue
-                scalograms.append(scalogram)
-                self._log(f"  Trial {trial_idx+1}/{n_trials}: min={np.min(scalogram):.4f}, max={np.max(scalogram):.4f}")
-            except Exception as e:
-                self._log(f"  Trial {trial_idx+1}/{n_trials} failed:", e)
-
-        if len(scalograms) == 0:
-            QMessageBox.warning(self.widget, "Error", "No valid scalograms computed.")
-            self._log("on_create_wavelet: no valid scalograms after processing trials.")
-            return
-
-        # stack and compute average
         try:
-            stacked = np.stack(scalograms, axis=0)  # shape: (n_valid_trials, n_freqs, n_times)
-            avg_scalogram = np.mean(stacked, axis=0)  # shape: (n_freqs, n_times)
-            self._log(f"Average scalogram computed: min={np.min(avg_scalogram):.4f}, max={np.max(avg_scalogram):.4f}")
-        except Exception as e:
-            self._log("Error while stacking/averaging scalograms:", e)
-            QMessageBox.warning(self.widget, "Error", f"Failed to compute average scalogram: {e}")
-            return
-
-        # optional normalization
-        if normalize:
-            try:
-                avg_scalogram = self.normalize_tf(avg_scalogram, norm_method)
-                self._log(f"Normalization applied: method={norm_method}")
-            except Exception as e:
-                self._log("Normalization failed:", e)
-
-        # optional log scaling (resample rows logarithmically)
-        if scaled:
-            try:
-                avg_scalogram, freqs = self._scale_log(avg_scalogram, freqs)
-                self._log("Log scaling applied.")
-            except Exception as e:
-                self._log("Log scaling failed:", e)
-
-        # ensure VTK and render
-        self.ensure_vtk()
-        try:
+            self.ensure_vtk()
             self.render_scalogram(times, freqs, avg_scalogram, "Wavelet Average (Morlet)", scaled)
             self._log("Rendering complete.")
         except Exception as e:
             self._log("Render failed:", e)
-            QMessageBox.warning(self.widget, "Error", f"Rendering failed: {e}")
-    # end def
+            self.alerts.error(f"Rendering failed: {e}")
 
     # =====================================================
     # === Wavelet computation (single trial)
@@ -503,7 +505,7 @@ class Wavelet_average_plugin(IPlugin):
             self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
 
         except Exception as e:
-            QMessageBox.information(self.widget, "Menu", "Error creating contextual map\n" + str(e))
+            self.alerts.error("Error creating contextual map\n" + str(e), "Menu error")
 
         context_view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
         context_view.GetRenderWindow().Render()
@@ -562,3 +564,63 @@ class Wavelet_average_plugin(IPlugin):
     # end def
 
 # end class
+
+    class WaveletWorker(QThread):
+        finished = pyqtSignal(object, object, object, bool, object)  # times, freqs, avg_scalogram, scaled, error
+        log_signal = pyqtSignal(str)
+        notify_signal = pyqtSignal(str, str)
+
+        def __init__(self, parent_plugin, data, fs_calculado, fs, fmin, fmax, cycles, normalize, scaled, norm_method):
+            super().__init__()
+            self.plugin = parent_plugin
+            self.data = data
+            self.fs_calculado = fs_calculado
+            self.fs = fs
+            self.fmin = fmin
+            self.fmax = fmax
+            self.cycles = cycles
+            self.normalize = normalize
+            self.scaled = scaled
+            self.norm_method = norm_method
+
+        def run(self):
+            try:
+                plugin = self.plugin
+                scalograms = []
+                n_trials = self.data.shape[1]
+                self.log_signal.emit(f"Computing wavelet for {n_trials} trials (threaded)...")
+
+                for trial_idx in range(n_trials):
+                    try:
+                        sig = np.nan_to_num(self.data[:, trial_idx], nan=0.0, posinf=0.0, neginf=0.0)
+                        scalogram, times, freqs = plugin.compute_wavelet(
+                            sig, self.fs_calculado, self.fs, self.fmin, self.fmax, self.cycles
+                        )
+                        if scalogram is None or scalogram.size == 0:
+                            self.log_signal.emit(f"Trial {trial_idx+1}/{n_trials}: empty scalogram, skipping.")
+                            self.notify_signal.emit("warning", f"Trial {trial_idx+1}/{n_trials}: empty scalogram, skipping.")
+                            continue
+                        scalograms.append(scalogram)
+                    except Exception as e:
+                        self.log_signal.emit(f"Trial {trial_idx+1}/{n_trials} failed: {e}")
+
+                if not scalograms:
+                    raise ValueError("No valid scalograms computed")
+
+                stacked = np.stack(scalograms, axis=0)
+                avg_scalogram = np.mean(stacked, axis=0)
+
+                if self.normalize:
+                    avg_scalogram = plugin.normalize_tf(avg_scalogram, self.norm_method)
+                    self.log_signal.emit(f"Normalization applied: {self.norm_method}")
+
+                if self.scaled:
+                    avg_scalogram, freqs = plugin._scale_log(avg_scalogram, freqs)
+                    self.log_signal.emit("Log scaling applied.")
+
+                self.finished.emit(times, freqs, avg_scalogram, self.scaled, None)
+
+            except Exception as e:
+                self.log_signal.emit(f"WaveletWorker error: {e}")
+                self.notify_signal.emit("error", str(e))
+                self.finished.emit(None, None, None, False, e)

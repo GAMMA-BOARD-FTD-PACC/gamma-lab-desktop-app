@@ -29,19 +29,7 @@ class Average_plugin(IPlugin):
         print("Deteniendo Average")
 
         if self.vtk_widget:
-            self.vtk_widget.Disable()
-
-
-    def start(self, kernel: kernel):
-        print("Iniciando Average")
-        self.mainwin = kernel.get_service("MainWindow")
-        #Escuchar los eventos del kernel
-        self.kernel.event.connect(self.on_kernel_event)
-
-
-        if self.mainwin:
-            self.started = True
-            print("Average tiene acceso a MainWindow")        
+            self.vtk_widget.Disable()   
 
 
     def get_widget(self, parent=None):

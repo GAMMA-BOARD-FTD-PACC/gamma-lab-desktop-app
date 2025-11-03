@@ -40,13 +40,6 @@ class Wavelet_plugin(IPlugin):
             interactor.Enable()
     # end def
 
-    def start(self, kernel):
-        self.kernel = kernel
-        self.mainwin = kernel.get_service("MainWindow")
-        if self.mainwin:
-            self.started = True
-    # end def
-
     def stop(self):
         if self.vtk_widget and self.vtk_widget.GetRenderWindow():
             interactor = self.vtk_widget.GetRenderWindow().GetInteractor()

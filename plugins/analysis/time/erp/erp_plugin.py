@@ -41,18 +41,7 @@ class Erp_plugin(IPlugin):
         if self.vtk_bot and self.vtk_bot.GetRenderWindow().GetInteractor():
                 self.vtk_bot.GetRenderWindow().GetInteractor().Enable()
 
-        # if self.mainwin:
-        #     try:
-        #         self.mainwin.statusBar().showMessage(f"ERP procesó: {data}", 3000)
-        #     except Exception:
-        #         pass
-
-    def start(self, kernel):
-        print("Iniciando ERP")
-        self.mainwin = kernel.get_service("MainWindow")
-        if self.mainwin:
-            self.started = True
-            print("ERP tiene acceso a MainWindow")        
+      
 
     def stop(self):
         print("[TrialsPlugin] stop")

@@ -1,12 +1,15 @@
 from abc import ABC, abstractmethod
 import sys
 
+from core import kernel
 from core.kernel import Kernel
 from core.plugins.meta import PluginMeta
 from core.plugins.plugin_alerts import PluginAlerts
 from core.services.data_store import DataStore
 from core.services.signal_dataset import SignalDataset
 from core.services.trial_dataset import TrialDataset
+from PyQt5.QtWidgets import QWidget
+
 
 '''
 Aquí se definen las interfaces para los plugins y servicios, es decir,
@@ -19,7 +22,7 @@ class IPlugin(ABC):
         self.meta: PluginMeta = meta
         self.started: bool = False
         self.mainwin = None
-        self.widget = None  #Es donde se rendriza todo el UI de PyQt
+        self.widget: QWidget = None  #Es donde se rendriza todo el UI de PyQt
         self.kernel: Kernel = None
         self.active_signal: SignalDataset = None
         self.active_chanel = None
@@ -128,11 +131,16 @@ class IPlugin(ABC):
         """Procesa datos enviados por el kernel u otros plugins."""
         pass
 
-    @abstractmethod
-    def start(self, kernel):
-        """Se invoca cuando el kernel inicia los plugins."""
-        pass
+    def start(self, kernel: kernel):
+        self.mainwin = kernel.get_service("MainWindow")
+        #Escuchar los eventos del kernel
+        self.kernel.event.connect(self.on_kernel_event)
 
+
+        if self.mainwin:
+            self.started = True
+            self._log("Plugin started.")
+            
     @abstractmethod
     def stop(self):
         """Se invoca cuando el kernel detiene los plugins."""

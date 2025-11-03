@@ -4,7 +4,6 @@ import sys
 import numpy as np
 import vtk
 from PyQt5 import QtWidgets, QtCore
-from PyQt5.QtWidgets import QMessageBox
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 from scipy.signal import welch
 
@@ -26,11 +25,8 @@ class Psd_average_plugin(IPlugin):
     
     def __init__(self, meta: PluginMeta):
         super().__init__(meta)
-        self.kernel = None
-        self.mainwin = None
 
         # UI
-        self.widget: QtWidgets.QWidget | None = None
         self.ui: Ui_Psd_average | None = None # Usamos la UI de Psd_average
 
         # VTK
@@ -39,12 +35,12 @@ class Psd_average_plugin(IPlugin):
         self.chart: vtk.vtkChartXY | None = None
         self.vtk_menu: VTKContextMenu | None = None
 
-        self.active_signal: SignalDataset | None = None
 
 
     def start(self, kernel):
         self._log("start() - obteniendo MainWindow")
         self.mainwin = kernel.get_service("MainWindow")
+        self.started = True
 
     def stop(self):
         self._log("stop() - cleanup VTK")
@@ -54,7 +50,7 @@ class Psd_average_plugin(IPlugin):
     def process(self, data):
         if self.vtk_interactor:
             self.vtk_interactor.Enable()
-        self._log(f"[PSD Average] Process: enable {data}")
+        self._log(f"Process: enable {data}")
 
     def get_widget(self, parent=None):
         if self.widget is None:
@@ -62,6 +58,7 @@ class Psd_average_plugin(IPlugin):
             self.ui = Ui_Psd_average() # Usamos la UI de Psd_average
             self.widget = QtWidgets.QWidget(parent)
             self.ui.setupUi(self.widget)
+            self.alerts.parent = self.widget
 
             self._log("UI creada. plotArea:", bool(self.ui.plotArea),
                       "panel:", bool(self.ui.panel),
@@ -151,7 +148,7 @@ class Psd_average_plugin(IPlugin):
                  raise ValueError("N-overlap debe ser menor que N-per-seg.")
         
         except Exception as e:
-            QMessageBox.warning(self.widget, "Error de Parámetros", str(e))
+            self.alerts.error(f"Error de Parámetros: {e}")
             return
 
         # 3) PSD (Siempre calculamos para todos los trials)
@@ -161,9 +158,8 @@ class Psd_average_plugin(IPlugin):
             # power_all_trials tiene forma (Nf, T) -> Equivale a 'pxx'
             
         except Exception as e:
-            self._log(f"Error en _compute_psd: {e}")
-            QMessageBox.critical(self.widget, "Error de Cálculo", 
-                                 f"No se pudo calcular la PSD: {e}")
+            self._log(f"Error en _compute_psd: {str(e)}")
+            self.alerts.error(f"No se pudo calcular la PSD: {str(e)}", "Error de Cálculo")
             return
             
         # --- LÓGICA DE AVERAGE (HARDCODED) ---
@@ -199,22 +195,16 @@ class Psd_average_plugin(IPlugin):
 
     # ====== DATA ======
     def _load_trials_from_store(self):
-        if not self.mainwin:
+
+
+
+        if self.get_active_signal() is None:
             return None, None, None
+        
+        td = self.get_active_trials()
+        if td is None:
+            return None, None, None    
 
-        store = self.mainwin.kernel.get_service("DataStore")
-        if store is None:
-            QMessageBox.warning(self.widget, "Error", "No se encontró el DataStore.")
-            return None, None, None
-
-        self.active_signal = store.get_active_signal()
-        if not self.active_signal or not getattr(self.active_signal, "trials_dataset", None):
-            self.active_signal = store.get_active_signal()
-            if not self.active_signal or not getattr(self.active_signal, "trials_dataset", None):
-                QMessageBox.warning(self.widget, "Error", "No hay señal activa o no tiene TrialDataset.")
-                return None, None, None
-
-        td = self.active_signal.trials_dataset[-1]  # último TD creado
         fs = float(getattr(td, "sampling_rate", 0.0))
         X  = np.asarray(getattr(td, "trials", None), dtype=np.float64)  # (Ns, T)
         ch = getattr(td, "channel_name", "")
@@ -331,7 +321,7 @@ class Psd_average_plugin(IPlugin):
                                            self.meta.id, parent=self.widget)
 
         except Exception as e:
-            QMessageBox.information(self.widget, "Menú contextual", 
-                                    "Error creando el menú contextual.\n" + str(e))
+            self.alerts.error(f"Error creating the context menu.\n {str(e)}")
+
    
         self.vtk_view.GetRenderWindow().Render()
