@@ -123,10 +123,10 @@ class Wavelet_plugin(IPlugin):
 
             # --- Create VTK Widget ---
             if not self.vtk_widget:
-                vtk_layout = QVBoxLayout(self.ui.frame)
+                vtk_layout = QVBoxLayout(self.ui.plotArea)
                 vtk_layout.setContentsMargins(0, 0, 0, 0)
 
-                self.vtk_widget = QVTKRenderWindowInteractor(self.ui.frame)
+                self.vtk_widget = QVTKRenderWindowInteractor(self.ui.plotArea)
                 vtk_layout.addWidget(self.vtk_widget)
 
             # --- Create Render Window ---

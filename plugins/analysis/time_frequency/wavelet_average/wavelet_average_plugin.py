@@ -122,11 +122,11 @@ class Wavelet_average_plugin(IPlugin):
     # end def
 
     def _create_vtk_container(self):
-        """Create VTK widget and context view container in the UI frame."""
+        """Create VTK widget and context view container in the UI plotArea."""
         try:
-            vtk_layout = QVBoxLayout(self.ui.frame)
+            vtk_layout = QVBoxLayout(self.ui.plotArea)
             vtk_layout.setContentsMargins(0, 0, 0, 0)
-            self.vtk_widget = QVTKRenderWindowInteractor(self.ui.frame)
+            self.vtk_widget = QVTKRenderWindowInteractor(self.ui.plotArea)
             vtk_layout.addWidget(self.vtk_widget)
 
             self.renwin = self.vtk_widget.GetRenderWindow()
