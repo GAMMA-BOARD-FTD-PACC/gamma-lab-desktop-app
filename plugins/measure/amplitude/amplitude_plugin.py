@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 from PyQt5 import QtWidgets, QtCore
-from PyQt5.QtWidgets import QMessageBox, QFileDialog, QHeaderView
+from PyQt5.QtWidgets import QFileDialog, QHeaderView
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
@@ -123,8 +123,6 @@ class AmplitudePlugin(IPlugin):
 
     def __init__(self, meta: PluginMeta):
         super().__init__(meta)
-        self.kernel = None
-        self.mainwin = None
 
         # UI
         self.widget: QtWidgets.QWidget | None = None
@@ -133,25 +131,6 @@ class AmplitudePlugin(IPlugin):
         # Model
         self.model: AmplitudeTableModel | None = None
 
-    # ---------- Logging helpers ----------
-    def _log(self, *args):
-        print("[AMPLITUDE]", *args)
-        sys.stdout.flush()
-
-    def _notify(self, msg: str):
-        if self.mainwin:
-            try:
-                self.mainwin.statusBar().showMessage(msg, 2500)
-                return
-            except Exception:
-                pass
-        self._log(msg)
-
-    def _warn(self, msg: str):
-        try:
-            QMessageBox.warning(self.widget, "Amplitude", msg)
-        except Exception:
-            self._log("WARN:", msg)
 
     # ---------- Lifecycle ----------
     def initialize(self, kernel):
@@ -174,6 +153,7 @@ class AmplitudePlugin(IPlugin):
     def get_widget(self, parent=None):
         if self.widget is None:
             self._log("get_widget(): creating UI")
+            self.alerts.parent = parent
             self.ui = Ui_Amplitude()
             self.widget = QtWidgets.QWidget(parent)
             self.ui.setupUi(self.widget)  # assumes Form: AmplitudeForm
@@ -225,7 +205,7 @@ class AmplitudePlugin(IPlugin):
             store = None
 
         if store is None:
-            self._warn("DataStore service not found.")
+            self.alerts.error("DataStore service not found.")
             return []
 
         # Try to read from DataStore
@@ -315,7 +295,7 @@ class AmplitudePlugin(IPlugin):
             return
         rows = self.model.get_all_rows()
         if not rows:
-            self._warn("No measurements to export.")
+            self.alerts.error("No measurements to export.")
             return
 
         path, _ = QFileDialog.getSaveFileName(
@@ -353,7 +333,7 @@ class AmplitudePlugin(IPlugin):
                     ])
             self._notify(f"CSV exported: {path}")
         except Exception as e:
-            self._warn(f"Failed to export CSV:\n{e}")
+            self.alerts.error(f"Failed to export CSV:\n{e}")
 
 
 # --- Local helpers for safe casting ---
