@@ -1,5 +1,5 @@
 from PyQt5 import QtWidgets, QtCore
-from PyQt5.QtWidgets import QWidget, QMessageBox
+from PyQt5.QtWidgets import QWidget
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
@@ -20,12 +20,8 @@ class Filter_plugin(IPlugin):
 
     def __init__(self, meta: PluginMeta):
         super().__init__(meta)
-        self.mainwin = None
-        self.widget = None
         self.vtk_widget = None
         self.renwin = None
-        self.started = False
-        self.kernel = None
         self.ui = None
         self.vtk_menu = None
         self._context_view = None
@@ -41,9 +37,7 @@ class Filter_plugin(IPlugin):
     # =====================================================
     # === Plugin lifecycle
     # =====================================================
-    def initialize(self, kernel):
-        print("Initializing Filter")
-    # end def
+
 
     def process(self, data: any):
         if self.vtk_widget:
@@ -56,12 +50,6 @@ class Filter_plugin(IPlugin):
                 self.vtk_bot.GetRenderWindow().GetInteractor().Enable()
     # end def
 
-    def start(self, kernel):
-        self.kernel = kernel
-        self.mainwin = kernel.get_service("MainWindow")
-        if self.mainwin:
-            self.started = True
-    # end def
 
     def stop(self):
         if self.vtk_top and self.vtk_top.GetRenderWindow().GetInteractor():
@@ -71,9 +59,6 @@ class Filter_plugin(IPlugin):
             self.vtk_bot.GetRenderWindow().GetInteractor().Disable()
     # end def
 
-    def _log(self, *args):
-        print("[Filter]", *args)
-    # end def
     
     # =====================================================
     # === Create widget UI + VTK
@@ -84,8 +69,11 @@ class Filter_plugin(IPlugin):
             return self.widget
 
         self.widget = QWidget(parent)
+        self.alerts.parent = self.widget
+
         self.ui = Ui_Filter()
         self.ui.setupUi(self.widget)
+
 
         self.init_controls()
         self.ensure_vtk()
@@ -145,38 +133,22 @@ class Filter_plugin(IPlugin):
             self._log("Error ensure_vtk:", e)
     # end def
 
-    def _get_active_signal(self) -> SignalDataset | None:
-        """ Returns active signal from DataStore """
-        try:
-            store: DataStore | None = self.mainwin.kernel.get_service("DataStore")
-            if store is None:
-                QMessageBox.warning(self.widget, "Error", "DataStore Not Found.")
-                return
-            ds = store.get_active_signal() if store else None
-            return ds
-        except Exception as e:
-            print("[Filter] Error getting signal", e)
-            return None
-    # end def
-
+    
     # =====================================================
     # === Main Logic: Filter + Render
     # =====================================================
     def on_apply_filter(self):
         try:
-            active_signal = self._get_active_signal()
-            if not active_signal:
-                raise ValueError("No active signal found")
+            if self.get_active_signal() is None:
+                return
 
-            channel_name = active_signal.channel_names[0]
-            trials = active_signal.get_active_trials(active_signal.name, channel_name)
+            trials = self.get_active_trials()
             if trials.trials is None:
-                raise ValueError("No active trials found")
-    
+                return
 
-            signal_data = active_signal.signals[0, :]
+            signal_data = self.active_signal.signals[0, :]
             trial_data = trials.trials[:, 0]
-            fs = active_signal.sampling_rate
+            fs = self.active_signal.sampling_rate
             print(f"Sampling Rate: {fs} Hz")
 
             low = float(self.ui.doubleSpinBox_low.value())
@@ -187,14 +159,14 @@ class Filter_plugin(IPlugin):
             filtered_signal = self.run_filter(signal_data, low, high, order, fs, type_filter)
             filtered_trial = self.run_filter(trial_data, low, high, order, fs, type_filter)
 
-            self._render_filtered(filtered_signal, active_signal.sampling_rate, unit="mV", type = "signal")
-            self._render_filtered(filtered_trial, active_signal.sampling_rate, unit="mV", type = "trial")
+            self._render_filtered(filtered_signal, self.active_signal.sampling_rate, unit="mV", type = "signal")
+            self._render_filtered(filtered_trial, self.active_signal.sampling_rate, unit="mV", type = "trial")
 
         except ValueError as ve:
-            QMessageBox.warning(self.widget, "Error", str(ve))
+            self.alerts.error(str(ve))
         except Exception as e:
+            self.alerts.error(f"Unexpected error in on_apply_filter: {str(e)}")
             self._log("Unexpected error in on_apply_filter:", e)
-            QMessageBox.critical(self.widget, "Error", f"Unexpected error: {e}")
     # end def
 
     def run_filter(self, signal, low, high, order, fs, type="butterworth"):
@@ -318,7 +290,7 @@ class Filter_plugin(IPlugin):
                 self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
 
             except Exception as e:
-                QMessageBox.information(self.widget, "Menu", "Error creating contextual map\n" + str(e))
+                self.alerts.error(f"Error creating contextual menu: {e}")
 
             # --- Render final ---
             try:

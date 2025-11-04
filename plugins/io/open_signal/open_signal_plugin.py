@@ -24,8 +24,7 @@ class OpenSignalPlugin(IPlugin):
 
     def __init__(self, meta: PluginMeta):
         super().__init__(meta)
-        self.kernel = None
-        self.mainwin = None
+
         self.settings = SettingsService()
 
         
@@ -43,18 +42,7 @@ class OpenSignalPlugin(IPlugin):
         self._sync_callback = None
         self._is_syncing = False
 
-    # ---------------- utils/log ----------------
-    def _log(self, *args):
-        print("[OpenSignal]", *args)
 
-    def initialize(self, kernel):
-        self.kernel = kernel
-        self._log("initialize:", self.name())
-
-    def start(self, kernel):
-        self.kernel = kernel
-        self.mainwin = kernel.get_service("MainWindow")
-        self._log("start")
 
     def stop(self):
         if self.vtk_interactor:
@@ -68,6 +56,7 @@ class OpenSignalPlugin(IPlugin):
     def get_widget(self, parent=None):
         if self.ui is None:
             self.ui = Ui_OpenSignal(parent)
+            self.alerts.parent = self.ui
             self._ensure_vtk()
 
             self.ui.Btn_abrir_senal.clicked.connect(self._on_open_clicked)
@@ -126,7 +115,7 @@ class OpenSignalPlugin(IPlugin):
             self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
         except Exception as e:
             self.vtk_menu = None
-            QMessageBox.information(self.ui, "Menú contextual", "Error creando el menú contextual.\n" + str(e))
+            self.alerts.error("Error creating the context menu.\n" + str(e))
 
         # callback de sincronización
         self._setup_sync_callback()

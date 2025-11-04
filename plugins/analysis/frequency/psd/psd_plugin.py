@@ -2,14 +2,12 @@ import sys
 import numpy as np
 import vtk
 from PyQt5 import QtWidgets, QtCore
-from PyQt5.QtWidgets import QMessageBox
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 from scipy.signal import welch
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
 from core.plugins.vtk_context_menu import VTKContextMenu
-from core.services.signal_dataset import SignalDataset
 # Importar nuestra UI y el adaptador VTK
 from plugins.analysis.frequency.psd.psd_plugin_ui import Ui_Psd
 from core.vtk_adapters.adapters import trials_matrix_to_vtk_table
@@ -22,11 +20,6 @@ class Psd_plugin(IPlugin):
     
     def __init__(self, meta: PluginMeta):
         super().__init__(meta)
-        self.kernel = None
-        self.mainwin = None
-
-        # UI
-        self.widget: QtWidgets.QWidget | None = None
         self.ui: Ui_Psd | None = None
 
         # VTK
@@ -35,20 +28,6 @@ class Psd_plugin(IPlugin):
         self.chart: vtk.vtkChartXY | None = None
         self.vtk_menu: VTKContextMenu | None = None
 
-        self.active_signal: SignalDataset | None = None
-
-    # ---------- util de logs ----------
-    def _log(self, *args):
-        print("[PSD]", *args)
-        sys.stdout.flush()
-
-    def initialize(self, kernel):
-        self.kernel = kernel
-        self._log("initialize()")
-
-    def start(self, kernel):
-        self._log("start() - obteniendo MainWindow")
-        self.mainwin = kernel.get_service("MainWindow")
 
     def stop(self):
         self._log("stop() - cleanup VTK")
@@ -66,6 +45,7 @@ class Psd_plugin(IPlugin):
             self.ui = Ui_Psd()
             self.widget = QtWidgets.QWidget(parent)
             self.ui.setupUi(self.widget)
+            self.alerts.parent = self.widget
 
             self._log("UI creada. plotArea:", bool(self.ui.plotArea),
                       "panel:", bool(self.ui.panel),
@@ -249,7 +229,7 @@ class Psd_plugin(IPlugin):
             # El ajuste de noverlap >= nperseg se hace dentro de _compute_psd (más seguro).
             
         except Exception as e:
-            QMessageBox.warning(self.widget, "Error de Parámetros", str(e))
+            self.alerts.error(f"Error de Parámetros: {str(e)}")
             return
 
         # 3) PSD (Siempre calculamos para todos los trials)
@@ -262,8 +242,8 @@ class Psd_plugin(IPlugin):
             
         except Exception as e:
             self._log(f"Error en _compute_psd: {e}")
-            QMessageBox.critical(self.widget, "Error de Cálculo", 
-                                 f"No se pudo calcular la PSD: {e}")
+            self.alerts.error(f"No se pudo calcular la PSD: {e}")
+                                 
             return
             
         # Seleccionar qué plotear basado en el modo
@@ -306,33 +286,19 @@ class Psd_plugin(IPlugin):
         self._log(f"range sync: low={self.ui.lowFrecuencyDoubleSpinBox.value()}, "
                   f"high={self.ui.highFrecuencyDoubleSpinBox.value()}")
 
-    def _notify(self, msg: str):
-        # (Sin cambios, idéntico al anterior)
-        if self.mainwin:
-            try:
-                self.mainwin.statusBar().showMessage(msg, 3000)
-                return
-            except Exception:
-                pass
-        self._log(msg)
-
     # ====== DATA ======
     def _load_trials_from_store(self):
-        # (Sin cambios, idéntico al anterior)
         if not self.mainwin:
             return None, None, None
 
-        store = self.mainwin.kernel.get_service("DataStore")
-        if store is None:
-            QMessageBox.warning(self.widget, "Error", "No se encontró el DataStore.")
+        if self.get_active_signal() is None:
             return None, None, None
 
-        self.active_signal = store.get_active_signal()
-        if not self.active_signal or not getattr(self.active_signal, "trials_dataset", None):
-            self._log("No hay señal activa o no tiene TrialDataset.")
+        td = self.get_active_trials()
+
+        if td is None or td.trials.size == 0:
             return None, None, None
 
-        td = self.active_signal.trials_dataset[-1] # último TD creado
         fs = float(getattr(td, "sampling_rate", 0.0))
         X = np.asarray(getattr(td, "trials", None), dtype=np.float64) # (Ns, T)
         ch = getattr(td, "channel_name", "")
@@ -473,7 +439,7 @@ class Psd_plugin(IPlugin):
                                              self.meta.id, parent=self.widget)
 
         except Exception as e:
-            QMessageBox.information(self.widget, "Menú contextual", 
-                                     "Error creando el menú contextual.\n" + str(e))
+            self.alerts.error(f"Error creating the context menu.\n {str(e)}")
+
         
         self.vtk_view.GetRenderWindow().Render()

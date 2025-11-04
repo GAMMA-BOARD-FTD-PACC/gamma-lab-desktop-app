@@ -3,7 +3,7 @@
 
 from vtk.util import numpy_support as nps # Importación segura para VTK/NumPy
 from PyQt5 import QtCore, QtWidgets
-from PyQt5.QtWidgets import QWidget, QMessageBox, QVBoxLayout, QLabel
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel
 import numpy as np
 import vtk
 from typing import Optional, List, Set
@@ -59,8 +59,7 @@ class ArtifactRemovePlugin(IPlugin):
         super().__init__(meta)
         self.meta = meta
         print(f"{LOGP} __init__")
-        self.kernel, self.mainwin = None, None
-        self.widget: Optional[QWidget] = None
+
         self.ui: Optional[Ui_ArtifactRemove] = None
         self.vtk_interactor: Optional[QVTKRenderWindowInteractor] = None
         self.vtk_view: Optional[vtk.vtkContextView] = None
@@ -81,8 +80,6 @@ class ArtifactRemovePlugin(IPlugin):
         self.discarded_indices: Set[int] = set()
         self.modified_indices: Set[int] = set()
 
-    def initialize(self, kernel): 
-        pass
 
     def process(self, data): 
         pass
@@ -129,6 +126,7 @@ class ArtifactRemovePlugin(IPlugin):
             print(f"{LOGP} get_widget(): Creating UI for the first time...")
             
             self.widget = QWidget(parent)
+            self.alerts.parent = self.widget
             
             try:
                 self.ui = Ui_ArtifactRemove()
@@ -157,7 +155,7 @@ class ArtifactRemovePlugin(IPlugin):
             except Exception as e: 
                 error_message = f"Failed to initialize Remove Artifact plugin:\n{type(e).__name__}: {e}"
                 print(f"{LOGP} CRITICAL ERROR during initial setup: {e}")
-                QMessageBox.critical(self.widget, "Plugin Initialization Error", error_message)
+                self.alerts.error(error_message, "Plugin Initialization Error")
                 self._cleanup_vtk_references()
                 self.widget.deleteLater() 
                 self.widget = None
@@ -232,8 +230,7 @@ class ArtifactRemovePlugin(IPlugin):
         panel = self.ui.artifact_panel
 
         if self.current_display_index != -1:
-            QMessageBox.warning(self.widget, "Invalid Action",
-                                 "Apply changes only from the 'Average' view (Index -1).")
+            self.alerts.warning("Apply changes only from the 'Average' view (Index -1).", "Invalid Action")
             return
 
         try:
@@ -290,11 +287,11 @@ class ArtifactRemovePlugin(IPlugin):
             self._apply_thread.start()
 
         except ValueError as ve:
-            QMessageBox.critical(self.widget, "Parameter Error", str(ve))
+            self.alerts.error(str(ve), "Parameter Error")
         except RuntimeError as re:
-            QMessageBox.critical(self.widget, "Data Error", str(re))
+            self.alerts.error(str(re), "Data Error")
         except Exception as e:
-            QMessageBox.critical(self.widget, "Error", f"An unexpected error occurred: {e}")
+            self.alerts.error(f"An unexpected error occurred: {e}")
             print(f"{LOGP} Error on apply: {e}")
 
     def _go_to_previous_trial(self):
@@ -572,7 +569,7 @@ class ArtifactRemovePlugin(IPlugin):
 
         if not self.vtk_view or not self.vtk_interactor:
             if self.widget: 
-                QMessageBox.critical(self.widget, "VTK Error", "Failed to initialize VTK view.")
+                self.alerts.error("Failed to initialize VTK view.", "VTK Error")
             return
 
         try:
@@ -733,9 +730,9 @@ class ArtifactRemovePlugin(IPlugin):
         print(f"{LOGP} finished received, type={type(modified_td)}")
         try:
             if modified_td:
-                QMessageBox.information(self.widget, "Success", "Changes applied to all valid trials.")
+                self.alerts.info("Changes applied to all valid trials.")
             else:
-                QMessageBox.information(self.widget, "No Changes", "No modifications were applied.")
+                self.alerts.info("No modifications were applied.")
         finally:
             # Rehabilitar UI y refrescar
             try:
@@ -760,7 +757,7 @@ class ArtifactRemovePlugin(IPlugin):
     def _on_apply_error(self, msg):
         """Señal: el worker reportó un error."""
         try:
-            QMessageBox.critical(self.widget, "Apply Error", msg)
+            self.alerts.error(msg, "Apply Error")
         finally:
             try:
                 if self.vtk_interactor:

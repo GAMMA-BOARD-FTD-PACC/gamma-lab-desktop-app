@@ -1,9 +1,9 @@
 from datetime import datetime
-from PyQt5.QtWidgets import QMessageBox
 import vtk
 import bisect
 
 from core.filters.measurements import amplitude_in_window, two_point_metrics
+from core.plugins.plugin_alerts import PluginAlerts
 
 
 class MeasurementService:
@@ -16,6 +16,8 @@ class MeasurementService:
 
     def __init__(self, parent, vtk_widget, get_active_chart, datastore_get, datastore_set,
                  pick_radius_px=10, debug=True):
+        self.alerts = PluginAlerts()
+        self.alerts.parent = parent
         self.parent = parent
         self.vtk_widget = vtk_widget
         self.get_active_chart = get_active_chart
@@ -134,22 +136,21 @@ class MeasurementService:
         
         if measure_type == "slope_all_trials" and self._context.get("plugin") != "trials":
             try:
-                QMessageBox.information(self.parent, "Medición",
-                                        "Esta medición solo está disponible en el plugin de Trials.")
+                self.alerts.info("Esta medición solo está disponible en el plugin de Trials.")
             except Exception:
                 pass
             return False
     
         if self._state != 'idle':
             try:
-                QMessageBox.information(self.parent, "Medición", "Ya hay una medición en curso. Completa o cancélala (Esc).")
+                self.alerts.info("Ya hay una medición en curso. Completa o cancélala (Esc).")
             except Exception:
                 pass
             return False
         
         self._state = 'waiting_p1'
         self._current = {'type': measure_type, 'p1': None, 'p2': None}
-        QMessageBox.information(self.parent, "Medición","Selecciona el PRIMER punto con clic izquierdo.")
+        self.alerts.info("Selecciona el PRIMER punto con clic izquierdo.")
 
     def cancel(self):
         self._state = 'idle'
@@ -181,7 +182,7 @@ class MeasurementService:
 
         ch = self.get_active_chart()
         if not ch:
-            QMessageBox.warning(self.parent, "Medición", "No hay un gráfico activo.")
+            self.alerts.warning("No hay un gráfico activo.")
             self.cancel(); return
 
         if self._state == 'waiting_p1':
@@ -199,21 +200,19 @@ class MeasurementService:
                     "xs_len=", (len(self._ref_data['xs']) if self._ref_data else 0))
 
             if not self._ref_data or not self._ref_data.get('xs'):
-                QMessageBox.warning(self.parent, "Medición", "No hay datos de serie para seleccionar puntos.")
+                self.alerts.warning("No hay datos de serie para seleccionar puntos.")
                 self.cancel(); return
 
         picked = self._pick_nearest_data_point(sx, sy)
         if picked is None:
-            QMessageBox.warning(self.parent, "Medición",
-                                f"No hay punto cercano (≤ {self._PICK_RADIUS_PX}px). Intenta de nuevo.")
+            self.alerts.warning(f"No hay punto cercano (≤ {self._PICK_RADIUS_PX}px). Intenta de nuevo.")
             return
 
         if self._state == 'waiting_p1':
             self._current['p1'] = picked
             self._state = 'waiting_p2'
             self._suspend_left_actions(True)
-            QMessageBox.information(self.parent, "Medición",
-                                    "Ahora selecciona el SEGUNDO punto con clic izquierdo.")
+            self.alerts.info("Ahora selecciona el SEGUNDO punto con clic izquierdo.")
             return
 
         if self._state == 'waiting_p2':
@@ -615,11 +614,8 @@ class MeasurementService:
             except Exception:
                 pass
             try:
-                QMessageBox.information(
-                    self.parent, "Slope saved",
-                    f"Result '{result['type']}' saved (ID: {meas_id}).\n"
-                    f"Slope = {result['slope']:.6f}\n\n"
-                    f"For more information go to 'Measure / Slope'."
+                self.alerts.info(
+                    f"Result '{result['type']}' saved (ID: {meas_id}).\n Slope = {result['slope']:.6f}\n\nFor more information go to 'Measure / Slope'."
                 )
             except Exception:
                 pass
@@ -628,8 +624,7 @@ class MeasurementService:
             result = self._compute_amplitude_window(x1, x2)
             if not result:
                 try:
-                    QMessageBox.information(self.parent, "Amplitud",
-                        "No se pudo calcular la amplitud en la ventana seleccionada.")
+                    self.alerts.info("The amplitude could not be calculated in the selected window.", "Amplitude")
                 except Exception:
                     pass
                 self._state = 'idle'
@@ -646,12 +641,11 @@ class MeasurementService:
                 pass
 
             try:
-                QMessageBox.information(
-                    self.parent, "Amplitud guardada",
+                self.alerts.info(
                     (f"Amplitud pico-a-pico = {result['amp_pp']:.6f}\n"
                     f"Ymax={result['y_max']:.6f} @ x={result['x_at_max']:.6f}\n"
                     f"Ymin={result['y_min']:.6f} @ x={result['x_at_min']:.6f}\n"
-                    f"ID: {meas_id}")
+                    f"ID: {meas_id}", "Saved amplitude")
                 )
             except Exception:
                 pass
@@ -664,8 +658,7 @@ class MeasurementService:
                 self._load_reference_data_for_pick(ch)
                 if not self._ref_data or not self._ref_data.get('xs'):
                     try:
-                        QMessageBox.information(self.parent, "Medición",
-                            "No hay datos para estimar índices en X.")
+                        self.alerts.info("No hay datos para estimar índices en X.")
                     except Exception:
                         pass
                     self.cancel(); return
@@ -674,16 +667,14 @@ class MeasurementService:
             i2 = self._nearest_index(x2)
             if i1 is None or i2 is None:
                 try:
-                    QMessageBox.information(self.parent, "Medición",
-                        "No se pudieron determinar los índices de los puntos.")
+                    self.alerts.info("No se pudieron determinar los índices de los puntos.")
                 except Exception:
                     pass
                 self.cancel(); return
 
             if i1 == i2:
                 try:
-                    QMessageBox.information(self.parent, "Medición",
-                        "Los dos puntos caen en el mismo índice; dx=0.")
+                    self.alerts.info("Los dos puntos caen en el mismo índice; dx=0.")
                 except Exception:
                     pass
                 # seguimos adelante para que no deje rastro de estado
@@ -695,10 +686,7 @@ class MeasurementService:
             )
 
             try:
-                QMessageBox.information(
-                    self.parent, "Pendientes por trial",
-                    f"Se generaron {len(ids)} mediciones (una por trial)."
-                )
+                self.alerts.info(f"Se generaron {len(ids)} mediciones (una por trial).", "Pendientes por trial")
             except Exception:
                 pass
 
@@ -708,8 +696,7 @@ class MeasurementService:
         else:
             # tipo no soportado (por si queda rastro de 'derivative')
             try:
-                QMessageBox.information(self.parent, "Medición",
-                                        f"Tipo de medición no soportado: {kind}")
+                self.alerts.info(f"Tipo de medición no soportado: {kind}", "Medición")
             except Exception:
                 pass
 

@@ -1,7 +1,5 @@
 # plugins/analysis/frequency/fft/fft_plugin.py
-import sys
 from PyQt5 import QtWidgets, QtCore
-from PyQt5.QtWidgets import QMessageBox
 import vtk
 import numpy as np
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
@@ -16,11 +14,6 @@ from core.vtk_adapters.adapters import trials_matrix_to_vtk_table
 class Fft_plugin(IPlugin):
     def __init__(self, meta: PluginMeta):
         super().__init__(meta)
-        self.kernel = None
-        self.mainwin = None
-
-        # UI
-        self.widget: QtWidgets.QWidget | None = None
         self.ui: Ui_Fft | None = None
 
         # VTK
@@ -28,20 +21,6 @@ class Fft_plugin(IPlugin):
         self.vtk_view: vtk.vtkContextView | None = None
         self.chart: vtk.vtkChartXY | None = None
 
-        self.active_signal: SignalDataset | None = None
-
-    # ---------- util de logs ----------
-    def _log(self, *args):
-        print("[FFT]", *args)
-        sys.stdout.flush()
-
-    def initialize(self, kernel):
-        self.kernel = kernel
-        self._log("initialize()")
-
-    def start(self, kernel):
-        self._log("start() - obteniendo MainWindow")
-        self.mainwin = kernel.get_service("MainWindow")
 
     def stop(self):
         self._log("stop() - cleanup VTK")
@@ -61,6 +40,7 @@ class Fft_plugin(IPlugin):
             self.ui = Ui_Fft()
             self.widget = QtWidgets.QWidget(parent)
             self.ui.setupUi(self.widget)
+            self.alerts.parent = self.widget
 
             # log de estructura UI
             self._log("UI creada. plotArea:", bool(self.ui.plotArea),
@@ -142,15 +122,6 @@ class Fft_plugin(IPlugin):
                 self.ui.lowFrecuencyDoubleSpinBox.setValue(hi)
         self._log(f"range sync: low={lo}, high={hi}")
 
-    def _notify(self, msg: str):
-        if self.mainwin:
-            try:
-                self.mainwin.statusBar().showMessage(msg, 3000)
-                return
-            except Exception:
-                pass
-        self._log(msg)
-
     # ====== DATA ======
     def _load_trials_from_store(self):
         """
@@ -162,20 +133,12 @@ class Fft_plugin(IPlugin):
         if not self.mainwin:
             return None, None, None
 
-        store = self.mainwin.kernel.get_service("DataStore")
-        if store is None:
-            QMessageBox.warning(self.widget, "Error", "No se encontró el DataStore.")
+        if self.get_active_signal() is None:
             return None, None, None
-
-        self.active_signal = store.get_active_signal()
-        if not self.active_signal:
-            QMessageBox.warning(self.widget, "Sin señal activa", "No hay una señal activa seleccionada.")
-            return None, None, None
-
-        td = self.active_signal.get_active_trials(self.active_signal.name, None)
+        
+        td = self.get_active_trials()
 
         if td is None or td.trials.size == 0:
-            QMessageBox.warning(self.widget, "Error", f"No hay trials activos para {self.active_signal.name}.")
             return None, None, None
 
 
@@ -264,7 +227,7 @@ class Fft_plugin(IPlugin):
             self.vtk_menu = VTKContextMenu(self.chart, self.vtk_interactor, self.active_signal.name, ch_name, self.meta.id, parent=self.widget)
 
         except Exception as e:
-            QMessageBox.information(self.widget, "Menú contextal", "Error creando el menú contextual.\n" + str(e))
+            self.alerts.error(f"Error creating the context menu.\n {str(e)}")
      
 
         self.vtk_view.GetRenderWindow().Render()
