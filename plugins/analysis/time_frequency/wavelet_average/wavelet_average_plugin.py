@@ -187,12 +187,12 @@ class Wavelet_average_plugin(IPlugin):
 
         self.alerts.show_spinner("Computing wavelet")
 
-        # Crear y ejecutar hilo
+        # Create and execute thread
         self.worker = self.WaveletWorker(
             self, data, fs_calculado, fs, fmin, fmax, cycles, normalize, scaled, norm_method
         )
 
-        # conectar señales
+        # Connect signals
         self.worker.log_signal.connect(self._log)
         self.worker.notify_signal.connect(lambda level, msg: getattr(self.alerts, level)(msg))
         self.worker.finished.connect(self._on_wavelet_done)
@@ -200,69 +200,6 @@ class Wavelet_average_plugin(IPlugin):
         self.alerts.show_spinner("Computing wavelet")
         self.worker.start()
 
-        # compute scalogram per trial
-        # scalograms = []
-        # n_trials = data.shape[1]
-        # if n_trials == 0:
-        #     self.alerts.warning(self.widget, "No trials available.")
-        #     self._log("on_create_wavelet: no trials found.")
-        #     return
-
-        # self._log(f"Computing wavelet for {n_trials} trials...")
-
-        # for trial_idx in range(n_trials):
-        #     try:
-        #         sig = np.nan_to_num(data[:, trial_idx], nan=0.0, posinf=0.0, neginf=0.0)
-        #         scalogram, times, freqs = self.compute_wavelet(sig, fs_calculado, fs, fmin, fmax, cycles)
-        #         if scalogram is None or scalogram.size == 0:
-        #             self._log(f"  Trial {trial_idx+1}/{n_trials}: empty scalogram, skipping.")
-        #             self._log(f"  Trial {trial_idx+1}/{n_trials}: min={np.min(scalogram):.4f}, max={np.max(scalogram):.4f}")
-        #             continue
-        #         scalograms.append(scalogram)
-        #         self._log(f"  Trial {trial_idx+1}/{n_trials}: min={np.min(scalogram):.4f}, max={np.max(scalogram):.4f}")
-        #     except Exception as e:
-        #         self._log(f"  Trial {trial_idx+1}/{n_trials} failed:", e)
-
-        # if len(scalograms) == 0:
-        #     self.alerts.error("No valid scalograms computed.")
-        #     self._log("on_create_wavelet: no valid scalograms after processing trials.")
-        #     return
-
-        # # stack and compute average
-        # try:
-        #     stacked = np.stack(scalograms, axis=0)  # shape: (n_valid_trials, n_freqs, n_times)
-        #     avg_scalogram = np.mean(stacked, axis=0)  # shape: (n_freqs, n_times)
-        #     self._log(f"Average scalogram computed: min={np.min(avg_scalogram):.4f}, max={np.max(avg_scalogram):.4f}")
-        # except Exception as e:
-        #     self._log("Error while stacking/averaging scalograms:", e)
-        #     self.alerts.error(f"Failed to compute average scalogram: {e}")
-        #     return
-
-        # # optional normalization
-        # if normalize:
-        #     try:
-        #         avg_scalogram = self.normalize_tf(avg_scalogram, norm_method)
-        #         self._log(f"Normalization applied: method={norm_method}")
-        #     except Exception as e:
-        #         self._log("Normalization failed:", e)
-
-        # # optional log scaling (resample rows logarithmically)
-        # if scaled:
-        #     try:
-        #         avg_scalogram, freqs = self._scale_log(avg_scalogram, freqs)
-        #         self._log("Log scaling applied.")
-        #     except Exception as e:
-        #         self._log("Log scaling failed:", e)
-
-        # # ensure VTK and render
-        # self.ensure_vtk()
-        # try:
-        #     self.render_scalogram(times, freqs, avg_scalogram, "Wavelet Average (Morlet)", scaled)
-        #     self._log("Rendering complete.")
-        #     self.alerts.hide_spinner()
-        # except Exception as e:
-        #     self._log("Render failed:", e)
-        #     self.alerts.error(f"Rendering failed: {e}")
     # end def
 
     def _on_wavelet_done(self, times, freqs, avg_scalogram, scaled, error):
@@ -403,7 +340,7 @@ class Wavelet_average_plugin(IPlugin):
     # end def
 
     # =====================================================
-    # === Rendering (VTK) - adapted from Wavelet plugin
+    # === Rendering (VTK)
     # =====================================================
     def render_scalogram(self, t, freqs, scalogram, title="Scalogram", log_scale=False):
         """Render a 2D scalogram using VTK chart (histogram2D)."""
@@ -512,7 +449,7 @@ class Wavelet_average_plugin(IPlugin):
     # end def
 
     # =====================================================
-    # === Colormap LUT & helpers (same logic as individual plugin)
+    # === Colormap LUT & helpers
     # =====================================================
     def _build_lut(self, mode: str, vmin: float, vmax: float) -> vtk.vtkLookupTable:
         """Build a lookup table (similar to 'jet' like mapping)."""
@@ -563,8 +500,6 @@ class Wavelet_average_plugin(IPlugin):
         return ctf
     # end def
 
-# end class
-
     class WaveletWorker(QThread):
         finished = pyqtSignal(object, object, object, bool, object)  # times, freqs, avg_scalogram, scaled, error
         log_signal = pyqtSignal(str)
@@ -582,6 +517,7 @@ class Wavelet_average_plugin(IPlugin):
             self.normalize = normalize
             self.scaled = scaled
             self.norm_method = norm_method
+        # end def
 
         def run(self):
             try:
@@ -624,3 +560,6 @@ class Wavelet_average_plugin(IPlugin):
                 self.log_signal.emit(f"WaveletWorker error: {e}")
                 self.notify_signal.emit("error", str(e))
                 self.finished.emit(None, None, None, False, e)
+        # end def
+    # end class
+# end class

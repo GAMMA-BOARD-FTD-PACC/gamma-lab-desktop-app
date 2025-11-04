@@ -418,7 +418,7 @@ class Wavelet_plugin(IPlugin):
     # end def
 
     # =====================================================
-    # === Convertir LUT a CTF
+    # === Convert LUT to CTF
     # =====================================================
     def _lut_to_ctf(self, lut: vtk.vtkLookupTable) -> vtk.vtkColorTransferFunction:
         ctf = vtk.vtkColorTransferFunction()
