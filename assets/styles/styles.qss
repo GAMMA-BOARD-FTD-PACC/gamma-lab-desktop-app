@@ -272,6 +272,7 @@ QComboBox {
     color: #2E60A9;
     border: 1px solid transparent;       /* sin borde por defecto */
     border-radius: 8px;
+    min-width: 120px;
     padding: 4px 28px 4px 8px;           /* espacio para el texto y flecha */
 }
 
@@ -323,6 +324,42 @@ QComboBox QAbstractItemView::item {
 QComboBox QAbstractItemView::item:last {
     border: none;
 }
+
+/* COMBO BOX DESHABILITADO */
+QComboBox:disabled {
+    background-color: #F0F0F0;
+    color: #A0A0A0;
+    border: 1px solid #D0D0D0;
+    border-radius: 8px;
+    padding: 4px 28px 4px 8px;
+}
+
+/* Flecha de desplegable deshabilitada */
+QComboBox::drop-down:disabled {
+    background: transparent;
+}
+
+/* Icono de la flecha deshabilitada */
+QComboBox::down-arrow:disabled {
+    image: url(:/assets/icons/input/down-btn-gray.png);
+}
+
+/* Lista desplegable deshabilitada */
+QComboBox QAbstractItemView:disabled {
+    background-color: #F0F0F0;
+    color: #A0A0A0;
+    border: 1px solid #D0D0D0;
+    border-radius: 6px;
+    padding: 4px;
+}
+
+/* Elementos de la lista deshabilitados */
+QComboBox QAbstractItemView::item:disabled {
+    color: #A0A0A0;
+    background-color: transparent;
+    border-bottom: 1px solid #E8E8E8;
+}
+
 
 
 /* CHECKBOXES */
@@ -467,7 +504,6 @@ QLabel[variant="title"] {
     font-weight: 600;
     color: #2E60A9;              
     padding-top: 4px;
-    padding-bottom: 4px;
 }
 
 /* Subtítulos */
@@ -475,7 +511,7 @@ QLabel[variant="subtitle"] {
     font-size: 10pt;
     font-weight: 500;
     color: #2E60A9;
-    padding-bottom: 2px;
+    padding-top: 10px;
 }
 
 QLabel[variant="input"] {
@@ -497,7 +533,6 @@ QFrame[role="divider"] {
     max-height: 1px;
     min-height: 1px;
     border: none;
-    margin: 2px 0;
 }
 
 /* =========================================
