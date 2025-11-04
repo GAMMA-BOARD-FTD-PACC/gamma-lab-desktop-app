@@ -1,14 +1,15 @@
 # plugins/measure/slope/slope_plugin.py
-import sys
+import os
 import csv
 from datetime import datetime
 from typing import Any, Dict, List
 
 from PyQt5 import QtWidgets, QtCore
-from PyQt5.QtWidgets import QMessageBox, QFileDialog, QHeaderView
+from PyQt5.QtWidgets import QFileDialog, QHeaderView
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
+from core.services.settingsService import SettingsService
 from plugins.measure.slope.slope_plugin_ui import Ui_Slope
 
 
@@ -112,8 +113,8 @@ class SlopePlugin(IPlugin):
 
     def __init__(self, meta: PluginMeta):
         super().__init__(meta)
-        self.kernel = None
-        self.mainwin = None
+        self.settings = SettingsService()
+
 
         # UI
         self.widget: QtWidgets.QWidget | None = None
@@ -122,35 +123,8 @@ class SlopePlugin(IPlugin):
         # Table model
         self.model: SlopeTableModel | None = None
 
-    # ---------- Logging ----------
-    def _log(self, *args):
-        print("[SLOPE]", *args)
-        sys.stdout.flush()
-
-    def _notify(self, msg: str):
-        if self.mainwin:
-            try:
-                self.mainwin.statusBar().showMessage(msg, 2500)
-                return
-            except Exception:
-                pass
-        self._log(msg)
-
-    def _warn(self, msg: str):
-        try:
-            QMessageBox.warning(self.widget, "Slope", msg)
-        except Exception:
-            self._log("WARN:", msg)
 
     # ---------- Lifecycle ----------
-    def initialize(self, kernel):
-        self.kernel = kernel
-        self._log("initialize()")
-
-    def start(self, kernel):
-        self.kernel = kernel
-        self.mainwin = kernel.get_service("MainWindow")
-        self._log("start()")
 
     def stop(self):
         self._log("stop()")
@@ -165,6 +139,7 @@ class SlopePlugin(IPlugin):
             self._log("get_widget(): creating UI")
             self.ui = Ui_Slope()
             self.widget = QtWidgets.QWidget(parent)
+            self.alerts.parent = self.widget
             self.ui.setupUi(self.widget)
 
             # Model + table setup
@@ -205,17 +180,8 @@ class SlopePlugin(IPlugin):
             ctx_graph   = ctx.graph_id
         """
         # Get DataStore service
-        store = None
-        try:
-            if self.mainwin:
-                store = self.mainwin.kernel.get_service("DataStore")
-            if store is None and self.kernel:
-                store = self.kernel.get_service("DataStore")
-        except Exception:
-            store = None
-
+        store = self.get_datastore()
         if store is None:
-            self._warn("DataStore service not found.")
             return []
 
         # Raw list
@@ -299,13 +265,15 @@ class SlopePlugin(IPlugin):
             return
         rows = self.model.get_all_rows()
         if not rows:
-            self._warn("No measurements to export.")
+            self.alerts.warning("No measurements to export.")
             return
+
+        path_initial = self.settings.get("last_export_dir", os.getcwd())
 
         path, _ = QFileDialog.getSaveFileName(
             self.widget,
             "Export slope measurements to CSV",
-            "slope_measurements.csv",
+            path_initial + "slope_measurements.csv",
             "CSV (*.csv)"
         )
         if not path:
@@ -333,4 +301,4 @@ class SlopePlugin(IPlugin):
                     ])
             self._notify(f"CSV exported successfully: {path}")
         except Exception as e:
-            self._warn(f"Failed to export CSV:\n{e}")
+            self.alerts.error(f"Failed to export CSV:\n{e}")

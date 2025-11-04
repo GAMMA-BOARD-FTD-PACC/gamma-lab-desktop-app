@@ -72,7 +72,7 @@ class IPlugin(ABC):
                 return None
             store: DataStore | None = self.mainwin.kernel.get_service("DataStore")
             if store is None:
-                self.alerts.warning("No se encontró el servicio DataStore.")
+                self.alerts.warning("DataStore service not found.")
             return store
         except Exception as e:
             self.alerts.error(f"Error accediendo al DataStore: {e}")
@@ -114,15 +114,29 @@ class IPlugin(ABC):
             return None
         
     def on_kernel_event(self, topic: str, payload: object):
+
         """
         Escucha eventos emitidos por el Kernel.
+
+        Se llama cuando ocurre un evento en el kernel y se pasa el tópico y el contenido del evento como argumentos.
+
+        Se utiliza para escuchar eventos relevantes para el plugin, como por ejemplo, cambios en la señal activa o nuevos datos añadidos.
+
+        :param topic: El tópico del evento
+        :param payload: El contenido del evento
+        :return: None
         """
         if topic == "signal_active_changed" or topic =="signal_added":
             print(f"Nueva señal cambiada: {payload}")
             self.active_signal = self.get_active_signal() 
 
     def initialize(self, kernel):
-        """Se llama cuando se registra el plugin en el kernel y se pasa el kernel como argumento."""
+        """
+        Inicializa el plugin con el kernel.
+
+        :param kernel: El kernel del que depende el plugin.
+        :return: None
+        """
         self.kernel = kernel
         self._log("Inicializando")
 
@@ -132,10 +146,15 @@ class IPlugin(ABC):
         pass
 
     def start(self, kernel: kernel):
-        self.mainwin = kernel.get_service("MainWindow")
-        #Escuchar los eventos del kernel
-        self.kernel.event.connect(self.on_kernel_event)
+        """
+        Inicializa el plugin con el kernel y registra el evento de cambio en la señal activa.
 
+        :param kernel: El kernel del que depende el plugin.
+        :return: None
+        """
+        
+        self.mainwin = kernel.get_service("MainWindow")
+        self.kernel.event.connect(self.on_kernel_event)
 
         if self.mainwin:
             self.started = True

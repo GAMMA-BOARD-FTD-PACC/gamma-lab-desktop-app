@@ -13,7 +13,7 @@ class Ui_Psd(object):
 
         # Layout raíz del Form
         self._root = QtWidgets.QVBoxLayout(Form)
-        self._root.setContentsMargins(10, 10, 10, 10)
+        self._root.setContentsMargins(0, 0, 5, 0)
         self._root.setSpacing(0)
 
         # ====== Splitter: izquierda visor / derecha panel ======

@@ -5,7 +5,7 @@ from core.plugins.vtk_context_menu import VTKContextMenu
 
 
 from plugins.analysis.time.average.average_plugin_ui import Ui_Average
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QMessageBox, QMenu
+from PyQt5.QtWidgets import QWidget, QVBoxLayout
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 import vtk
 import numpy as np
@@ -85,7 +85,7 @@ class Average_plugin(IPlugin):
         t = np.asarray(t, dtype=float)
         av = np.asarray(av_data, dtype=float)
         if t.ndim != 1 or av.ndim != 1 or t.size != av.size:
-            QMessageBox.warning(self.widget, "Render error", "Vectores de tiempo y señal deben tener la misma longitud 1D.")
+            self.alerts.error( "Time and signal vectors must have the same 1D length.", "Render error")
             return
 
         # Downsample si hay muchísimos puntos (para mantener interacción fluida)
@@ -162,10 +162,6 @@ class Average_plugin(IPlugin):
             except Exception:
                 pass
 
-    
-    def on_show_stats(self):
-        # Acción personalizada del plugin Average
-        QMessageBox.information(self.widget, "Estadísticas", "Promedio calculado correctamente.")
 
     def ensure_vtk(self):
         """Crea e inicializa los widgets VTK y las vistas (context view)."""
@@ -204,10 +200,9 @@ class Average_plugin(IPlugin):
                     parent=self.widget
                 )
                 self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
-                self.vtk_menu.add_action("Mostrar estadísticas", self.on_show_stats)
-            except Exception as e:
-                QMessageBox.information(self.widget, "Context menu",
-                                        "Error creating context menu.\n" + str(e))
+            except Exception as e:            
+                self.alerts.info(f"Error creating contextual menu\n {str(e)}", "Contextual menu")
+
 
 
    

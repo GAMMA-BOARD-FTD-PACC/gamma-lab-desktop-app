@@ -377,7 +377,7 @@ class Erp_plugin(IPlugin):
             self.vtk_menu_bot = VTKContextMenu(chart, self.vtk_top, self.active_signal.name,self.ch_name,self.meta.id, parent=self.widget)
             self.vtk_menu_bot.add_action("Cambiar LUT", self._on_change_lut)
         except Exception as e:
-            self.alerts.info(f"Error creando el menú contextual.\n{e}", "Menú contextual (Bottom)")
+            self.alerts.info(f"Error creating contextual menu\n {str(e)}", "Contextal menu")
 
 
 

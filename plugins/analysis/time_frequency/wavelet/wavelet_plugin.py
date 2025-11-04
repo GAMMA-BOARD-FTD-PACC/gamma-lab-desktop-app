@@ -376,7 +376,7 @@ class Wavelet_plugin(IPlugin):
             self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
 
         except Exception as e:
-            self.alerts.info(f"Error creating contextual map\n {str(e)}", "Contextal map")
+            self.alerts.info(f"Error creating contextual map\n {str(e)}", "Contextual map")
 
             
         context_view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
