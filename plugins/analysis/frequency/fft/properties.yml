@@ -1,5 +1,5 @@
 id: "fft"
-name: "Fft"
+name: "FFT"
 category: "Analysis"
 subcategory: "Frequency"
 version: "1.0"
