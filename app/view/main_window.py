@@ -1,11 +1,12 @@
 from collections import defaultdict
 import os
-from PyQt5.QtWidgets import QMainWindow, QMessageBox, QHBoxLayout, QVBoxLayout, QWidget, QToolButton, QGroupBox, QLabel, QSizePolicy
+from PyQt5.QtWidgets import QMainWindow, QHBoxLayout, QVBoxLayout, QWidget, QToolButton, QGroupBox, QLabel, QSizePolicy
 from app.view.main_window_ui import Ui_MainWindow 
 from PyQt5.QtGui import QIcon, QPixmap
 from PyQt5.QtCore import QSize, Qt, QPropertyAnimation, QEasingCurve
 
 from core.plugins.interfaces import IPlugin
+from core.plugins.plugin_alerts import PluginAlerts
 
 class MainWindow(QMainWindow):
     def __init__(self, kernel):
@@ -19,6 +20,9 @@ class MainWindow(QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         self.showMaximized()
+        
+        self.alerts = PluginAlerts()
+        self.alerts.parent = self
 
         self.kernel.event.connect(self.on_kernel_event)
 
@@ -137,11 +141,7 @@ class MainWindow(QMainWindow):
             try:
                 self.active_plugin.stop()
             except Exception as e:
-                QMessageBox.critical(
-                    self,
-                    "Error al detener el plugin",
-                    f"Ocurrió un error al detener el VTK render del plugin .\n\nDetalles:\n{str(e)}"
-                )
+                self.alerts.warning(f"An error occurred while stopping the VTK render plugin.\n\nDetails:\n{str(e)}", "Error stopping plugin")
             self.active_plugin_widget.setVisible(False)
 
         self.active_plugin_widget = None
@@ -174,21 +174,13 @@ class MainWindow(QMainWindow):
             try:
                 widget = plugin.get_widget(parent=self.plugin_area)
             except Exception as e:
-                QMessageBox.critical(
-                    self,
-                    "Error al renderizar el plugin",
-                    f"Ocurrió un error al renderizar el widget del plugin '{plugin.name()}'.\n\nDetalles:\n{str(e)}"
-                )
+                self.alerts.error(f"An error occurred while rendering the plugin widget '{plugin.name()}'.\n\nDetails:\n{str(e)}", "Error rendering plugin")
                 print("[Main Window] Error en get_widget del plugin:", e)
                 widget = None
 
             # Si no retorna widget, crear placeholder
             if widget is None:
-                QMessageBox.critical(
-                    self,
-                    "Error al renderizar el plugin",
-                    f"No hay interfaz para el plugin '{plugin.name()}'."
-                )
+                self.alerts.error(f"No hay interfaz para el plugin '{plugin.name()}'.", "Error rendering plugin")
 
 
                 placeholder = QWidget(parent=self.plugin_area)

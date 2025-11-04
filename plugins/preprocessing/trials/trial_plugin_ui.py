@@ -11,7 +11,7 @@ class Ui_Trials(QtWidgets.QWidget):
 
         # ===== Root =====
         self._root = QtWidgets.QVBoxLayout(self)
-        self._root.setContentsMargins(10, 10, 10, 10)
+        self._root.setContentsMargins(0, 0, 5, 0)
         self._root.setSpacing(0)
 
         # ===== Splitter L/R =====

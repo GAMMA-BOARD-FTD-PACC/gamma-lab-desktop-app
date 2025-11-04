@@ -5,7 +5,6 @@ import vtk
 import numpy as np
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 from PyQt5 import QtWidgets, QtCore
-from PyQt5.QtWidgets import QMessageBox
 
 from core.plugins.meta import PluginMeta
 from core.plugins.vtk_context_menu import VTKContextMenu
@@ -16,25 +15,13 @@ from plugins.analysis.frequency.fft_average.fft_average_plugin_ui import Ui_Fft_
 class Fft_average_plugin(IPlugin):
     def __init__(self, meta: PluginMeta):
         super().__init__(meta)
-        self.mainwin = None
-        self.widget = None
         
-        self.widget: QtWidgets.QWidget | None = None
         self.ui: Ui_Fft_Average | None = None
         
         self.vtk_interactor: QVTKRenderWindowInteractor | None = None
         self.vtk_view: vtk.vtkContextView | None = None
         self.chart: vtk.vtkChartXY | None = None
-
-        self.active_signal: SignalDataset | None = None
         
-    def initialize(self, kernel):
-        self.kernel = kernel
-        self._log("initialize()")
-
-    def start(self, kernel):
-        self._log("start() - obteniendo MainWindow")
-        self.mainwin = kernel.get_service("MainWindow")
 
     def stop(self):
         self._log("stop")
@@ -53,6 +40,7 @@ class Fft_average_plugin(IPlugin):
             self.ui = Ui_Fft_Average()
             self.widget = QtWidgets.QWidget(parent)
             self.ui.setupUi(self.widget)
+            self.alerts.parent = self.widget
 
             self._log("UI creada. plotArea:", bool(self.ui.plotArea),
                       "panel:", bool(self.ui.panel),
@@ -62,20 +50,7 @@ class Fft_average_plugin(IPlugin):
         else:
             self.widget.setParent(parent)
         return self.widget
-
-    #=== LOGS ===#
-    def _notify(self, msg: str):
-        if self.mainwin:
-            try:
-                self.mainwin.statusBar().showMessage(msg, 3000)
-                return
-            except Exception:
-                pass
-        self._log(msg)
         
-    def _log(self, *args):
-        print("[FFT-AVERAGE]", *args)
-        sys.stdout.flush()
 
     ## === UI === ##
     def _wire_ui(self):
@@ -146,23 +121,14 @@ class Fft_average_plugin(IPlugin):
           X:  np.ndarray (Ns, T)  matriz de trials (columnas = trials)
           ch_name: nombre de canal (opcional para título)
         """
-        if not self.mainwin:
+
+         
+        if self.get_active_signal() is None:
             return None, None, None
 
-        store = self.mainwin.kernel.get_service("DataStore")
-        if store is None:
-            QMessageBox.warning(self.widget, "Error", "No se encontró el DataStore.")
-            return None, None, None
-
-        self.active_signal: SignalDataset = store.get_active_signal()
-        if self.active_signal is None:
-            QMessageBox.warning(self.widget, "Sin señal activa", "No hay una señal activa seleccionada.")
-            return None, None, None
-
-        td = self.active_signal.get_active_trials(self.active_signal.name, None)
+        td = self.get_active_trials()
 
         if td is None or td.trials.size == 0:
-            QMessageBox.warning(self.widget, "Error", f"No hay trials activos para {self.active_signal.name}.")
             return None, None, None
 
         fs = float(getattr(td, "sampling_rate", 0.0))
@@ -274,7 +240,7 @@ class Fft_average_plugin(IPlugin):
             self.vtk_menu = VTKContextMenu(self.chart, self.vtk_interactor, self.active_signal.name, ch_name,self.meta.id,  parent=self.widget)
 
         except Exception as e:
-            QMessageBox.information(self.widget, "Menú contextal", "Error creando el menú contextual.\n" + str(e))
+            self.alerts.error(f"Error creating the context menu.\n {str(e)}")
      
 
 

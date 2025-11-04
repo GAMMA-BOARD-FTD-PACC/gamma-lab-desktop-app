@@ -95,6 +95,7 @@ QPushButton:checked {
 QScrollArea { 
     border: none;
     background: #E8E8E8;
+    padding-left: 4px;
 }
 
 
@@ -103,7 +104,7 @@ QScrollArea {
 QScrollBar:vertical {
     background: transparent;
     width: 8px;
-    margin: 2px 0;
+    margin: 3px 3px;
     border-radius: 4px;
 }
 
@@ -113,8 +114,14 @@ QScrollBar::handle:vertical {
     min-height: 20px;
 }
 
+
+QScrollBar:vertical:hover {
+    margin: 2px 0;
+}
+
 QScrollBar::handle:vertical:hover {
     background-color: #a24b7eca;
+
 }
 
 QScrollBar::add-line:vertical,
@@ -491,4 +498,39 @@ QFrame[role="divider"] {
     min-height: 1px;
     border: none;
     margin: 2px 0;
+}
+
+/* =========================================
+   SPINNER DE CARGA GLOBAL (PluginAlerts)
+   ========================================= */
+
+#spinnerDialog {
+    background-color: rgba(0, 0, 0, 160);   /* fondo semitransparente */
+    border-radius: 12px;
+}
+
+#spinnerDialog QLabel {
+    color: white;
+    font-size: 10pt;
+    font-weight: 500;
+    text-align: center;
+}
+
+/* Si usas una barra de progreso indeterminada como fallback */
+#spinnerDialog QProgressBar {
+    border: none;
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    height: 8px;
+}
+
+#spinnerDialog QProgressBar::chunk {
+    background-color: #2E60A9;
+    border-radius: 8px;
+}
+
+/* Si usas un GIF (spinner animado) */
+#spinnerDialog QLabel[role="spinner-gif"] {
+    qproperty-alignment: AlignCenter;
+    margin-bottom: 6px;
 }
