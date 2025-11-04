@@ -94,7 +94,7 @@ class Erp_plugin(IPlugin):
             pass
     
     def _wire_ui(self):
-        self.ui.btnPlot.clicked.connect(self._on_plot_clicked)
+        self.ui.plotErpButton.clicked.connect(self._on_plot_clicked)
         self.ui.spnFrom.valueChanged.connect(self._sync_range)
         self.ui.spnTo.valueChanged.connect(self._sync_range)
         self.ui.txtFilter.textChanged.connect(self._apply_filter)

@@ -21,7 +21,6 @@ class Ui_Wavelet(object):
         self.plotArea.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.plotArea.setFrameShadow(QtWidgets.QFrame.Raised)
         self.plotArea.setObjectName("plotArea")
-        self.plotArea.setMinimumWidth(520)
 
         # Right Area: Panel
         self.scrollArea = QtWidgets.QScrollArea(self.splitter)

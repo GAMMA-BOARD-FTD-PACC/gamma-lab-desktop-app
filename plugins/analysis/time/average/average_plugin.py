@@ -43,7 +43,7 @@ class Average_plugin(IPlugin):
             self.ensure_vtk()
 
             # Conectar botón “Calculate Average”
-            self.ui.mainActionButton.clicked.connect(self._on_calculate_average)
+            self.ui.calculateAverageButton.clicked.connect(self._on_calculate_average)
 
         else:
             self.widget.setParent(parent)
@@ -167,11 +167,11 @@ class Average_plugin(IPlugin):
         """Crea e inicializa los widgets VTK y las vistas (context view)."""
         # Crear QVTK dentro del contenedor ya definido en el .ui
         if not self.vtk_widget:
-            self.vtk_widget = QVTKRenderWindowInteractor(self.ui.VTK_render_Qwidget)
+            self.vtk_widget = QVTKRenderWindowInteractor(self.ui.plotArea)
             
-            layout = QVBoxLayout(self.ui.VTK_render_Qwidget)
+            layout = QVBoxLayout(self.ui.plotArea)
             layout.setContentsMargins(0, 0, 0, 0)
-            self.ui.VTK_render_Qwidget.setLayout(layout)
+            self.ui.plotArea.setLayout(layout)
             layout.addWidget(self.vtk_widget)
 
         # ContextView (facilita charting)
