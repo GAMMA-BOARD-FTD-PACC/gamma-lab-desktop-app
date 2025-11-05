@@ -45,9 +45,56 @@ class TrialsPlugin(IPlugin):
 
 
     def stop(self):
-        self._log("stop")
-        if self.vtk_interactor:
-            self.vtk_interactor.Disable()
+        self._log("stop() – tearing down VTK")
+
+        # 1) Menú / observers
+        try:
+            if self.vtk_menu is not None:
+                # si tienes un método específico:
+                if hasattr(self.vtk_menu, "detach"):
+                    self.vtk_menu.detach()
+                else:
+                    self.vtk_menu.set_chart(None)
+                self.vtk_menu = None
+        except Exception as e:
+            self._log("vtk_menu teardown:", e)
+
+        # 2) Vaciar escena y chart
+        try:
+            if self.vtk_view is not None:
+                scene = self.vtk_view.GetScene()
+                if scene is not None:
+                    scene.ClearItems()
+                self.chart = None
+        except Exception as e:
+            self._log("scene clear:", e)
+
+        # 3) Desactivar interactor y cortar renderwindow
+        try:
+            if self.vtk_interactor is not None:
+                self.vtk_interactor.Disable()
+                self.vtk_interactor.RemoveObservers("")  # quita todos
+                rw = self.vtk_interactor.GetRenderWindow()
+                if rw is not None:
+                    # evita más renders y libera el contexto
+                    try:
+                        rw.AbortRenderOn()
+                    except Exception:
+                        pass
+                    try:
+                        rw.Finalize()
+                    except Exception:
+                        pass
+                # rompe el vínculo Qt ↔ VTK
+                self.vtk_interactor.SetRenderWindow(None)
+        except Exception as e:
+            self._log("interactor teardown:", e)
+
+        # 4) Romper referencias VTK
+        self.vtk_view = None
+        self.vtk_interactor = None
+        self.chart = None
+
 
     def process(self, data: any):
         self._log(f"process{data}")
@@ -82,6 +129,8 @@ class TrialsPlugin(IPlugin):
         self._log("ensure_vtk(): enter")
         
         self.vtk_interactor = QVTKRenderWindowInteractor(self.ui.plotArea)
+        self.vtk_interactor.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
+        self.vtk_interactor.destroyed.connect(self._on_vtk_widget_destroyed)
         self.ui.plotArea.setLayout(QtWidgets.QVBoxLayout())
         self.ui.plotArea.layout().setContentsMargins(0, 0, 0, 0)
         self.ui.plotArea.layout().addWidget(self.vtk_interactor)
@@ -116,6 +165,26 @@ class TrialsPlugin(IPlugin):
             self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
         self._log("ensure_vtk(): scheduled init")
 
+    def _on_vtk_widget_destroyed(self, *args):
+        # seguridad adicional si Qt destruye el widget
+        try:
+            if self.vtk_view is not None:
+                rw = self.vtk_view.GetRenderWindow()
+                if rw is not None:
+                    try:
+                        rw.AbortRenderOn()
+                    except Exception:
+                        pass
+                    try:
+                        rw.Finalize()
+                    except Exception:
+                        pass
+        except Exception as e:
+            self._log("_on_vtk_widget_destroyed:", e)
+        finally:
+            self.vtk_view = None
+            self.vtk_interactor = None
+            self.chart = None
     def _init_controls(self):
         self._log("_init_controls: set defaults")
         self.ui.thresholdDoubleSpinBox.setRange(0.0, 1e12)

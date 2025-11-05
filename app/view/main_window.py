@@ -1,8 +1,8 @@
 from collections import defaultdict
 import os
-from PyQt5.QtWidgets import QMainWindow, QHBoxLayout, QVBoxLayout, QWidget, QToolButton, QGroupBox, QLabel, QSizePolicy
+from PyQt5.QtWidgets import QMainWindow, QHBoxLayout, QVBoxLayout, QWidget, QToolButton, QGroupBox, QLabel, QSizePolicy, QApplication
 from app.view.main_window_ui import Ui_MainWindow 
-from PyQt5.QtGui import QIcon, QPixmap
+from PyQt5.QtGui import QIcon, QFontMetrics, QFont
 from PyQt5.QtCore import QSize, Qt, QPropertyAnimation, QEasingCurve
 
 from core.plugins.interfaces import IPlugin
@@ -58,6 +58,11 @@ class MainWindow(QMainWindow):
 
         # Mostrar por defecto plugins de Home
         self.switch_section(self.current_section)
+        
+        self._app_quitting = False
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self._on_app_about_to_quit)
 
 
     '''buttons section'''
@@ -73,67 +78,107 @@ class MainWindow(QMainWindow):
         self.current_section = section
         self.setWindowTitle(f"Gamma Lab - {self.current_section}")
 
-        
-        # Desmarcar los botones y marcar el de la sección actual
+        # Toggle del botón de sección
         for btn in self.section_buttons.values():
             btn.setChecked(False)
         if section in self.section_buttons:
             self.section_buttons[section].setChecked(True)
 
+        # Layout del contenedor azul
+        contenedor = self.ui.buttonContainer.layout()
+        while contenedor.count():
+            item = contenedor.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
 
-        contenedor_botones = self.ui.buttonContainer.layout()
+        # Alinear a la izquierda y sin espacios externos
+        contenedor.setContentsMargins(0, 0, 0, 0)
+        contenedor.setSpacing(8)
+        contenedor.setAlignment(Qt.AlignLeft)
+
+        # Agrupar plugins por subcategoría
         subcategories = defaultdict(list)
-
-        # Limpiar botones existentes
-        while contenedor_botones.count():
-            item = contenedor_botones.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
-        
-
-
-        # Agregar solo los plugins de la sección actual
         for name in self.kernel.get_plugins_by_category(section):
             plugin = self.kernel.get_plugin(name)
-            subcategory = plugin.subcategory()
-            subcategories[subcategory].append(name)
+            subcategories[plugin.subcategory()].append(name)
 
-            self.add_plugin_button(name)
-        
-        # Crear secciones visuales por subcategoría
-        for subcat, plugins in subcategories.items():
-            group_box = QGroupBox(subcat)
-            group_box.setAlignment(Qt.AlignHCenter | Qt.AlignTop)  # nombre centrado arriba
-            group_layout = QHBoxLayout(group_box)
-            group_layout.setContentsMargins(0, 0, 0, 0)  # sin márgenes internos
+        # Construir cada subcategoría y poner divider entre ellas
+        subcats = list(subcategories.items())
+        for idx, (subcat, plugins) in enumerate(subcats):
+            group_box = QGroupBox(subcat, self.ui.buttonContainer)
+            group_box.setAlignment(Qt.AlignHCenter | Qt.AlignBottom)
+            row = QHBoxLayout(group_box)
+            row.setContentsMargins(0, 6, 0, 22)
+            row.setSpacing(34)
 
             for name in plugins:
-                btn = self.add_plugin_button(name)
-                group_layout.addWidget(btn)
+                row.addWidget(self.add_plugin_button(name))
 
-            contenedor_botones.addWidget(group_box)
+            contenedor.addWidget(group_box, 0, Qt.AlignVCenter)
 
-
-    #Agregar un botón de plugin cuando hay el evento de agregar uno nuevo.
+        # Empujar todo a la izquierda
+        contenedor.addStretch(1)
+        
     def add_plugin_button(self, name):
         plugin = self.kernel.get_plugin(name)
-        btn = QToolButton()
-        btn.setText(plugin.name())
+        btn = QToolButton(self.ui.buttonContainer)
         btn.setObjectName(f"btn_{name}")
+        btn.setCheckable(False)
+        btn.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
 
+        # Slot fijo (coherente con QSS)
+        btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        btn.setMinimumWidth(96); btn.setMaximumWidth(96)
+        btn.setMinimumHeight(76)
+
+        # Icono
         try:
             icon_path = plugin.icon()
             if icon_path:
                 btn.setIcon(QIcon(icon_path))
-                btn.setIconSize(QSize(48, 48))
-                btn.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+                btn.setIconSize(QSize(26, 26))
         except Exception as e:
             print("Icono no disponible para plugin", name, "->", e)
 
+        label = plugin.name()
+        fm_width = 96 - 8
+        btn.setText(self._wrap_button_text(label, btn.font(), fm_width))
+
         btn.clicked.connect(lambda _, n=name: self.on_button_click(n))
         return btn
-    '''workspace area'''
+
+    def _wrap_button_text(self, text: str, font: QFont, max_width: int) -> str:
+        """
+        Inserta un salto de línea óptimo para que el texto quepa en 1–2 líneas
+        dentro de 'max_width'. Si ya cabe en una línea, lo deja igual.
+        """
+        fm = QFontMetrics(font)
+        if fm.horizontalAdvance(text) <= max_width:
+            return text
+
+        # Intentar partir en el último espacio que deje primera línea <= max_width
+        words = text.split()
+        if len(words) == 1:
+            # Sin espacios; corta “a mano” en ~caracteres que quepan
+            for i in range(len(text)-1, 0, -1):
+                if fm.horizontalAdvance(text[:i]) <= max_width:
+                    return text[:i] + "\n" + text[i:]
+            return text  # fallback
+        else:
+            # Construir línea 1 con el mayor número de palabras que quepan
+            line1 = words[0]
+            for w in words[1:]:
+                candidate = f"{line1} {w}"
+                if fm.horizontalAdvance(candidate) <= max_width:
+                    line1 = candidate
+                else:
+                    # resto pasa a segunda línea
+                    line2 = " ".join(words[len(line1.split()):])
+                    # si la segunda aún es muy larga, no pasa nada: el alto del botón lo soporta
+                    return line1 + "\n" + line2
+            # si entraron todas, ya no hace falta segunda línea
+            return line1
 
     # Clean workspace
     def clear_plugin_area(self):
@@ -360,3 +405,50 @@ class MainWindow(QMainWindow):
     def setup_results_section(self):
         """Inicializa la sección de resultados (por ahora vacía)."""
         pass
+    
+    def _on_app_about_to_quit(self):
+        """Apaga plugins y su UI de forma segura. Idempotente."""
+        if self._app_quitting:
+            return
+        self._app_quitting = True
+
+        # 1) Detén el plugin activo, si lo hay
+        try:
+            if self.active_plugin and hasattr(self.active_plugin, "stop"):
+                self.active_plugin.stop()
+        except Exception as e:
+            print("stop(active_plugin) error:", e)
+
+        # 2) Detén el resto (si tu kernel expone una forma de listarlos)
+        try:
+            # Opción A: si tienes un método para listarlos todos
+            if hasattr(self.kernel, "get_all_plugins"):
+                for name in self.kernel.get_all_plugins():
+                    p = self.kernel.get_plugin(name)
+                    if p is not None and hasattr(p, "stop"):
+                        try: p.stop()
+                        except Exception as e: print(f"stop({name}) error:", e)
+            else:
+                # Opción B: usa los que están instanciados en la UI
+                for name in list(self.plugin_widgets.keys()):
+                    p = self.kernel.get_plugin(name)
+                    if p is not None and hasattr(p, "stop"):
+                        try: p.stop()
+                        except Exception as e: print(f"stop({name}) error:", e)
+        except Exception as e:
+            print("stop(all) error:", e)
+
+        # 3) Oculta widgets y limpia referencias (evita renders tardíos)
+        try:
+            for name, w in list(self.plugin_widgets.items()):
+                if w is not None:
+                    w.setVisible(False)
+            self.plugin_widgets.clear()
+            self.active_plugin_widget = None
+            self.active_plugin = None
+        except Exception as e:
+            print("cleanup widgets error:", e)
+
+    def closeEvent(self, event):
+        self._on_app_about_to_quit()
+        super().closeEvent(event)
