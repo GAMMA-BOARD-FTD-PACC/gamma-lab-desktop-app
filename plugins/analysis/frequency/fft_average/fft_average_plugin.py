@@ -43,7 +43,7 @@ class Fft_average_plugin(IPlugin):
             self.alerts.parent = self.widget
 
             self._log("UI creada. plotArea:", bool(self.ui.plotArea),
-                      "panel:", bool(self.ui.panel),
+                      "panel:", bool(self.ui.layoutWidget),
                       "splitter:", bool(self.ui.splitter))
             self._wire_ui()
 
@@ -55,9 +55,20 @@ class Fft_average_plugin(IPlugin):
     ## === UI === ##
     def _wire_ui(self):
         self._log("wire ui")
-        self.ui.pushButton.clicked.connect(self._on_calculate_clicked)
-        self.ui.lowFrecuencyDoubleSpinBox.valueChanged.connect(self._sync_range)
-        self.ui.highFrecuencyDoubleSpinBox.valueChanged.connect(self._sync_range)
+        self.ui.calculateFftAvgButton.clicked.connect(self._on_calculate_clicked)
+        self.ui.lowFrequencySpinBox.valueChanged.connect(self._sync_range)
+        self.ui.highFrequencySpinBox.valueChanged.connect(self._sync_range)
+        self.ui.sampleDensitySpinBox.setRange(0, 10000)
+        self.ui.sampleDensitySpinBox.setSingleStep(10)
+        self.ui.sampleDensitySpinBox.setValue(1000)
+        self.ui.highFrequencySpinBox.setDecimals(2)
+        self.ui.highFrequencySpinBox.setRange(0.0, 10000)
+        self.ui.highFrequencySpinBox.setSingleStep(1.0)
+        self.ui.highFrequencySpinBox.setValue(500.0)
+        self.ui.lowFrequencySpinBox.setDecimals(2)
+        self.ui.lowFrequencySpinBox.setRange(0.0, 10000)
+        self.ui.lowFrequencySpinBox.setSingleStep(1.0)
+        self.ui.lowFrequencySpinBox.setValue(0.0)
 
     def _on_calculate_clicked(self):
             self._log("_on_calculate_clicked()")
@@ -68,9 +79,9 @@ class Fft_average_plugin(IPlugin):
                 return
 
             # 2) Parámetros UI
-            target_fs = float(self.ui.sampleDensityDoubleSpinBox.value())  # 0 = sin remuestreo
-            lo = float(self.ui.lowFrecuencyDoubleSpinBox.value())
-            hi = float(self.ui.highFrecuencyDoubleSpinBox.value())
+            target_fs = float(self.ui.sampleDensitySpinBox.value())  # 0 = sin remuestreo
+            lo = float(self.ui.lowFrequencySpinBox.value())
+            hi = float(self.ui.highFrequencySpinBox.value())
             if lo > hi:
                 lo, hi = hi, lo
 
@@ -83,14 +94,14 @@ class Fft_average_plugin(IPlugin):
             self._notify(f"FFT listo: fs_eff={fs_eff:.2f} Hz, {freq.size} bins, trials={mag_avg.shape[1]}")
 
     def _sync_range(self):
-        lo = float(self.ui.lowFrecuencyDoubleSpinBox.value())
-        hi = float(self.ui.highFrecuencyDoubleSpinBox.value())
+        lo = float(self.ui.lowFrequencySpinBox.value())
+        hi = float(self.ui.highFrequencySpinBox.value())
         if lo > hi:
             sender = self.widget.sender()
-            if sender is self.ui.lowFrecuencyDoubleSpinBox:
-                self.ui.highFrecuencyDoubleSpinBox.setValue(lo)
+            if sender is self.ui.lowFrequencySpinBox:
+                self.ui.highFrequencySpinBox.setValue(lo)
             else:
-                self.ui.lowFrecuencyDoubleSpinBox.setValue(hi)
+                self.ui.lowFrequencySpinBox.setValue(hi)
         self._log(f"range sync: low={lo}, high={hi}")
     
         # ------- VTK -------

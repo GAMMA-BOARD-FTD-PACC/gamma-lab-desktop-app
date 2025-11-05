@@ -1,5 +1,3 @@
-# Ubicación: plugins/analysis/frequency/psd_average/psd_average_plugin.py
-
 import sys
 import numpy as np
 import vtk
@@ -11,23 +9,22 @@ from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
 from core.plugins.vtk_context_menu import VTKContextMenu
 from core.services.signal_dataset import SignalDataset
-# Importar nuestra UI específica y el adaptador VTK
+# UI and VTK adapter
 from plugins.analysis.frequency.psd_average.psd_average_plugin_ui import Ui_Psd_average
 from core.vtk_adapters.adapters import trials_matrix_to_vtk_table
 
 class Psd_average_plugin(IPlugin):
     """
-    Plugin para calcular el PROMEDIO de la Densidad Espectral de Potencia (PSD)
-    a través de todos los trials.
-    
-    Implementa la lógica de f_PSD_Average.
+    Plugin to compute Average Power Spectral Density (PSD)
+    across all trials (per-frequency average).
+    Mirrors the structure used by other signal plugins.
     """
     
     def __init__(self, meta: PluginMeta):
         super().__init__(meta)
 
         # UI
-        self.ui: Ui_Psd_average | None = None # Usamos la UI de Psd_average
+        self.ui: Ui_Psd_average | None = None
 
         # VTK
         self.vtk_interactor: QVTKRenderWindowInteractor | None = None
@@ -38,7 +35,7 @@ class Psd_average_plugin(IPlugin):
 
 
     def start(self, kernel):
-        self._log("start() - obteniendo MainWindow")
+        self._log("start() - getting MainWindow")
         self.mainwin = kernel.get_service("MainWindow")
         self.started = True
 
@@ -54,20 +51,20 @@ class Psd_average_plugin(IPlugin):
 
     def get_widget(self, parent=None):
         if self.widget is None:
-            self._log("get_widget(): creando UI")
-            self.ui = Ui_Psd_average() # Usamos la UI de Psd_average
+            self._log("get_widget(): creating UI")
+            self.ui = Ui_Psd_average()
             self.widget = QtWidgets.QWidget(parent)
             self.ui.setupUi(self.widget)
             self.alerts.parent = self.widget
 
-            self._log("UI creada. plotArea:", bool(self.ui.plotArea),
-                      "panel:", bool(self.ui.panel),
+            self._log("UI created. plotArea:", bool(self.ui.plotArea),
+                      "panel:", bool(self.ui.layoutWidget),
                       "splitter:", bool(self.ui.splitter))
             
             self._ensure_vtk()
-            self._wire_ui() # <-- AQUÍ ESTABA EL ERROR (decía self.S())
+            self._wire_ui()
 
-            # logs post-show (dimensiones reales)
+            # post-show logs (actual sizes)
             QtCore.QTimer.singleShot(0, self._log_sizes)
         else:
             self.widget.setParent(parent)
@@ -81,18 +78,35 @@ class Psd_average_plugin(IPlugin):
 
     def _wire_ui(self):
         self._log("wire ui")
-        self.ui.pushButton.clicked.connect(self._on_calculate_clicked)
-        self.ui.lowFrecuencyDoubleSpinBox.valueChanged.connect(self._sync_range)
-        self.ui.highFrecuencyDoubleSpinBox.valueChanged.connect(self._sync_range)
+        self.ui.calculatePsdAvgButton.clicked.connect(self._on_calculate_clicked)
+        self.ui.lowFrequencySpinBox.valueChanged.connect(self._sync_range)
+        self.ui.highFrequencySpinBox.valueChanged.connect(self._sync_range)
+        self.ui.npersegSpinBox.setRange(0, 500)
+        self.ui.npersegSpinBox.setValue(256)
+        self.ui.noverlapSpinBox.setRange(0, 500)
+        self.ui.noverlapSpinBox.setValue(128)
+        self.ui.nfftSpinBox.setRange(0, 500)
+        self.ui.nfftSpinBox.setValue(256)
+        self.ui.sampleDensitySpinBox.setRange(0, 10000)
+        self.ui.sampleDensitySpinBox.setSingleStep(10)
+        self.ui.sampleDensitySpinBox.setValue(1000)
+        self.ui.highFrequencySpinBox.setDecimals(2)
+        self.ui.highFrequencySpinBox.setRange(0.0, 10000)
+        self.ui.highFrequencySpinBox.setSingleStep(1.0)
+        self.ui.highFrequencySpinBox.setValue(40.0)
+        self.ui.lowFrequencySpinBox.setDecimals(2)
+        self.ui.lowFrequencySpinBox.setRange(0.0, 10000)
+        self.ui.lowFrequencySpinBox.setSingleStep(1.0)
+        self.ui.lowFrequencySpinBox.setValue(0.0)
         
-        # Sincronizar noverlap con nperseg
+        # Keep noverlap synced to nperseg
         self.ui.npersegSpinBox.valueChanged.connect(self._sync_noverlap)
 
     def _sync_noverlap(self):
-        """Ajusta noverlap a la mitad de nperseg por defecto."""
+        """Set noverlap to half of nperseg by default."""
         nperseg = self.ui.npersegSpinBox.value()
         self.ui.noverlapSpinBox.setValue(nperseg // 2)
-        # Asegurar que nfft también siga a nperseg (comportamiento común)
+        # Make nfft follow nperseg (common behavior)
         self.ui.nfftSpinBox.setValue(nperseg)
 
     # ------- VTK -------
@@ -119,23 +133,23 @@ class Psd_average_plugin(IPlugin):
         self._log("ensure_vtk(): scheduled init")
 
 
-    # ------- acciones -------
+    # ------- actions -------
     def _on_calculate_clicked(self):
         self._log("_on_calculate_clicked()")
 
-        # 1) Cargar trials de la señal activa
+        # 1) Load trials from active signal
         fs, X, ch_name = self._load_trials_from_store()
         if X is None or fs is None:
-            self._notify("PSD Average: No hay trials en la señal activa.")
+            self._notify("PSD Average: no trials in active signal.")
             return
 
-        # 2) Parámetros UI
+        # 2) UI parameters
         try:
-            target_fs = float(self.ui.sampleDensityDoubleSpinBox.value())
-            lo = float(self.ui.lowFrecuencyDoubleSpinBox.value())
-            hi = float(self.ui.highFrecuencyDoubleSpinBox.value())
+            target_fs = float(self.ui.sampleDensitySpinBox.value())
+            lo = float(self.ui.lowFrequencySpinBox.value())
+            hi = float(self.ui.highFrequencySpinBox.value())
             
-            # Parámetros de Welch
+            # Welch parameters
             window = self.ui.windowComboBox.currentText()
             nperseg = self.ui.npersegSpinBox.value()
             noverlap = self.ui.noverlapSpinBox.value()
@@ -145,43 +159,43 @@ class Psd_average_plugin(IPlugin):
                 lo, hi = hi, lo
             
             if noverlap >= nperseg:
-                 raise ValueError("N-overlap debe ser menor que N-per-seg.")
+                 raise ValueError("N-overlap must be lower than N-per-seg.")
         
         except Exception as e:
-            self.alerts.error(f"Error de Parámetros: {e}")
+            self.alerts.error(f"Parameter error: {e}")
             return
 
-        # 3) PSD (Siempre calculamos para todos los trials)
+        # 3) PSD (always compute for all trials)
         try:
             freq, power_all_trials, fs_eff = self._compute_psd(X, fs, target_fs,
                                                     window, nperseg, noverlap, nfft)
-            # power_all_trials tiene forma (Nf, T) -> Equivale a 'pxx'
+            # power_all_trials shape: (Nf, T) -> equivalent to 'pxx'
             
         except Exception as e:
-            self._log(f"Error en _compute_psd: {str(e)}")
-            self.alerts.error(f"No se pudo calcular la PSD: {str(e)}", "Error de Cálculo")
+            self._log(f"Error in _compute_psd: {str(e)}")
+            self.alerts.error(f"Could not compute PSD: {str(e)}", "Computation Error")
             return
             
-        # --- LÓGICA DE AVERAGE (HARDCODED) ---
-        # Calcular el promedio por frecuencia (eje 1)
-        # Equivale a mean(pxx')
+        # --- Average logic ---
+        # Per-frequency mean across trials (axis=1)
+        # Equivalent to mean(pxx') in MATLAB
         power_to_plot = np.mean(power_all_trials, axis=1, keepdims=True)
         plot_title = f"PSD (Average) - {ch_name}"
 
         # 4) Plot
-        self._plot_psd(freq, power_to_plot, plot_title, lo, hi)
-        self._notify(f"PSD (Average) listo: fs_eff={fs_eff:.2f} Hz, {freq.size} bins")
+        self._plot_psd(freq, power_to_plot, plot_title, lo, hi, ch_name)
+        self._notify(f"PSD (Average) ready: fs_eff={fs_eff:.2f} Hz, {freq.size} bins")
 
 
     def _sync_range(self):
-        lo = float(self.ui.lowFrecuencyDoubleSpinBox.value())
-        hi = float(self.ui.highFrecuencyDoubleSpinBox.value())
+        lo = float(self.ui.lowFrequencySpinBox.value())
+        hi = float(self.ui.highFrequencySpinBox.value())
         if lo > hi:
             sender = self.widget.sender()
-            if sender is self.ui.lowFrecuencyDoubleSpinBox:
-                self.ui.highFrecuencyDoubleSpinBox.setValue(lo)
+            if sender is self.ui.lowFrequencySpinBox:
+                self.ui.highFrequencySpinBox.setValue(lo)
             else:
-                self.ui.lowFrecuencyDoubleSpinBox.setValue(hi)
+                self.ui.lowFrequencySpinBox.setValue(hi)
         self._log(f"range sync: low={lo}, high={hi}")
 
     def _notify(self, msg: str):
@@ -195,28 +209,28 @@ class Psd_average_plugin(IPlugin):
 
     # ====== DATA ======
     def _load_trials_from_store(self):
-
-
+        if not self.mainwin:
+            return None, None, None
 
         if self.get_active_signal() is None:
             return None, None, None
         
         td = self.get_active_trials()
-        if td is None:
+        if td is None or getattr(td, "trials", None) is None:
             return None, None, None    
 
         fs = float(getattr(td, "sampling_rate", 0.0))
         X  = np.asarray(getattr(td, "trials", None), dtype=np.float64)  # (Ns, T)
         ch = getattr(td, "channel_name", "")
         if X is None or X.ndim != 2 or fs <= 0:
-            self._log("TrialDataset inválido (fs<=0 o trials no 2D).")
+            self._log("Invalid TrialDataset (fs<=0 or trials not 2D).")
             return None, None, None
 
         self._log(f"Trials: Ns={X.shape[0]}, T={X.shape[1]}, fs={fs}")
         return fs, X, ch
 
 
-    # ====== PSD Logic (CON ARREGLO v3: NaN -> 0) ======
+    # ====== PSD Logic (NaN -> 0) ======
     def _compute_psd(self, X: np.ndarray, fs: float, target_fs: float,
                      window: str, nperseg: int, noverlap: int, nfft: int):
         
@@ -230,32 +244,30 @@ class Psd_average_plugin(IPlugin):
         Xds = X[::srt, :] if srt > 1 else X
         Ns_eff = Xds.shape[0]
         
-        # --- NUEVO ARREGLO v3: Reemplazar NaNs con Cero ---
-        # 1. Encontrar NaNs
+        # Replace NaNs/Inf with zeros
+        # 1) Find NaNs
         nan_mask = np.isnan(Xds)
         num_nans = np.sum(nan_mask)
         if num_nans > 0:
-            self._log(f"Advertencia: Se encontraron {num_nans} puntos NaN. Serán reemplazados por 0.")
-            # 2. Reemplazar NaNs con 0
-            # copy=False modifica Xds en el lugar
+            self._log(f"Warning: found {num_nans} NaN points. Replacing with 0.")
+            # 2) Replace NaNs with 0 (in-place)
             np.nan_to_num(Xds, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
         
-        # 3. Usar todos los trials (ahora X_clean = Xds)
+        # 3) Use all trials
         X_clean = Xds
-        # --- FIN DEL ARREGLO ---
-        
+
         if nperseg > Ns_eff:
-            self._log(f"Advertencia: nperseg ({nperseg}) > Ns_eff ({Ns_eff}). "
-                      f"Ajustando nperseg a {Ns_eff}.")
+            self._log(f"Warning: nperseg ({nperseg}) > Ns_eff ({Ns_eff}). "
+                      f"Adjusting nperseg to {Ns_eff}.")
             nperseg = Ns_eff
         if noverlap >= nperseg:
-            self._log(f"Advertencia: noverlap >= nperseg. Ajustando noverlap.")
+            self._log(f"Warning: noverlap >= nperseg. Adjusting noverlap.")
             noverlap = nperseg // 2
 
         self._log(f"Welch params: fs_eff={fs_eff}, window={window}, nperseg={nperseg}, "
                   f"noverlap={noverlap}, nfft={nfft}, axis=0")
 
-        # 4. Correr Welch en los datos (ahora X_clean = Xds con ceros)
+        # 4) Run Welch on cleaned data
         freq, power = welch(
             X_clean, # <-- Usar X_clean
             fs=fs_eff,
@@ -275,17 +287,17 @@ class Psd_average_plugin(IPlugin):
 
     # ====== Plot en VTK ======
     def _plot_psd(self, freq: np.ndarray, power: np.ndarray, 
-                  plot_title: str, lo: float, hi: float):
+                  plot_title: str, lo: float, hi: float, ch_name: str):
         
         if self.vtk_view is None:
             self._ensure_vtk()
 
-        # Filtro de rango de frecuencias
+        # Frequency range filter
         sel = (freq >= lo) & (freq <= hi)
         freq_v = freq[sel]
         power_v = power[sel, :]  # (Nf_sel, 1)
 
-        # power_v ya es (Nf, 1), así que num_curves será 1
+        # power_v is already (Nf, 1), so num_curves will be 1
         num_curves = power_v.shape[1] 
         table = trials_matrix_to_vtk_table(freq_v, power_v)
 
@@ -299,27 +311,25 @@ class Psd_average_plugin(IPlugin):
         ax_l = self.chart.GetAxis(vtk.vtkAxis.LEFT)
         ax_b.SetGridVisible(True); ax_l.SetGridVisible(True)
         ax_b.SetTitle("Frequency (Hz)")
-        ax_l.SetTitle("PSD (V²/Hz)")
+        ax_l.SetTitle("PSD (V^2/Hz)")
         
         try:
             self.chart.SetTitle(plot_title)
         except Exception:
             pass
         
-        # Solo habrá una columna (c=1)
-        self._log(f"Ploteando {table.GetNumberOfColumns()-1} curva de PSD Average.")
+        # Only one column (c=1)
+        self._log(f"Plotting {table.GetNumberOfColumns()-1} PSD Average curve.")
         
         plot = self.chart.AddPlot(vtk.vtkChart.LINE)
         plot.SetInputData(table, 0, 1) # Plotea solo la primera (y única) columna
         plot.SetWidth(2.0) # Línea gruesa para el promedio
 
-       # --- Menú contextual---
+       # --- Context menu ---
         try:
-            ch_name = plot_title.split('-')[-1].strip()
             self.vtk_menu = VTKContextMenu(self.chart, self.vtk_interactor, 
                                            self.active_signal.name, ch_name, 
                                            self.meta.id, parent=self.widget)
-
         except Exception as e:
             self.alerts.error(f"Error creating the context menu.\n {str(e)}")
 
