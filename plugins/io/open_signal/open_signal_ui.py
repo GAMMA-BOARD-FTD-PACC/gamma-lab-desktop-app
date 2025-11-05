@@ -45,6 +45,7 @@ class Ui_OpenSignal(QtWidgets.QWidget):
         sideLayout = QtWidgets.QVBoxLayout(self.sidebar)
         sideLayout.setContentsMargins(8, 8, 8, 8)
         sideLayout.setSpacing(10)
+        self.splitter.widget(1).setMaximumWidth(300)
 
         # ====== Título del panel ======
         self.lblParams = QtWidgets.QLabel("Parameters", self.sidebar)

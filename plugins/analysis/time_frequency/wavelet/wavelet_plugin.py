@@ -25,6 +25,15 @@ class Wavelet_plugin(IPlugin):
         self.vtk_menu = None
         self._context_view = None
         self._vtk_renderer = None
+        self.params = {
+            "sample_density_range": (0, 10000),
+            "frequencies_range": (0, 10000),
+            "sample_density_value": 1000,
+            "high_frequency_value": 500,
+            "low_frequency_value": 1,
+            "cycles_range": (1, 20),
+            "cycles_value": 2
+        }
     # end def
 
     # =====================================================
@@ -70,18 +79,14 @@ class Wavelet_plugin(IPlugin):
     # === Utilities
     # =====================================================
     def init_controls(self):
-        self.ui.splitter.setStretchFactor(0, 0)
-        self.ui.splitter.setStretchFactor(1, 1)
-        self.ui.splitter.widget(1).setMaximumWidth(300)
-
-        self.ui.sampleDensitySpinBox.setRange(1, 10000)
-        self.ui.sampleDensitySpinBox.setValue(1000)
-        self.ui.highFrequencySpinBox.setRange(0, 10000)
-        self.ui.highFrequencySpinBox.setValue(500)
-        self.ui.lowFrequencySpinBox.setRange(0, 10000)
-        self.ui.lowFrequencySpinBox.setValue(1)
-        self.ui.cyclesSpinBox.setRange(1, 20)
-        self.ui.cyclesSpinBox.setValue(2)
+        self.ui.sampleDensitySpinBox.setRange(*self.params["sample_density_range"])
+        self.ui.sampleDensitySpinBox.setValue(self.params["sample_density_value"])
+        self.ui.highFrequencySpinBox.setRange(*self.params["frequencies_range"])
+        self.ui.highFrequencySpinBox.setValue(self.params["high_frequency_value"])
+        self.ui.lowFrequencySpinBox.setRange(*self.params["frequencies_range"])
+        self.ui.lowFrequencySpinBox.setValue(self.params["low_frequency_value"])
+        self.ui.cyclesSpinBox.setRange(*self.params["cycles_range"])
+        self.ui.cyclesSpinBox.setValue(self.params["cycles_value"])
 
         self.ui.normalizeComboBox.setEnabled(False)
         self.ui.normalizeComboBox.addItems(["Z-Score", "Percent change", "Relative power", "Min-Max"])

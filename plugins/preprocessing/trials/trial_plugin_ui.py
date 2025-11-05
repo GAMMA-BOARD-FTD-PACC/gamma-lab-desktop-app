@@ -7,7 +7,6 @@ class Ui_Trials(QtWidgets.QWidget):
 
     def setupUi(self):
         self.setObjectName("TrialsWidget")
-        self.resize(938, 665)
 
         # ===== Root =====
         self._root = QtWidgets.QVBoxLayout(self)
@@ -40,6 +39,7 @@ class Ui_Trials(QtWidgets.QWidget):
 
         # Asignar el panel como contenido del scroll
         self.scrollArea.setWidget(self.panel)
+        self.splitter.widget(1).setMaximumWidth(300)
 
         # ===== Header: Parameters =====
         self.lblParameters = QtWidgets.QLabel(self.panel)

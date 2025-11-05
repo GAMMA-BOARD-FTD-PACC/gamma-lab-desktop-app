@@ -5,7 +5,6 @@ class Ui_Wavelet_Average(object):
     def setupUi(self, Wavelet_Average):
         # Set main window properties
         Wavelet_Average.setObjectName("Wavelet_Average")
-        Wavelet_Average.resize(825, 609)
 
         # Main layout with horizontal orientation
         self.mainWindow = QtWidgets.QHBoxLayout(Wavelet_Average)
@@ -41,6 +40,7 @@ class Ui_Wavelet_Average(object):
         self.paramsLayout.setSpacing(12)
 
         self.scrollArea.setWidget(self.layoutWidget)
+        self.splitter.widget(1).setMaximumWidth(300)
 
         # === Parameters Header ===
         self.parametersLabel = QtWidgets.QLabel(self.layoutWidget)

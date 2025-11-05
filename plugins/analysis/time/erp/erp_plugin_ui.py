@@ -21,6 +21,7 @@ class Ui_ErpPlot(QtWidgets.QWidget):
         # ====== Splitter principal (horizontal) ======
         self.main_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal, self)
         self.main_splitter.setObjectName("main_splitter")
+
         root.addWidget(self.main_splitter)
 
         # ====== Center: QSplitter with 2 graphic zones ======

@@ -262,7 +262,7 @@ class Filter_plugin(IPlugin):
             plot = chart.AddPlot(vtk.vtkChart.LINE)
             plot.SetInputData(table, 0, 1)
             plot.SetWidth(1.2)
-            plot.SetColor(0, 0, 255, 255)
+            plot.SetColor(0, 0, 0)
             plot.SetLabel(f"Filtered {type.capitalize()}")
 
             # Axes configuration
