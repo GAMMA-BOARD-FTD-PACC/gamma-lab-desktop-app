@@ -1,6 +1,3 @@
-# Ubicación: plugins/preprocessing/prepare/artifact_remove/artifact_remove_plugin.py
-# VERSIÓN REFACTORIZADA Y COMPLETA (Restaurada)
-
 from vtk.util import numpy_support as nps # Importación segura para VTK/NumPy
 from PyQt5 import QtCore, QtWidgets
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel
@@ -149,8 +146,8 @@ class ArtifactRemovePlugin(IPlugin):
 
                 print(f"{LOGP} get_widget(): Loading initial data...")
                 self._load_and_display_trials()
-                if self.ui and self.ui.artifact_panel:
-                    self._on_mode_changed(self.ui.artifact_panel.mode_combo.currentText())
+                if self.ui and self.ui.paramsLayout:
+                    self._on_mode_changed(self.ui.mode_combo.currentText())
 
             except Exception as e: 
                 error_message = f"Failed to initialize Remove Artifact plugin:\n{type(e).__name__}: {e}"
@@ -196,11 +193,11 @@ class ArtifactRemovePlugin(IPlugin):
             print(f"{LOGP} Error: UI o artifact_panel no inicializado en _wire_controls.")
             return
             
-        panel = self.ui.artifact_panel
+        panel = self.ui.paramsLayout
         panel.apply_button.clicked.connect(self._on_apply_changes)
         panel.prev_button.clicked.connect(self._go_to_previous_trial)
         panel.next_button.clicked.connect(self._go_to_next_trial)
-        panel.mode_combo.currentTextChanged.connect(self._on_mode_changed)
+        self.ui.mode_combo.currentTextChanged.connect(self._on_mode_changed)
         
         print(f"{LOGP} UI Controls connected.")
 
@@ -209,7 +206,7 @@ class ArtifactRemovePlugin(IPlugin):
         if not self.ui or not hasattr(self.ui, 'artifact_panel'): 
             return
             
-        panel = self.ui.artifact_panel
+        panel = self.ui.paramsLayout
         show_point_b = (mode_text == "Interpolate Interval" or mode_text == "Blank Interval")
         
         getattr(panel, 'label_b', QWidget()).setVisible(show_point_b)
@@ -227,14 +224,14 @@ class ArtifactRemovePlugin(IPlugin):
         if not self.ui or not self.widget:
             return
 
-        panel = self.ui.artifact_panel
+        panel = self.ui.paramsLayout
 
         if self.current_display_index != -1:
             self.alerts.warning("Apply changes only from the 'Average' view (Index -1).", "Invalid Action")
             return
 
         try:
-            mode_text = panel.mode_combo.currentText()
+            mode_text = self.ui.mode_combo.currentText()
             # Ajuste de modo basado en la lógica de modificación de valores.
             mode = 'blank' if mode_text in ("Cut From Start", "Blank Interval") else 'interpolate'
 
@@ -257,7 +254,7 @@ class ArtifactRemovePlugin(IPlugin):
 
             # --- Feedback y bloqueo de reentradas
             panel.apply_button.setEnabled(False)
-            panel.mode_combo.setEnabled(False)
+            self.ui.mode_combo.setEnabled(False)
             panel.prev_button.setEnabled(False)
             panel.next_button.setEnabled(False)
             if self.vtk_interactor:
@@ -467,7 +464,7 @@ class ArtifactRemovePlugin(IPlugin):
         self.total_original_trials = int(total_trials) 
 
         if self.ui:
-            self.ui.artifact_panel.apply_button.setEnabled(self.current_display_index == -1 and Tact > 0)
+            self.ui.paramsLayout.apply_button.setEnabled(self.current_display_index == -1 and Tact > 0)
 
         if self.current_display_index == -1:
             y = np.nanmean(trials, axis=1)
@@ -481,7 +478,7 @@ class ArtifactRemovePlugin(IPlugin):
             status = f"Viewing Valid {idx + 1}/{Tact} (Orig. {orig_idx + 1}) / {total_trials} Total"
 
         if self.ui:
-            self.ui.artifact_panel.trial_status_label.setText(status)
+            self.ui.paramsLayout.trial_status_label.setText(status)
 
         if t.ndim != 1 or y.ndim != 1:
             return self._clear_render(f"Invalid shapes: time={t.shape}, data={y.shape}")
@@ -656,10 +653,10 @@ class ArtifactRemovePlugin(IPlugin):
         
         if self.ui:
             try:
-                self.ui.artifact_panel.trial_status_label.setText("Status: N/A")
-                self.ui.artifact_panel.point_a.setText("0.0")
-                self.ui.artifact_panel.point_b.setText("0.0")
-                self.ui.artifact_panel.apply_button.setEnabled(False)
+                self.ui.paramsLayout.trial_status_label.setText("Status: N/A")
+                self.ui.paramsLayout.point_a.setText("0.0")
+                self.ui.paramsLayout.point_b.setText("0.0")
+                self.ui.paramsLayout.apply_button.setEnabled(False)
             except Exception as e:
                 print(f"{LOGP} Error resetting UI state: {e}")
 
@@ -741,9 +738,9 @@ class ArtifactRemovePlugin(IPlugin):
                         self.vtk_interactor.Enable()
                     except Exception:
                         pass
-                panel = self.ui.artifact_panel
+                panel = self.ui.paramsLayout
                 panel.apply_button.setEnabled(True)
-                panel.mode_combo.setEnabled(True)
+                self.ui.mode_combo.setEnabled(True)
                 panel.prev_button.setEnabled(True)
                 panel.next_button.setEnabled(True)
 
@@ -765,9 +762,9 @@ class ArtifactRemovePlugin(IPlugin):
                         self.vtk_interactor.Enable()
                     except Exception:
                         pass
-                panel = self.ui.artifact_panel
+                panel = self.ui.paramsLayout
                 panel.apply_button.setEnabled(True)
-                panel.mode_combo.setEnabled(True)
+                self.ui.mode_combo.setEnabled(True)
                 panel.prev_button.setEnabled(True)
                 panel.next_button.setEnabled(True)
                 QtCore.QTimer.singleShot(50, self._force_render)
