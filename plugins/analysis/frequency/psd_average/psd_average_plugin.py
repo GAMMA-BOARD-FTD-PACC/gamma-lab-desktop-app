@@ -61,7 +61,7 @@ class Psd_average_plugin(IPlugin):
             self.alerts.parent = self.widget
 
             self._log("UI creada. plotArea:", bool(self.ui.plotArea),
-                      "panel:", bool(self.ui.panel),
+                      "panel:", bool(self.ui.layoutWidget),
                       "splitter:", bool(self.ui.splitter))
             
             self._ensure_vtk()
@@ -81,9 +81,26 @@ class Psd_average_plugin(IPlugin):
 
     def _wire_ui(self):
         self._log("wire ui")
-        self.ui.pushButton.clicked.connect(self._on_calculate_clicked)
-        self.ui.lowFrecuencyDoubleSpinBox.valueChanged.connect(self._sync_range)
-        self.ui.highFrecuencyDoubleSpinBox.valueChanged.connect(self._sync_range)
+        self.ui.calculatePsdAvgButton.clicked.connect(self._on_calculate_clicked)
+        self.ui.lowFrequencySpinBox.valueChanged.connect(self._sync_range)
+        self.ui.highFrequencySpinBox.valueChanged.connect(self._sync_range)
+        self.ui.npersegSpinBox.setRange(0, 500)
+        self.ui.npersegSpinBox.setValue(256)
+        self.ui.noverlapSpinBox.setRange(0, 500)
+        self.ui.noverlapSpinBox.setValue(128)
+        self.ui.nfftSpinBox.setRange(0, 500)
+        self.ui.nfftSpinBox.setValue(256)
+        self.ui.sampleDensitySpinBox.setRange(0, 10000)
+        self.ui.sampleDensitySpinBox.setSingleStep(10)
+        self.ui.sampleDensitySpinBox.setValue(1000)
+        self.ui.highFrequencySpinBox.setDecimals(2)
+        self.ui.highFrequencySpinBox.setRange(0.0, 10000)
+        self.ui.highFrequencySpinBox.setSingleStep(1.0)
+        self.ui.highFrequencySpinBox.setValue(40.0)
+        self.ui.lowFrequencySpinBox.setDecimals(2)
+        self.ui.lowFrequencySpinBox.setRange(0.0, 10000)
+        self.ui.lowFrequencySpinBox.setSingleStep(1.0)
+        self.ui.lowFrequencySpinBox.setValue(0.0)
         
         # Sincronizar noverlap con nperseg
         self.ui.npersegSpinBox.valueChanged.connect(self._sync_noverlap)
@@ -131,9 +148,9 @@ class Psd_average_plugin(IPlugin):
 
         # 2) Parámetros UI
         try:
-            target_fs = float(self.ui.sampleDensityDoubleSpinBox.value())
-            lo = float(self.ui.lowFrecuencyDoubleSpinBox.value())
-            hi = float(self.ui.highFrecuencyDoubleSpinBox.value())
+            target_fs = float(self.ui.sampleDensitySpinBox.value())
+            lo = float(self.ui.lowFrequencySpinBox.value())
+            hi = float(self.ui.highFrequencySpinBox.value())
             
             # Parámetros de Welch
             window = self.ui.windowComboBox.currentText()
@@ -174,14 +191,14 @@ class Psd_average_plugin(IPlugin):
 
 
     def _sync_range(self):
-        lo = float(self.ui.lowFrecuencyDoubleSpinBox.value())
-        hi = float(self.ui.highFrecuencyDoubleSpinBox.value())
+        lo = float(self.ui.lowFrequencySpinBox.value())
+        hi = float(self.ui.highFrequencySpinBox.value())
         if lo > hi:
             sender = self.widget.sender()
-            if sender is self.ui.lowFrecuencyDoubleSpinBox:
-                self.ui.highFrecuencyDoubleSpinBox.setValue(lo)
+            if sender is self.ui.lowFrequencySpinBox:
+                self.ui.highFrequencySpinBox.setValue(lo)
             else:
-                self.ui.lowFrecuencyDoubleSpinBox.setValue(hi)
+                self.ui.lowFrequencySpinBox.setValue(hi)
         self._log(f"range sync: low={lo}, high={hi}")
 
     def _notify(self, msg: str):

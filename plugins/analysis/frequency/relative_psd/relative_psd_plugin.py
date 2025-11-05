@@ -49,19 +49,30 @@ class Relative_psd_plugin(IPlugin):
         """Inyecta combos opcionales sin asumir que existe ui.widget."""
         def _add_form_row(label_text: str, w: QtWidgets.QWidget):
             # 1) Form layout si existe
-            if hasattr(self.ui, "formLayoutWelch") and isinstance(self.ui.formLayoutWelch, QtWidgets.QFormLayout):
-                self.ui.formLayoutWelch.addRow(QtWidgets.QLabel(label_text), w)
+            if hasattr(self.ui, "welchParameters") and isinstance(self.ui.welchParameters, QtWidgets.QVBoxLayout):
+                row_layout = QtWidgets.QHBoxLayout()
+                row_layout.addWidget(QtWidgets.QLabel(label_text))
+                row_layout.addWidget(w)
+                self.ui.welchParameters.addLayout(row_layout)
+
                 return
-            # 2) Layout del panel si existe
-            if hasattr(self.ui, "panel") and isinstance(self.ui.panel, QtWidgets.QWidget):
-                lay = self.ui.panel.layout()
-                if lay is None:
-                    lay = QtWidgets.QVBoxLayout(self.ui.panel)
-                hl = QtWidgets.QHBoxLayout()
-                hl.addWidget(QtWidgets.QLabel(label_text))
-                hl.addWidget(w)
-                lay.addLayout(hl)
+            # 2) Layout del widget si existe
+            if hasattr(self.ui, "layoutWidget") and isinstance(self.ui.layoutWidget, QtWidgets.QWidget):
+                lay = self.ui.layoutWidget.layout()
+                if lay is not None:
+                    hl = QtWidgets.QHBoxLayout()
+                    hl.addWidget(QtWidgets.QLabel(label_text))
+                    hl.addWidget(w)
+                    lay.addLayout(hl)
+                else:
+                    # Si no tiene layout, lo crea
+                    lay = QtWidgets.QVBoxLayout(self.ui.layoutWidget)
+                    hl = QtWidgets.QHBoxLayout()
+                    hl.addWidget(QtWidgets.QLabel(label_text))
+                    hl.addWidget(w)
+                    lay.addLayout(hl)
                 return
+
             # 3) Fallback: layout del widget raíz del plugin
             if self.widget.layout() is None:
                 self.widget.setLayout(QtWidgets.QVBoxLayout())
@@ -85,8 +96,25 @@ class Relative_psd_plugin(IPlugin):
             _add_form_row("Calculation Mode (GF)", gf_cb)
 
     def _wire_ui(self):
-        self.ui.pushButton.clicked.connect(self._on_calculate_clicked)
+        self.ui.calculateRelativePsd.clicked.connect(self._on_calculate_clicked)
         self.ui.npersegSpinBox.valueChanged.connect(self._sync_noverlap)
+        self.ui.npersegSpinBox.setRange(0, 500)
+        self.ui.npersegSpinBox.setValue(256)
+        self.ui.noverlapSpinBox.setRange(0, 500)
+        self.ui.noverlapSpinBox.setValue(128)
+        self.ui.nfftSpinBox.setRange(0, 500)
+        self.ui.nfftSpinBox.setValue(256)
+        self.ui.sampleDensitySpinBox.setRange(0, 10000)
+        self.ui.sampleDensitySpinBox.setSingleStep(10)
+        self.ui.sampleDensitySpinBox.setValue(1000)
+        self.ui.highFrequencySpinBox.setDecimals(2)
+        self.ui.highFrequencySpinBox.setRange(0.0, 10000)
+        self.ui.highFrequencySpinBox.setSingleStep(1.0)
+        self.ui.highFrequencySpinBox.setValue(12.0)
+        self.ui.lowFrequencySpinBox.setDecimals(2)
+        self.ui.lowFrequencySpinBox.setRange(0.0, 10000)
+        self.ui.lowFrequencySpinBox.setSingleStep(1.0)
+        self.ui.lowFrequencySpinBox.setValue(8.0)
 
     def _init_defaults(self):
         # Ventana hamming (como MATLAB)
@@ -101,13 +129,15 @@ class Relative_psd_plugin(IPlugin):
         self._sync_noverlap()
         self.ui.nfftSpinBox.setValue(256)
         # Banda por defecto
-        self.ui.f1DoubleSpinBox.setValue(8.0)
-        self.ui.f2DoubleSpinBox.setValue(12.0)
+        self.ui.lowFrequencySpinBox.setValue(8.0)
+        self.ui.highFrequencySpinBox.setValue(12.0)
         # Detrend
         if hasattr(self.ui, "detrendComboBox"):
+            self.ui.detrendComboBox.setProperty("variant", "input")
             self.ui.detrendComboBox.setCurrentText("none")
         # GF por defecto = 1 (All Trials) para emular MATLAB si no se tocó
         if hasattr(self.ui, "gainFactorComboBox"):
+            self.ui.gainFactorComboBox.setProperty("variant", "input")
             self.ui.gainFactorComboBox.setCurrentIndex(1)
 
     def _sync_noverlap(self):
@@ -125,18 +155,18 @@ class Relative_psd_plugin(IPlugin):
             return
 
         # Target Fs por defecto (resolución suficiente)
-        if self.ui.sampleDensityDoubleSpinBox.value() <= 0:
-            self.ui.sampleDensityDoubleSpinBox.setValue(min(fs, 1000.0))
+        if self.ui.sampleDensitySpinBox.value() <= 0:
+            self.ui.sampleDensitySpinBox.setValue(min(fs, 1000.0))
 
         # Parámetros
         try:
-            target_fs = float(self.ui.sampleDensityDoubleSpinBox.value())
+            target_fs = float(self.ui.sampleDensitySpinBox.value())
             window 	  = self.ui.windowComboBox.currentText()
             nperseg 	= self.ui.npersegSpinBox.value()
             noverlap 	= self.ui.noverlapSpinBox.value()
             nfft 	  = self.ui.nfftSpinBox.value()
-            f1 	    = float(self.ui.f1DoubleSpinBox.value())
-            f2 	    = float(self.ui.f2DoubleSpinBox.value())
+            f1 	    = float(self.ui.lowFrequencySpinBox.value())
+            f2 	    = float(self.ui.highFrequencySpinBox.value())
             detrend 	= getattr(self.ui, "detrendComboBox", None)
             detrend 	= detrend.currentText() if detrend else "none"
             gf_idx 	= getattr(self.ui, "gainFactorComboBox", None)
