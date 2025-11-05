@@ -274,6 +274,38 @@ class Ui_Psd(object):
         self.rangeLayout.addLayout(self.frequencyLayout)
         self.paramsLayout.addLayout(self.rangeLayout)
 
+        # --- Detrend ---
+        self.detrendSection = QtWidgets.QVBoxLayout()
+        self.detrendSection.setObjectName("detrendSection")
+
+        self.detrendLabel = QtWidgets.QLabel(self.layoutWidget)
+        self.detrendLabel.setObjectName("detrendLabel")
+        self.detrendLabel.setProperty("variant", "subtitle")
+        self.detrendSection.addWidget(self.detrendLabel)
+
+        self.detrendLine = QtWidgets.QFrame(self.layoutWidget)
+        self.detrendLine.setFrameShape(QtWidgets.QFrame.HLine)
+        self.detrendLine.setObjectName("detrendLine")
+        self.detrendLine.setProperty("role", "divider")
+        self.detrendSection.addWidget(self.detrendLine)
+
+        self.detrendRow = QtWidgets.QHBoxLayout(self.layoutWidget)
+        self.detrendRow.setObjectName("detrendRow")
+
+        self.detrendRowLabel = QtWidgets.QLabel(self.layoutWidget)
+        self.detrendRowLabel.setObjectName("detrendRowLabel")
+        self.detrendRowLabel.setProperty("variant", "input")
+        self.detrendRowLabel.setText("Detrend")
+        self.detrendRow.addWidget(self.detrendRowLabel)
+
+        self.detrendComboBox = QtWidgets.QComboBox(self.layoutWidget)
+        self.detrendComboBox.setObjectName("detrendComboBox")
+        self.detrendComboBox.addItems(["none", "constant", "linear"])
+        self.detrendRow.addWidget(self.detrendComboBox)
+
+        self.detrendSection.addLayout(self.detrendRow)
+        self.paramsLayout.addLayout(self.detrendSection)
+
         # --- Button Calculate PSD ---
         self.paramsLayout.addStretch(1)
 
@@ -308,4 +340,5 @@ class Ui_Psd(object):
         self.hzHighFreqLabel.setText(_translate("PSD", "Hz"))
         self.lowLabel.setText(_translate("PSD", "Low"))
         self.hzLowFreqLabel.setText(_translate("PSD", "Hz"))
+        self.detrendLabel.setText(_translate("PSD", "Detrend"))
         self.calculatePsdButton.setText(_translate("PSD", "Calculate PSD"))

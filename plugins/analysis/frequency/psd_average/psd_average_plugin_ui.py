@@ -180,7 +180,7 @@ class Ui_Psd_average(object):
         self.frequencyLabel.setProperty("variant", "input")
         self.frequencyLayout.addWidget(self.frequencyLabel)
 
-        # Low Frequency
+        # Low Frequency (shown first)
         self.lowFqLayout = QtWidgets.QHBoxLayout()
         self.lowFqLayout.setObjectName("lowFqLayout")
 
@@ -200,8 +200,8 @@ class Ui_Psd_average(object):
         self.lowFqLayout.addWidget(self.hzLowFreqLabel)
 
         self.frequencyLayout.addLayout(self.lowFqLayout)
-    
-        # High Frequency
+
+        # High Frequency (shown second)
         self.highFqLayout = QtWidgets.QHBoxLayout()
         self.highFqLayout.setObjectName("highFqLayout")
 
