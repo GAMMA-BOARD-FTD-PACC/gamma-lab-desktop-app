@@ -5,7 +5,6 @@ class Ui_Average(object):
 
     def setupUi(self, Average):
         Average.setObjectName("Average")
-        Average.resize(768, 454)
 
         self.mainWindow = QtWidgets.QHBoxLayout(Average)
         self.mainWindow.setObjectName("mainWindow")
@@ -37,6 +36,7 @@ class Ui_Average(object):
         self.paramsLayout.setSpacing(12)
 
         self.scrollArea.setWidget(self.layoutWidget)
+        self.splitter.widget(1).setMaximumWidth(300)
 
         # === Parameters Header ===
         self.parametersLabel = QtWidgets.QLabel(self.layoutWidget)

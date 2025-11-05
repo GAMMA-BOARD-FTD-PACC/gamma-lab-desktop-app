@@ -21,25 +21,26 @@ class Ui_ErpPlot(QtWidgets.QWidget):
         # ====== Splitter principal (horizontal) ======
         self.main_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal, self)
         self.main_splitter.setObjectName("main_splitter")
+
         root.addWidget(self.main_splitter)
 
-        # ====== Centro: QSplitter con 2 zonas de gráficos ======
+        # ====== Center: QSplitter with 2 graphic zones ======
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical, self)
         self.splitter.setObjectName("splitterPlots")
 
-        # Arriba: butterfly plot
+        # Up: butterfly plot
         self.butterflyPlot = QtWidgets.QFrame(self.splitter)
         self.butterflyPlot.setObjectName("butterflyPlot")
         self.butterflyPlot.setFrameShape(QtWidgets.QFrame.StyledPanel)
 
-        # Abajo: heatmap
+        # Down: heatmap
         self.heatmapPlot = QtWidgets.QFrame(self.splitter)
         self.heatmapPlot.setObjectName("heatmapPlot")
         self.heatmapPlot.setFrameShape(QtWidgets.QFrame.StyledPanel)
 
         self.main_splitter.addWidget(self.splitter)
 
-        # ====== Derecha: Panel de parámetros ======
+        # ====== Right: Panel de parámetros ======
         self.scrollArea = QtWidgets.QScrollArea(self.main_splitter)
         self.scrollArea.setWidgetResizable(True)
         self.scrollArea.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
@@ -55,7 +56,6 @@ class Ui_ErpPlot(QtWidgets.QWidget):
 
         self.scrollArea.setWidget(self.panel)
 
-        # --- Group: Parameters ---
         # === Parameters Header ===
         self.parametersLabel = QtWidgets.QLabel(self.panel)
         self.parametersLabel.setObjectName("parametersLabel")

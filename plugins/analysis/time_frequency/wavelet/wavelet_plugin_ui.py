@@ -37,6 +37,7 @@ class Ui_Wavelet(object):
         self.paramsLayout.setSpacing(12)
 
         self.scrollArea.setWidget(self.layoutWidget)
+        self.splitter.widget(1).setMaximumWidth(300)
 
         # === Parameters Header ===
         self.parametersLabel = QtWidgets.QLabel(self.layoutWidget)

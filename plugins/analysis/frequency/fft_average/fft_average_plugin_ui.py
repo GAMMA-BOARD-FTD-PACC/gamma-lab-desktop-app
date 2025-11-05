@@ -3,7 +3,6 @@ from PyQt5 import QtCore, QtWidgets
 class Ui_Fft_Average(object):
     def setupUi(self, FftAvg):
         FftAvg.setObjectName("FftAvg")
-        FftAvg.resize(825, 609)
 
         self.mainWindow = QtWidgets.QHBoxLayout(FftAvg)
         self.mainWindow.setObjectName("mainWindow")
@@ -35,6 +34,7 @@ class Ui_Fft_Average(object):
         self.paramsLayout.setSpacing(12)
 
         self.scrollArea.setWidget(self.layoutWidget)
+        self.splitter.widget(1).setMaximumWidth(300)
 
         # === Parameters Header ===
         self.parametersLabel = QtWidgets.QLabel(self.layoutWidget)

@@ -85,19 +85,19 @@ class Filter_plugin(IPlugin):
     # === Utilities
     # =====================================================
     def init_controls(self):
-        self.ui.splitter.setStretchFactor(0, 0)
-        self.ui.splitter.setStretchFactor(1, 1)
-        self.ui.splitter.widget(1).setMaximumWidth(300)
+        self.ui.main_splitter.setStretchFactor(0, 0)
+        self.ui.main_splitter.setStretchFactor(1, 1)
+        self.ui.main_splitter.widget(1).setMaximumWidth(300)
 
-        self.ui.doubleSpinBox_high.setRange(0, 1000)
-        self.ui.doubleSpinBox_high.setValue(4.0)
-        self.ui.doubleSpinBox_low.setRange(0, 1000)
-        self.ui.doubleSpinBox_low.setValue(0.5)
-        self.ui.spinBox_order.setRange(0, 100)
-        self.ui.spinBox_order.setValue(8)
-        self.ui.type_select.addItems(["Butterworth", "Chebyshev", "Elliptic"])
+        self.ui.highFrequencySpinBox.setRange(0, 1000)
+        self.ui.highFrequencySpinBox.setValue(4.0)
+        self.ui.lowFrequencySpinBox.setRange(0, 1000)
+        self.ui.lowFrequencySpinBox.setValue(0.5)
+        self.ui.orderSpinBox.setRange(0, 100)
+        self.ui.orderSpinBox.setValue(8)
+        self.ui.typeSelectComboBox.addItems(["Butterworth", "Chebyshev", "Elliptic"])
 
-        self.ui.pushButton_filter.clicked.connect(self.on_apply_filter)
+        self.ui.applyFilterButton.clicked.connect(self.on_apply_filter)
     # end def
 
     def ensure_vtk(self):
@@ -151,10 +151,10 @@ class Filter_plugin(IPlugin):
             fs = self.active_signal.sampling_rate
             print(f"Sampling Rate: {fs} Hz")
 
-            low = float(self.ui.doubleSpinBox_low.value())
-            high = float(self.ui.doubleSpinBox_high.value())
-            order = int(self.ui.spinBox_order.value())
-            type_filter = self.ui.type_select.currentText().lower()
+            low = float(self.ui.lowFrequencySpinBox.value())
+            high = float(self.ui.highFrequencySpinBox.value())
+            order = int(self.ui.orderSpinBox.value())
+            type_filter = self.ui.typeSelectComboBox.currentText().lower()
 
             filtered_signal = self.run_filter(signal_data, low, high, order, fs, type_filter)
             filtered_trial = self.run_filter(trial_data, low, high, order, fs, type_filter)
@@ -262,7 +262,7 @@ class Filter_plugin(IPlugin):
             plot = chart.AddPlot(vtk.vtkChart.LINE)
             plot.SetInputData(table, 0, 1)
             plot.SetWidth(1.2)
-            plot.SetColor(0, 0, 255, 255)
+            plot.SetColor(0, 0, 0)
             plot.SetLabel(f"Filtered {type.capitalize()}")
 
             # Axes configuration
