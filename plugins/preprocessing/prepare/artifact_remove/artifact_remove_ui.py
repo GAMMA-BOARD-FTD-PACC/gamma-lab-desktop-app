@@ -107,6 +107,21 @@ class Ui_ArtifactRemove(object):
         self.modeLayout.addWidget(self.mode_combo)
         self.artifactLayout.addLayout(self.modeLayout)
 
+        # --- Points ---
+        self.pointsLayout = QtWidgets.QVBoxLayout()
+        self.pointsLayout.setObjectName("pointsLayout")
+
+        self.pointsLabel = QtWidgets.QLabel(self.layoutWidget)
+        self.pointsLabel.setObjectName("pointsLabel")
+        self.pointsLabel.setProperty("variant", "subtitle")
+        self.pointsLayout.addWidget(self.pointsLabel)
+
+        self.pointsLine = QtWidgets.QFrame(self.layoutWidget)
+        self.pointsLine.setFrameShape(QtWidgets.QFrame.HLine)
+        self.pointsLine.setObjectName("pointsLine")
+        self.pointsLine.setProperty("role", "divider")
+        self.pointsLayout.addWidget(self.pointsLine)
+
         # --- Point A ---
         self.pointALayout = QtWidgets.QHBoxLayout()
         self.pointALayout.setObjectName("pointALayout")
@@ -120,7 +135,7 @@ class Ui_ArtifactRemove(object):
         self.point_a.setObjectName("point_a")
         self.point_a.setAlignment(QtCore.Qt.AlignCenter)
         self.pointALayout.addWidget(self.point_a)
-        self.artifactLayout.addLayout(self.pointALayout)
+        self.pointsLayout.addLayout(self.pointALayout)
 
         # --- Point B ---
         self.pointBLayout = QtWidgets.QHBoxLayout()
@@ -135,9 +150,10 @@ class Ui_ArtifactRemove(object):
         self.point_b.setObjectName("point_b")
         self.point_b.setAlignment(QtCore.Qt.AlignCenter)
         self.pointBLayout.addWidget(self.point_b)
-        self.artifactLayout.addLayout(self.pointBLayout)
+        self.pointsLayout.addLayout(self.pointBLayout)
 
         # --- Add Artifact section to panel ---
+        self.artifactLayout.addLayout(self.pointsLayout)
         self.paramsLayout.addLayout(self.artifactLayout)
 
         # --- Apply Button ---
@@ -179,6 +195,7 @@ class Ui_ArtifactRemove(object):
         self.next_button.setText(_translate("ArtifactRemove", "Next"))
         self.trial_status_label.setText(_translate("ArtifactRemove", "Trial: - / -"))
         self.modeLabel.setText(_translate("ArtifactRemove", "Mode"))
+        self.pointsLabel.setText(_translate("ArtifactRemove", "Points"))
         self.label_a.setText(_translate("ArtifactRemove", "Point A (s):"))
         self.label_b.setText(_translate("ArtifactRemove", "Point B (s):"))
         self.apply_button.setText(_translate("ArtifactRemove", "Remove Artifact"))

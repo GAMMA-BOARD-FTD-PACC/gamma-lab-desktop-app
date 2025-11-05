@@ -194,9 +194,9 @@ class ArtifactRemovePlugin(IPlugin):
             return
             
         panel = self.ui.paramsLayout
-        panel.apply_button.clicked.connect(self._on_apply_changes)
-        panel.prev_button.clicked.connect(self._go_to_previous_trial)
-        panel.next_button.clicked.connect(self._go_to_next_trial)
+        self.ui.apply_button.clicked.connect(self._on_apply_changes)
+        self.ui.prev_button.clicked.connect(self._go_to_previous_trial)
+        self.ui.next_button.clicked.connect(self._go_to_next_trial)
         self.ui.mode_combo.currentTextChanged.connect(self._on_mode_changed)
         
         print(f"{LOGP} UI Controls connected.")
@@ -235,14 +235,14 @@ class ArtifactRemovePlugin(IPlugin):
             # Ajuste de modo basado en la lógica de modificación de valores.
             mode = 'blank' if mode_text in ("Cut From Start", "Blank Interval") else 'interpolate'
 
-            point_a_str = panel.point_a.text().strip()
+            point_a_str = self.ui.point_a.text().strip()
             if not point_a_str:
                 raise ValueError("Point A cannot be empty.")
             point_a = float(point_a_str)
 
             point_b = 0.0
             if mode == 'interpolate' or mode_text == "Blank Interval": # Si es interpolación o blanking por intervalo (debe tener B)
-                point_b_str = panel.point_b.text().strip()
+                point_b_str = self.ui.point_b.text().strip()
                 if not point_b_str:
                     # En el modo "Cut From Start", B no es obligatorio, por eso se omite el raise aquí.
                     if mode_text != "Cut From Start":
@@ -253,10 +253,10 @@ class ArtifactRemovePlugin(IPlugin):
                         raise ValueError("Points A and B cannot be the same.")
 
             # --- Feedback y bloqueo de reentradas
-            panel.apply_button.setEnabled(False)
+            self.ui.apply_button.setEnabled(False)
             self.ui.mode_combo.setEnabled(False)
-            panel.prev_button.setEnabled(False)
-            panel.next_button.setEnabled(False)
+            self.ui.prev_button.setEnabled(False)
+            self.ui.next_button.setEnabled(False)
             if self.vtk_interactor:
                 try:
                     self.vtk_interactor.Disable()
@@ -464,7 +464,7 @@ class ArtifactRemovePlugin(IPlugin):
         self.total_original_trials = int(total_trials) 
 
         if self.ui:
-            self.ui.paramsLayout.apply_button.setEnabled(self.current_display_index == -1 and Tact > 0)
+            self.ui.apply_button.setEnabled(self.current_display_index == -1 and Tact > 0)
 
         if self.current_display_index == -1:
             y = np.nanmean(trials, axis=1)
@@ -478,7 +478,7 @@ class ArtifactRemovePlugin(IPlugin):
             status = f"Viewing Valid {idx + 1}/{Tact} (Orig. {orig_idx + 1}) / {total_trials} Total"
 
         if self.ui:
-            self.ui.paramsLayout.trial_status_label.setText(status)
+            self.ui.trial_status_label.setText(status)
 
         if t.ndim != 1 or y.ndim != 1:
             return self._clear_render(f"Invalid shapes: time={t.shape}, data={y.shape}")
@@ -653,10 +653,10 @@ class ArtifactRemovePlugin(IPlugin):
         
         if self.ui:
             try:
-                self.ui.paramsLayout.trial_status_label.setText("Status: N/A")
-                self.ui.paramsLayout.point_a.setText("0.0")
-                self.ui.paramsLayout.point_b.setText("0.0")
-                self.ui.paramsLayout.apply_button.setEnabled(False)
+                self.ui.trial_status_label.setText("Status: N/A")
+                self.ui.point_a.setText("0.0")
+                self.ui.point_b.setText("0.0")
+                self.ui.apply_button.setEnabled(False)
             except Exception as e:
                 print(f"{LOGP} Error resetting UI state: {e}")
 
@@ -739,10 +739,10 @@ class ArtifactRemovePlugin(IPlugin):
                     except Exception:
                         pass
                 panel = self.ui.paramsLayout
-                panel.apply_button.setEnabled(True)
+                self.ui.apply_button.setEnabled(True)
                 self.ui.mode_combo.setEnabled(True)
-                panel.prev_button.setEnabled(True)
-                panel.next_button.setEnabled(True)
+                self.ui.prev_button.setEnabled(True)
+                self.ui.next_button.setEnabled(True)
 
                 # Recarga y render forzado
                 self._reset_state()
@@ -763,10 +763,10 @@ class ArtifactRemovePlugin(IPlugin):
                     except Exception:
                         pass
                 panel = self.ui.paramsLayout
-                panel.apply_button.setEnabled(True)
+                self.ui.apply_button.setEnabled(True)
                 self.ui.mode_combo.setEnabled(True)
-                panel.prev_button.setEnabled(True)
-                panel.next_button.setEnabled(True)
+                self.ui.prev_button.setEnabled(True)
+                self.ui.next_button.setEnabled(True)
                 QtCore.QTimer.singleShot(50, self._force_render)
             except Exception as e:
                 print(f"{LOGP} _on_apply_error UI restore error: {e}")
