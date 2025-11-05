@@ -57,12 +57,7 @@ class Ui_MainWindow(object):
         self.horizontalLayout_2.setContentsMargins(0, 0, 0, 0)
         self.horizontalLayout_2.setSpacing(0)
         self.horizontalLayout_2.setObjectName("horizontalLayout_2")
-        self.toolButton = QtWidgets.QToolButton(self.buttonContainer)
-        self.toolButton.setObjectName("toolButton")
-        self.horizontalLayout_2.addWidget(self.toolButton)
-        self.pushButton = QtWidgets.QPushButton(self.buttonContainer)
-        self.pushButton.setObjectName("pushButton")
-        self.horizontalLayout_2.addWidget(self.pushButton)
+
         self.verticalLayout_6.addWidget(self.buttonContainer)
         self.gridLayout = QtWidgets.QGridLayout()
         self.gridLayout.setObjectName("gridLayout")
@@ -215,8 +210,7 @@ class Ui_MainWindow(object):
         self.btn_analysis.setText(_translate("MainWindow", "Analysis"))
         self.btn_measure.setText(_translate("MainWindow", "Measure"))
         self.btn_faq.setText(_translate("MainWindow", "FAQ"))
-        self.toolButton.setText(_translate("MainWindow", "..."))
-        self.pushButton.setText(_translate("MainWindow", "PushButton"))
+
         self.collapse_explorer_btn.setText(_translate("MainWindow", "Collapse"))
         self.label_4.setText(_translate("MainWindow", "Selected signal"))
         self.label.setText(_translate("MainWindow", "Explorer"))

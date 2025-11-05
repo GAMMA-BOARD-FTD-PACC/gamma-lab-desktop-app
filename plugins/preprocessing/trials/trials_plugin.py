@@ -45,9 +45,8 @@ class TrialsPlugin(IPlugin):
 
 
     def stop(self):
-        self._log("stop")
-        if self.vtk_interactor:
-            self.vtk_interactor.Disable()
+        self._log("stop() – tearing down VTK")
+        self.vtk_view.GetRenderWindow().GetInteractor().Disable()
 
     def process(self, data: any):
         self._log(f"process{data}")
@@ -82,6 +81,8 @@ class TrialsPlugin(IPlugin):
         self._log("ensure_vtk(): enter")
         
         self.vtk_interactor = QVTKRenderWindowInteractor(self.ui.plotArea)
+        self.vtk_interactor.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
+        self.vtk_interactor.destroyed.connect(self._on_vtk_widget_destroyed)
         self.ui.plotArea.setLayout(QtWidgets.QVBoxLayout())
         self.ui.plotArea.layout().setContentsMargins(0, 0, 0, 0)
         self.ui.plotArea.layout().addWidget(self.vtk_interactor)
@@ -116,6 +117,26 @@ class TrialsPlugin(IPlugin):
             self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
         self._log("ensure_vtk(): scheduled init")
 
+    def _on_vtk_widget_destroyed(self, *args):
+        # seguridad adicional si Qt destruye el widget
+        try:
+            if self.vtk_view is not None:
+                rw = self.vtk_view.GetRenderWindow()
+                if rw is not None:
+                    try:
+                        rw.AbortRenderOn()
+                    except Exception:
+                        pass
+                    try:
+                        rw.Finalize()
+                    except Exception:
+                        pass
+        except Exception as e:
+            self._log("_on_vtk_widget_destroyed:", e)
+        finally:
+            self.vtk_view = None
+            self.vtk_interactor = None
+            self.chart = None
     def _init_controls(self):
         self._log("_init_controls: set defaults")
         self.ui.thresholdDoubleSpinBox.setRange(0.0, 1e12)

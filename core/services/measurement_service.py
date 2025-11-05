@@ -619,6 +619,9 @@ class MeasurementService:
                 )
             except Exception:
                 pass
+            
+            self._state = 'idle'
+            self._current = None
 
         elif kind == 'amplitude':
             result = self._compute_amplitude_window(x1, x2)
@@ -649,6 +652,8 @@ class MeasurementService:
                 )
             except Exception:
                 pass
+            self._state = 'idle'
+            self._current = None
         
         elif kind == 'slope_all_trials':
             if not self._ref_data or not self._ref_data.get('xs'):
