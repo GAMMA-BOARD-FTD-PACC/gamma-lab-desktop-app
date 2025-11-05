@@ -2,6 +2,7 @@
 from typing import List, Tuple
 import numpy as np
 from pathlib import Path
+from scipy.interpolate import CubicSpline
 
 LOGL = "[ArtifactLogic]"
 
@@ -14,8 +15,8 @@ def _get_active_signal_and_name(kernel):
     sd = store.get_active_signal()
     if sd is None:
         raise RuntimeError("No active signal.")
-    # El SignalDataset usa file_name (Path(source).name) como clave
-    # Intentamos tomarlo del último TD si existe; si no, del source_path.
+    # SignalDataset uses file_name (Path(source).name) as key.
+    # Try to take it from the last TrialDataset if available; otherwise from source_path.
     file_name = None
     try:
         if sd.trials_dataset:
@@ -30,10 +31,10 @@ def _get_active_signal_and_name(kernel):
 
 def _get_current_channel_name(sd) -> str:
     """
-    Canal actual:
-      1) channel_name del último TrialDataset
-      2) primer nombre en sd.channel_names
-      3) 'ch-1' si hay señales cargadas
+    Current channel resolution order:
+      1) channel_name from the last TrialDataset
+      2) first name in sd.channel_names
+      3) 'ch-1' if there are signals loaded
     """
     try:
         if sd.trials_dataset:
@@ -54,7 +55,7 @@ def _get_current_channel_name(sd) -> str:
     raise RuntimeError("No channel selected/found. Generate Trials first or select a channel.")
 
 def _time_window_indices(t: np.ndarray, a: float, b: float) -> Tuple[int, int]:
-    """Devuelve índices [i_a, i_b) para la ventana [a, b] (ordenando si b<a)."""
+    """Return indices [i_a, i_b) for window [a, b] (swap if b<a)."""
     if b < a:
         a, b = b, a
     i_a = int(np.searchsorted(t, a, side="left"))
@@ -67,12 +68,12 @@ def _time_window_indices(t: np.ndarray, a: float, b: float) -> Tuple[int, int]:
 
 def apply_modification_to_all_valid(kernel, *, mode: str, point_a: float, point_b: float = 0.0):
     """
-    Modifica *valores* dentro de los trials ACTIVOS sin resegmentar ni descartar:
-      - mode='blank'  (alias 'cut'): pone NaN en [A,B] o hasta A si no se da B.
-      - mode='interpolate': interpola linealmente en [A,B].
-    Lee trials activos con SignalDataset.get_active_trials(...), y escribe los cambios
-    de vuelta en el TrialDataset base (sd.trials_dataset) mapeando columnas activas
-    → índices originales usando sd.discarded_trials[(file_name, channel_name)].
+    Modify values inside ACTIVE trials without re-segmentation or discards:
+      - mode='blank' (alias 'cut'): set NaN in [A,B] or until A if B is missing.
+      - mode='interpolate': fill [A,B] using cubic spline (natural) when possible; otherwise linear.
+    Reads active trials with SignalDataset.get_active_trials(...), and writes modifications
+    back to the base TrialDataset (sd.trials_dataset) by mapping active columns
+    to original indices using sd.discarded_trials[(file_name, channel_name)].
     """
     sd, file_name = _get_active_signal_and_name(kernel)
     channel_name = _get_current_channel_name(sd)
@@ -90,23 +91,56 @@ def apply_modification_to_all_valid(kernel, *, mode: str, point_a: float, point_
     if T_act == 0:
         return None
 
-    # 2) Encontrar el TrialDataset BASE (sin filtrar) para este file+channel
+    # 1.5) Prefer file_name from the active trials metadata/source if available
+    try:
+        active_src = getattr(td_active, "source", None)
+        if active_src is None:
+            active_src = getattr(getattr(td_active, "metadata", {}), "get", lambda *_: None)("source")
+        if active_src:
+            file_name = Path(active_src).name
+    except Exception:
+        pass
+
+    # 2) Find BASE TrialDataset (unfiltered) for this file+channel
+    td_list = getattr(sd, "_SignalDataset__trials_dataset", [])
     td_base = next(
-        (tdb for tdb in getattr(sd, "trials_dataset", [])
-         if Path(tdb.source).name == file_name and tdb.channel_name == channel_name),
+        (tdb for tdb in td_list
+         if Path(getattr(tdb, "source", "")).name == file_name and getattr(tdb, "channel_name", None) == channel_name),
         None
     )
+    # Fallbacks: by channel and sample count, or by channel only (last occurrence)
+    if td_base is None:
+        try:
+            ns = trials_active.shape[0]
+            candidates = [tdb for tdb in td_list
+                          if getattr(tdb, "channel_name", None) == channel_name]
+            td_base = next((tdb for tdb in candidates if getattr(tdb.trials, "shape", (0,))[0] == ns),
+                           candidates[-1] if candidates else None)
+        except Exception:
+            td_base = None
     if td_base is None:
         raise RuntimeError(f"No base TrialDataset found for ({file_name}, {channel_name}).")
     if td_base.trials.shape[0] != Ns:
         raise RuntimeError(f"Shape mismatch: base Ns={td_base.trials.shape[0]} vs active Ns={Ns}.")
 
-    # 3) Construir el mapeo índices ACTIVOS → ORIGINALES usando discarded_trials
-    discarded = sd.discarded_trials.get((file_name, channel_name), set()) or set()
+    # 3) Build ACTIVE → ORIGINAL index mapping using discarded_trials if present
+    discarded_dict = getattr(sd, "_SignalDataset__discarded_trials", {})
+    discarded = discarded_dict.get((file_name, channel_name), set()) or set()
     T_total = td_base.trials.shape[1]
+    if not discarded and isinstance(discarded_dict, dict):
+        # Try alternate keys by filename stem
+        stem = Path(file_name).stem
+        for (k_file, k_ch), disc in discarded_dict.items():
+            try:
+                if k_ch == channel_name and Path(k_file).stem == stem:
+                    discarded = disc or set()
+                    break
+            except Exception:
+                continue
     orig_indices = [i for i in range(T_total) if i not in discarded]
+    # If mapping length still mismatched, assume no discards
     if len(orig_indices) != T_act:
-        # Por seguridad (si alguien cambió descartes en caliente)
+        # Safety: adjust to shorter length (e.g., if discards changed live)
         T_act = min(T_act, len(orig_indices))
         trials_active = trials_active[:, :T_act]
         orig_indices = orig_indices[:T_act]
@@ -137,15 +171,33 @@ def apply_modification_to_all_valid(kernel, *, mode: str, point_a: float, point_
         if i_b - i_a < 2:
             return None
         for j in range(T_act):
-            y = out_active[:, j]
+            y = out_active[:, j].copy()
             valid = np.isfinite(y)
-            if valid.sum() < 2:
-                continue
-            ya = np.interp(t[i_a], t[valid], y[valid])
-            yb = np.interp(t[i_b-1], t[valid], y[valid])
-            r = np.linspace(0.0, 1.0, i_b - i_a)
-            y[i_a:i_b] = ya + (yb - ya) * r
-            out_active[:, j] = y
+            # Exclude the interval [i_a, i_b) from the fit; we want to bridge over it
+            keep = valid.copy()
+            keep[i_a:i_b] = False
+
+            x_keep = t[keep]
+            y_keep = y[keep]
+
+            if x_keep.size >= 4:
+                try:
+                    spline = CubicSpline(x_keep, y_keep, bc_type='natural')
+                    y[i_a:i_b] = spline(t[i_a:i_b])
+                    out_active[:, j] = y
+                    continue
+                except Exception:
+                    # Fallback to linear interpolation if spline fails
+                    pass
+
+            # Linear fallback (uses points outside the interval)
+            if x_keep.size >= 2:
+                ya = np.interp(t[i_a], x_keep, y_keep)
+                yb = np.interp(t[i_b-1], x_keep, y_keep)
+                r = np.linspace(0.0, 1.0, i_b - i_a)
+                y[i_a:i_b] = ya + (yb - ya) * r
+                out_active[:, j] = y
+            # else: not enough context to interpolate — leave as-is
     else:
         raise ValueError(f"Unknown mode: {mode}")
 

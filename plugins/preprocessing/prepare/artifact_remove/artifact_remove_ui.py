@@ -165,9 +165,13 @@ class Ui_ArtifactRemove(object):
         # --- Add scroll area to splitter ---
         self.splitter.addWidget(self.scrollArea)
 
-        # --- Stretch configuration ---
-        self.splitter.setStretchFactor(0, 1)
-        self.splitter.setStretchFactor(1, 0)
+        # --- Stretch configuration (responsive panel) ---
+        # Give the plot more space but allow the panel to grow/shrink too
+        self.splitter.setStretchFactor(0, 3)
+        self.splitter.setStretchFactor(1, 1)
+        # Keep a sensible minimum width so the panel doesn't collapse
+        self.layoutWidget.setMinimumWidth(280)
+        self.scrollArea.setMinimumWidth(300)
 
         # --- Retranslate & connections ---
         self.retranslateUi(ArtifactRemove)

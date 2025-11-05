@@ -1,11 +1,11 @@
-from vtk.util import numpy_support as nps # Importación segura para VTK/NumPy
+from vtk.util import numpy_support as nps  # Safe import for VTK/NumPy
 from PyQt5 import QtCore, QtWidgets
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel
 import numpy as np
 import vtk
 from typing import Optional, List, Set
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
-from types import SimpleNamespace # Para el helper de trials
+from types import SimpleNamespace  # Helper for trials
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
@@ -13,17 +13,17 @@ from core.services.signal_dataset import SignalDataset
 from core.services.trial_dataset import TrialDataset
 
 from plugins.preprocessing.prepare.artifact_remove.artifact_remove_ui import Ui_ArtifactRemove
-# Importar la función de lógica correcta
+# Import logic entry point
 from plugins.preprocessing.prepare.artifact_remove.artifact_logic import apply_modification_to_all_valid
 
-# Intento de importación de clases personalizadas
+# Optional import for custom context menu
 try:
     from core.plugins.vtk_context_menu import VTKContextMenu
 except ImportError:
     VTKContextMenu = None
 
 LOGP = "[ArtifactRemovePlugin]"
-# --- Worker para ejecutar la lógica pesada en otro hilo ---
+# --- Worker to run heavy logic in a background thread ---
 class _ApplyWorker(QtCore.QObject):
     progress = QtCore.pyqtSignal(int)
     finished = QtCore.pyqtSignal(object)   
@@ -71,7 +71,7 @@ class ArtifactRemovePlugin(IPlugin):
         self._refresh_timer.setInterval(120) # ms
         self._refresh_timer.timeout.connect(self._refresh_view_coalesced)
 
-        self.current_display_index: int = -1 # -1 = Promedio
+        self.current_display_index: int = -1  # -1 = Average
         self.valid_indices: List[int] = []
         self.total_original_trials: int = 0
         self.discarded_indices: Set[int] = set()
@@ -82,7 +82,7 @@ class ArtifactRemovePlugin(IPlugin):
         pass
 
     def _refresh_view_coalesced(self):
-        """Refresca la vista una sola vez aunque lleguen varios eventos seguidos."""
+        """Coalesced refresh: only refresh once for bursty events."""
         try:
             self._reset_state()
             if self.vtk_interactor and not self.vtk_interactor.isEnabled():
@@ -97,7 +97,7 @@ class ArtifactRemovePlugin(IPlugin):
 
 
     def start(self, kernel):
-        """ Se llama cuando el plugin se carga inicialmente. """
+        """Called when the plugin is first loaded."""
         print(f"{LOGP} start()")
         self.kernel = kernel
         self.mainwin = kernel.get_service("MainWindow")
@@ -108,7 +108,7 @@ class ArtifactRemovePlugin(IPlugin):
             print(f"{LOGP} Error connecting to events: {e}")
 
     def stop(self):
-        """ Se llama cuando el plugin se cierra o deshabilita. """
+        """Called when the plugin closes or is disabled."""
         print(f"{LOGP} stop() - Disabling VTK interactor.")
         if self.vtk_interactor and self.vtk_interactor.isEnabled():
             try:
@@ -178,7 +178,7 @@ class ArtifactRemovePlugin(IPlugin):
         return self.widget
 
     def _force_render(self):
-        """ Intenta forzar un renderizado si el widget está visible. """
+        """Force a render if the widget is visible."""
         if self.vtk_interactor and self.vtk_view and self.widget and self.widget.isVisible():
             try: 
                 print(f"{LOGP} DEBUG: Forcing Render.")
@@ -188,39 +188,46 @@ class ArtifactRemovePlugin(IPlugin):
                 print(f"{LOGP} Error during forced render: {e}")
 
     def _wire_controls(self):
-        """ Conecta señales de la UI a slots. """
-        if not self.ui or not hasattr(self.ui, 'artifact_panel'):
-            print(f"{LOGP} Error: UI o artifact_panel no inicializado en _wire_controls.")
+        """Connect UI signals to slots (no optional guards)."""
+        if not self.ui:
+            print(f"{LOGP} Error: UI not initialized in _wire_controls.")
             return
-            
-        panel = self.ui.paramsLayout
+
         self.ui.apply_button.clicked.connect(self._on_apply_changes)
         self.ui.prev_button.clicked.connect(self._go_to_previous_trial)
         self.ui.next_button.clicked.connect(self._go_to_next_trial)
         self.ui.mode_combo.currentTextChanged.connect(self._on_mode_changed)
-        
-        print(f"{LOGP} UI Controls connected.")
+
+        # Ensure correct initial visibility/state
+        try:
+            self._on_mode_changed(self.ui.mode_combo.currentText())
+        except Exception:
+            pass
+
+        print(f"{LOGP} UI controls connected.")
 
     def _on_mode_changed(self, mode_text: str):
-        """ Actualiza visibilidad de Point B según el modo. """
+        """Update Point B visibility depending on mode."""
         if not self.ui or not hasattr(self.ui, 'artifact_panel'): 
             return
             
-        panel = self.ui.paramsLayout
         show_point_b = (mode_text == "Interpolate Interval" or mode_text == "Blank Interval")
-        
-        getattr(panel, 'label_b', QWidget()).setVisible(show_point_b)
-        getattr(panel, 'point_b', QWidget()).setVisible(show_point_b)
-        
-        label_a = getattr(panel, 'label_a', None)
-        if label_a:
+
+        # Toggle visibility directly on UI widgets
+        if hasattr(self.ui, 'label_b'):
+            self.ui.label_b.setVisible(show_point_b)
+        if hasattr(self.ui, 'point_b'):
+            self.ui.point_b.setVisible(show_point_b)
+
+        # Update label A text
+        if hasattr(self.ui, 'label_a'):
             if mode_text == "Cut From Start":
-                 label_a.setText("Cut until (s):")
+                self.ui.label_a.setText("Cut until (s):")
             else:
-                 label_a.setText("Point A (s):")
+                self.ui.label_a.setText("Point A (s):")
 
     def _on_apply_changes(self):
-        """Lanza la modificación en un hilo para no bloquear la UI."""
+        """Run modification in a thread to avoid blocking the UI."""
         if not self.ui or not self.widget:
             return
 
@@ -232,7 +239,7 @@ class ArtifactRemovePlugin(IPlugin):
 
         try:
             mode_text = self.ui.mode_combo.currentText()
-            # Ajuste de modo basado en la lógica de modificación de valores.
+            # Adjust mode based on modification logic
             mode = 'blank' if mode_text in ("Cut From Start", "Blank Interval") else 'interpolate'
 
             point_a_str = self.ui.point_a.text().strip()
@@ -241,10 +248,10 @@ class ArtifactRemovePlugin(IPlugin):
             point_a = float(point_a_str)
 
             point_b = 0.0
-            if mode == 'interpolate' or mode_text == "Blank Interval": # Si es interpolación o blanking por intervalo (debe tener B)
+            if mode == 'interpolate' or mode_text == "Blank Interval":  # interval operations require B
                 point_b_str = self.ui.point_b.text().strip()
                 if not point_b_str:
-                    # En el modo "Cut From Start", B no es obligatorio, por eso se omite el raise aquí.
+                    # In "Cut From Start" B is optional; do not raise here
                     if mode_text != "Cut From Start":
                          raise ValueError("Point B cannot be empty for interval modification.")
                 else:
@@ -274,7 +281,7 @@ class ArtifactRemovePlugin(IPlugin):
             self._apply_worker.finished.connect(self._on_apply_finished) 
             self._apply_worker.error.connect(self._on_apply_error)
 
-            # Limpieza automática
+            # Auto cleanup
             self._apply_worker.finished.connect(self._apply_thread.quit)
             self._apply_worker.finished.connect(self._apply_worker.deleteLater)
             self._apply_thread.finished.connect(self._apply_thread.deleteLater)
@@ -339,10 +346,8 @@ class ArtifactRemovePlugin(IPlugin):
         return sd, sig_name
         
     def _get_current_channel_name(self, sd: SignalDataset) -> str:
-        """
-        Devuelve el nombre de canal a usar para get_active_trials.
-        """
-        # 1) último TrialDataset
+        """Return channel name to use with get_active_trials."""
+        # 1) last TrialDataset
         try:
             tds = getattr(sd, "trials_dataset", None)
             if tds and len(tds) > 0:
@@ -353,7 +358,7 @@ class ArtifactRemovePlugin(IPlugin):
         except Exception:
             pass
 
-        # 2) lista de nombres conocida
+        # 2) known names list
         try:
             names = getattr(sd, "channel_names", None)
             if names and len(names) > 0:
@@ -361,10 +366,10 @@ class ArtifactRemovePlugin(IPlugin):
         except Exception:
             pass
 
-        # 3) fallback si hay señales
+        # 3) fallback if there are signals
         sig = getattr(sd, "signals", None)
         if sig is not None and getattr(sig, "shape", None) and sig.shape[0] > 0:
-            # si no hay nombres, asumimos "ch-1"
+            # assume "ch-1" if names are missing
             return "ch-1"
 
         raise RuntimeError("No channel selected/found. Generate Trials first or select a channel.")
@@ -375,10 +380,10 @@ class ArtifactRemovePlugin(IPlugin):
         if not hasattr(sd, "get_active_trials"):
             raise RuntimeError("SignalDataset.get_active_trials(...) not available.")
 
-        # NUEVO: resolver canal
+        # Resolve channel
         channel_name = self._get_current_channel_name(sd)
 
-        # Llamada correcta (con canal)
+        # Call with channel
         result = sd.get_active_trials(sig_name, channel_name)
 
         td = None; meta = {}
@@ -417,7 +422,7 @@ class ArtifactRemovePlugin(IPlugin):
         else:
             orig_idx = list(map(int, orig_idx))
             
-        # NUEVO: usar channel_name resuelto si el resultado no lo trae
+        # Use resolved channel_name if the result does not provide it
         chan = getattr(td, "channel_name", meta.get("channel_name", channel_name))
 
         return SimpleNamespace(
@@ -428,9 +433,9 @@ class ArtifactRemovePlugin(IPlugin):
             total_trials=n_total,
         )
 
-    # --- Carga de Datos y Lógica de Ploteo ---
+    # --- Data loading and plotting ---
     def _load_and_display_trials(self):
-        """Carga trials activos vía get_active_trials y muestra promedio o individual."""
+        """Load active trials via get_active_trials and show average or individual."""
         print(f"{LOGP} _load_and_display_trials(). Index: {self.current_display_index}")
         if not self.kernel:
             return self._clear_render("Kernel missing.")
@@ -440,7 +445,7 @@ class ArtifactRemovePlugin(IPlugin):
             msg = str(e)
             print(f"{LOGP} fetch active trials error: {msg}")
             self._reset_state()
-            # 3. Mensaje claro cuando aún no hay trials
+            # Clear message when there are no trials yet
             if "No channel selected" in msg or "Generate Trials" in msg or "not available" in msg:
                 return self._clear_render("No trial data. Please generate Trials first (Preprocessing → Trials).")
             return self._clear_render(msg)
@@ -448,7 +453,7 @@ class ArtifactRemovePlugin(IPlugin):
 
         t = np.asarray(active.time_rel)
         trials = np.asarray(active.trials)          # (Ns, Tact)
-        orig_indices = list(active.orig_indices)    # mapeo a índices originales
+        orig_indices = list(active.orig_indices)    # map to original indices
         total_trials = int(active.total_trials)
         channel_name = active.channel_name
 
@@ -459,7 +464,7 @@ class ArtifactRemovePlugin(IPlugin):
         if not (-1 <= self.current_display_index < Tact):
             self.current_display_index = -1
 
-        # 4. Poblar valid_indices para navegación
+        # Populate valid_indices for navigation
         self.valid_indices = list(range(Tact))
         self.total_original_trials = int(total_trials) 
 
@@ -485,13 +490,11 @@ class ArtifactRemovePlugin(IPlugin):
         if t.shape[0] != y.shape[0]:
             return self._clear_render(f"Length mismatch: time={t.shape[0]}, data={y.shape[0]}")
 
-        self._plot_curve(t, y, title)
+        self._plot_curve(t, y, title, channel_name)
 
-    # --- Lógica de Visualización VTK ---
+    # --- VTK display logic ---
     def _ensure_vtk(self):
-        """ 
-        Asegura que el interactor y la vista VTK existan y estén en el layout.
-        """
+        """Ensure the interactor and view exist and are added to the layout."""
         
         if (self.vtk_interactor and self.vtk_view and 
             self.ui.plotArea.layout() and 
@@ -502,7 +505,7 @@ class ArtifactRemovePlugin(IPlugin):
                     self.vtk_interactor.Enable()
                 except Exception as e:
                     print(f"{LOGP} Error re-enabling VTK: {e}")
-            return # Ya está listo
+            return  # already set
 
         print(f"{LOGP} _ensure_vtk(): Setting up VTK...")
         
@@ -550,7 +553,7 @@ class ArtifactRemovePlugin(IPlugin):
                     self.ui.plotArea.layout().addWidget(lbl)
 
     def _cleanup_vtk_references(self):
-       """ Limpia referencias VTK para evitar memory leaks. """
+       """Clean VTK references to avoid memory leaks."""
        self.vtk_interactor = None
        self.vtk_view = None
        self.chart = None
@@ -558,8 +561,8 @@ class ArtifactRemovePlugin(IPlugin):
        print(f"{LOGP} VTK references cleaned.")
 
 
-    def _plot_curve(self, t: np.ndarray, y: np.ndarray, title: str = ""):
-        """ Dibuja los arrays 't' y 'y' en el chart VTK. """
+    def _plot_curve(self, t: np.ndarray, y: np.ndarray, title: str = "", ch_name: str = ""):
+        """Draw arrays 't' and 'y' in the VTK chart."""
         
         if self.vtk_view is None:
             self._ensure_vtk()
@@ -576,7 +579,7 @@ class ArtifactRemovePlugin(IPlugin):
             
             renderer.GetActors2D().RemoveAllItems() 
             
-            # Corrección del mensaje persistente: forzar render después de limpiar actores 2D
+            # Fix stale message: force render after clearing 2D actors
             self.vtk_view.GetRenderWindow().Render() 
             
             renderer.SetBackground(vtk.vtkNamedColors().GetColor3d("WhiteSmoke"))
@@ -591,7 +594,7 @@ class ArtifactRemovePlugin(IPlugin):
             n_points = t_valid.shape[0]
 
             if n_points == 0:
-                raise RuntimeError("No hay puntos válidos para graficar (NaN/Inf).")
+                raise RuntimeError("No valid points to plot (NaN/Inf).")
             
             vtk_t = nps.numpy_to_vtk(t_valid.astype(np.float64), deep=True)
             vtk_t.SetName("Time (s)")
@@ -618,13 +621,23 @@ class ArtifactRemovePlugin(IPlugin):
 
             max_abs = float(np.nanmax(np.abs(y_valid)))
             if not np.isfinite(max_abs) or max_abs > 1e12:
-                print(f"{LOGP} WARNING: amplitud muy grande (|y| max ≈ {max_abs:.3e}). Revisa unidades/escala de la señal.")
+                print(f"{LOGP} WARNING: very large amplitude (|y| max ≈ {max_abs:.3e}). Check signal units/scale.")
 
             self.chart.RecalculateBounds()
-            print(f"{LOGP} _plot_curve: Plot '{title}' con {n_points} puntos válidos (carga segura).")
+            # Context menu consistent with other plugins
+            try:
+                if VTKContextMenu is not None and self.vtk_interactor is not None and self.active_signal is not None:
+                    self.vtk_menu = VTKContextMenu(self.chart, self.vtk_interactor,
+                                                   self.active_signal.name, ch_name,
+                                                   self.meta.id, parent=self.widget)
+            except Exception as e:
+                if self.alerts:
+                    self.alerts.error(f"Error creating the context menu.\n {str(e)}")
+
+            print(f"{LOGP} _plot_curve: Plot '{title}' with {n_points} valid points.")
 
         except RuntimeError as re:
-            print(f"{LOGP} _plot_curve: Error al plotear (runtime): {re}")
+            print(f"{LOGP} _plot_curve: runtime plot error: {re}")
             self.chart = None
             txt = vtk.vtkTextActor()
             txt.SetInput(f"No data to display for:\n{title}\nError: {re}")
@@ -640,10 +653,10 @@ class ArtifactRemovePlugin(IPlugin):
             print(f"{LOGP} Error during _plot_curve: {e}")
             self._clear_render(f"Error plotting:\n{e}")
 
-    # --- Funciones de utilidad ---
+    # --- Utility functions ---
 
     def _reset_state(self):
-        """ Resetea el estado interno del plugin. """
+        """Reset internal plugin state."""
         print(f"{LOGP} Resetting state...")
         self.current_display_index = -1
         self.valid_indices = []
@@ -661,7 +674,7 @@ class ArtifactRemovePlugin(IPlugin):
                 print(f"{LOGP} Error resetting UI state: {e}")
 
     def _clear_render(self, message=""):
-        """ Limpia la vista VTK y muestra un mensaje opcional. """
+        """Clear the VTK view and optionally show a message."""
         
         if self.vtk_view is None:
             self._ensure_vtk()
@@ -702,7 +715,7 @@ class ArtifactRemovePlugin(IPlugin):
             print(f"{LOGP} Error during _clear_render: {e}")
 
     def _on_data_updated(self, topic: str, payload: object):
-        """Escucha eventos del kernel y agrupa refrescos (debounce) para evitar lag o bloqueos."""
+        """Listen to kernel events and coalesce refreshes to avoid UI lag."""
         try:
             if topic in ["signal_added", "active_signal_changed", "trials_generated", "trial_discard_updated"]:
                 if self.widget and self.widget.isVisible():
@@ -723,7 +736,7 @@ class ArtifactRemovePlugin(IPlugin):
             print(f"{LOGP} Error in _on_data_updated: {e}")
 
     def _on_apply_finished(self, modified_td):
-        """Señal: el worker terminó correctamente."""
+        """Signal: worker finished successfully."""
         print(f"{LOGP} finished received, type={type(modified_td)}")
         try:
             if modified_td:
@@ -731,7 +744,7 @@ class ArtifactRemovePlugin(IPlugin):
             else:
                 self.alerts.info("No modifications were applied.")
         finally:
-            # Rehabilitar UI y refrescar
+            # Re-enable UI and refresh
             try:
                 if self.vtk_interactor:
                     try:
@@ -752,7 +765,7 @@ class ArtifactRemovePlugin(IPlugin):
                 print(f"{LOGP} _on_apply_finished UI restore error: {e}")
 
     def _on_apply_error(self, msg):
-        """Señal: el worker reportó un error."""
+        """Signal: worker reported an error."""
         try:
             self.alerts.error(msg, "Apply Error")
         finally:
