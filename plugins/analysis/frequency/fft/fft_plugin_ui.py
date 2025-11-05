@@ -3,7 +3,6 @@ from PyQt5 import QtCore, QtWidgets
 class Ui_Fft(object):
     def setupUi(self, Fft):
         Fft.setObjectName("Fft")
-        Fft.resize(825, 609)
 
         self.mainWindow = QtWidgets.QHBoxLayout(Fft)
         self.mainWindow.setObjectName("mainWindow")
@@ -20,7 +19,7 @@ class Ui_Fft(object):
         self.plotArea.setFrameShadow(QtWidgets.QFrame.Raised)
         self.plotArea.setObjectName("plotArea")
 
-        # Right Area: Panel
+        # --- Right Area: Panel ---
         self.scrollArea = QtWidgets.QScrollArea(self.splitter)
         self.scrollArea.setWidgetResizable(True)
         self.scrollArea.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
@@ -31,7 +30,6 @@ class Ui_Fft(object):
 
         self.paramsLayout = QtWidgets.QVBoxLayout(self.layoutWidget)
         self.paramsLayout.setObjectName("paramsLayout")
-        self.paramsLayout.setContentsMargins(8, 0, 8, 0)
         self.paramsLayout.setSpacing(12)
 
         self.scrollArea.setWidget(self.layoutWidget)
@@ -147,7 +145,7 @@ class Ui_Fft(object):
         self.rangeLayout.addLayout(self.frequencyLayout)
         self.paramsLayout.addLayout(self.rangeLayout)
 
-        # --- Button Create Fft ---
+        # --- Button Calculate FFT ---
         self.paramsLayout.addStretch(1)
 
         self.calculateFftButton = QtWidgets.QPushButton(self.layoutWidget)

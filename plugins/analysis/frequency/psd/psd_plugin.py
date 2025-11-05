@@ -48,7 +48,7 @@ class Psd_plugin(IPlugin):
             self.alerts.parent = self.widget
 
             self._log("UI creada. plotArea:", bool(self.ui.plotArea),
-                      "panel:", bool(self.ui.panel),
+                      "panel:", bool(self.ui.layoutWidget),
                       "splitter:", bool(self.ui.splitter))
             
             self._ensure_vtk()
@@ -80,9 +80,9 @@ class Psd_plugin(IPlugin):
             self.ui.formLayoutWelch.addRow(lbl, cmbo)
         except AttributeError:
              # Fallback si el layout no existe (si el UI no tiene el nombre formLayoutWelch)
-            if self.ui.panel and self.ui.panel.layout():
-                self.ui.panel.layout().addWidget(lbl)
-                self.ui.panel.layout().addWidget(cmbo)
+            if self.ui.layoutWidget and self.ui.layoutWidget.layout():
+                self.ui.layoutWidget.layout().addWidget(lbl)
+                self.ui.layoutWidget.layout().addWidget(cmbo)
         self.ui.detrendComboBox.setCurrentText("none")
 
     def _init_defaults(self):
@@ -102,8 +102,8 @@ class Psd_plugin(IPlugin):
             self.ui.detrendComboBox.setCurrentText("none")
             
         # Rango de Ploteo por Defecto (Low=0.0, High=500.0)
-        self.ui.lowFrecuencyDoubleSpinBox.setValue(0.0)
-        self.ui.highFrecuencyDoubleSpinBox.setValue(500.0)
+        self.ui.lowFrequencySpinBox.setValue(0.0)
+        self.ui.highFrequencySpinBox.setValue(500.0)
         
         # Modo: Individual, Trial: 0
         try:
@@ -117,9 +117,9 @@ class Psd_plugin(IPlugin):
 
     def _wire_ui(self):
         self._log("wire ui")
-        self.ui.pushButton.clicked.connect(self._on_calculate_clicked)
-        self.ui.lowFrecuencyDoubleSpinBox.valueChanged.connect(self._sync_range)
-        self.ui.highFrecuencyDoubleSpinBox.valueChanged.connect(self._sync_range)
+        self.ui.calculatePsdButton.clicked.connect(self._on_calculate_clicked)
+        self.ui.lowFrequencySpinBox.valueChanged.connect(self._sync_range)
+        self.ui.highFrequencySpinBox.valueChanged.connect(self._sync_range)
         
         # Sincronizar noverlap con nperseg
         self.ui.npersegSpinBox.valueChanged.connect(self._sync_noverlap)
@@ -184,12 +184,12 @@ class Psd_plugin(IPlugin):
             
         # --- NUEVO: Fija Target Fs y rango como pwelch si no se ha modificado ---
         # Target Fs = fs (sin downsample)
-        if self.ui.sampleDensityDoubleSpinBox.value() <= 0:
-             self.ui.sampleDensityDoubleSpinBox.setValue(fs)
+        if self.ui.sampleDensitySpinBox.value() <= 0:
+             self.ui.sampleDensitySpinBox.setValue(fs)
         # Rango 0..fs/2
-        if self.ui.lowFrecuencyDoubleSpinBox.value() >= self.ui.highFrecuencyDoubleSpinBox.value():
-            self.ui.lowFrecuencyDoubleSpinBox.setValue(0.0)
-            self.ui.highFrecuencyDoubleSpinBox.setValue(fs/2.0)
+        if self.ui.lowFrequencySpinBox.value() >= self.ui.highFrequencySpinBox.value():
+            self.ui.lowFrequencySpinBox.setValue(0.0)
+            self.ui.highFrequencySpinBox.setValue(fs/2.0)
             
         # --- NUEVO: Actualizar UI con número de trials ---
         num_trials = X.shape[1]
@@ -201,9 +201,9 @@ class Psd_plugin(IPlugin):
 
         # 2) Parámetros UI
         try:
-            target_fs = float(self.ui.sampleDensityDoubleSpinBox.value())
-            lo = float(self.ui.lowFrecuencyDoubleSpinBox.value())
-            hi = float(self.ui.highFrecuencyDoubleSpinBox.value())
+            target_fs = float(self.ui.sampleDensitySpinBox.value())
+            lo = float(self.ui.lowFrequencySpinBox.value())
+            hi = float(self.ui.highFrequencySpinBox.value())
             
             # Parámetros de Welch
             window = self.ui.windowComboBox.currentText()
@@ -278,13 +278,13 @@ class Psd_plugin(IPlugin):
 
     def _sync_range(self):
         # 4) Pequeño bug de PyQt: Simplifica _sync_range (sin sender())
-        lo = float(self.ui.lowFrecuencyDoubleSpinBox.value())
-        hi = float(self.ui.highFrecuencyDoubleSpinBox.value())
+        lo = float(self.ui.lowFrequencySpinBox.value())
+        hi = float(self.ui.highFrequencySpinBox.value())
         if lo > hi:
             # Solo forzamos que hi se ajuste a lo si es menor
-            self.ui.highFrecuencyDoubleSpinBox.setValue(lo)
-        self._log(f"range sync: low={self.ui.lowFrecuencyDoubleSpinBox.value()}, "
-                  f"high={self.ui.highFrecuencyDoubleSpinBox.value()}")
+            self.ui.highFrequencySpinBox.setValue(lo)
+        self._log(f"range sync: low={self.ui.lowFrequencySpinBox.value()}, "
+                  f"high={self.ui.highFrequencySpinBox.value()}")
 
     # ====== DATA ======
     def _load_trials_from_store(self):
