@@ -16,9 +16,9 @@ QPushButton {
     background-color: transparent;
     color: #2E60A9;
     border: none;
-    font-size: 12px;
-    font-weight: light;
-    padding: 5px 0px;
+    font-size: 10pt;
+    font-weight: 400;
+    padding: 6px 0px;
 }
 
 /* Hover */
@@ -45,52 +45,50 @@ QPushButton:checked {
 #buttonContainer {
     background-color: #2E60A9;
     border: none;
-    margin: 0px;
-    padding: 0px;
-    min-height: 100px;
-    max-height: 100px;
+    margin: 0;
+    padding: 6px 16px 10px;
+    min-height: 120px;
+    max-height: 120px;
 }
+
 
 #buttonContainer QToolButton {
     background-color: transparent;
     color: white;
     border: none;
-    font-size: 12px;
-    padding: 5px 5px;
+    font-size: 9pt;
+    padding: 4px 6px 2px;
+    min-width: 96px;
+    max-width: 96px;
+    min-height: 76px;
 }
 
 #buttonContainer QToolButton:hover {
     background-color: #2a59a0;
-    /* font-weight: bold; */
     border-radius: 10px;
 }
 
 #buttonContainer QToolButton:checked {
-    background-color: white;
-    border-radius: 6px;
+    background: transparent;
+    color: white;
+    border-radius: 0;
 }
 
 /* Subcategory styles */
 
 #buttonContainer QGroupBox {
-    border: none;             
-
+    border: none;
     color: white;
-    font-size: 12px;
-    /* font-weight: bold;  */
-    padding: 0px 5px;  
-    /* border-bottom: 1px solid #ffffff; */
-    /* margin-top: 0px;
-    padding-bottom: 10px; */
+    font-size: 9.5pt;
+    padding: 0 4px;
+    margin: 0;
 }
 
 #buttonContainer QGroupBox::title {
     subcontrol-origin: margin;
-    subcontrol-position: bottom center; /* título centrado arriba */
-
+    subcontrol-position: bottom center;
+    padding: 6px 8px 0 8px;
 }
-
-
 
 QScrollArea { 
     border: none;
