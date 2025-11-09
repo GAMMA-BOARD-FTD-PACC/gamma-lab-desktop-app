@@ -27,7 +27,11 @@ class MainWindow(QMainWindow):
         #Registrar la ventana principal como un servicio en el kernel para que los plugins puedan acceder a ella.
         self.kernel.register_service("MainWindow", self)
 
-        self.setWindowIcon(QIcon("assets/logos/app-logo.png"))
+        # Prefer embedded resource; fallback to file path
+        icon = QIcon(":/assets/logos/app-logo.png")
+        if icon.isNull():
+            icon = QIcon("assets/logos/app-logo.png")
+        self.setWindowIcon(icon)
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         self.showMaximized()
@@ -65,7 +69,7 @@ class MainWindow(QMainWindow):
         self._bg_logo_pixmap = QPixmap("assets/logos/app-logo.png")
         # Watermark opacity (applied to PNG alpha channel)
         # Very subtle for plugins' background
-        self._logo_opacity = 0.03
+        self._logo_opacity = 0.1
         # Keep it behind content by default
         self._bg_logo_label.lower()
         self._bg_logo_label.setScaledContents(False)
@@ -319,8 +323,8 @@ class MainWindow(QMainWindow):
         scaled = self._bg_logo_pixmap.scaled(
             target, target, Qt.KeepAspectRatio, Qt.SmoothTransformation
         )
-        # Apply opacity to alpha channel (no solid background)
-        scaled = self._apply_alpha_opacity(scaled, self._logo_opacity)
+        # Apply global opacity using painter (preserves PNG transparency)
+        scaled = self._make_translucent(scaled, self._logo_opacity)
         w = scaled.width(); h = scaled.height()
         x = max(0, (area_size.width() - w) // 2)
         y = max(0, (area_size.height() - h) // 2)
@@ -394,7 +398,7 @@ class MainWindow(QMainWindow):
         logo.setAttribute(Qt.WA_TranslucentBackground, True)
         logo.setAttribute(Qt.WA_NoSystemBackground, True)
         logo.setStyleSheet("background: transparent; border: none;")
-        pix = QPixmap("assets/logos/app-logo.png").scaled(140, 140, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        pix = QPixmap("assets/logos/app-logo.png").scaled(200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         logo.setPixmap(pix)
         block_layout.addWidget(logo, 0, Qt.AlignHCenter)
 
@@ -402,7 +406,7 @@ class MainWindow(QMainWindow):
         title = QLabel("Welcome to GAMMA LAB", block)
         f = title.font()
         try:
-            f.setPointSize(72)
+            f.setPointSize(160)
         except Exception:
             pass
         f.setBold(True)
@@ -453,23 +457,19 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_bg_logo_label"):
             self._update_background_logo_visibility()
 
-    def _apply_alpha_opacity(self, pix: QPixmap, opacity: float) -> QPixmap:
+    def _make_translucent(self, pix: QPixmap, opacity: float) -> QPixmap:
+        """Return a copy of the pixmap with a global opacity applied."""
         try:
             if pix.isNull():
                 return pix
             opacity = max(0.0, min(1.0, float(opacity)))
-            img = pix.toImage().convertToFormat(Qt.Format_ARGB32)
-            w, h = img.width(), img.height()
-            for y in range(h):
-                scan = img.scanLine(y)
-                # Python-level bytes; operate per 4 bytes (BGRA)
-                # Fallback simple per-pixel using pixel/ setPixel for portability
-                for x in range(w):
-                    rgba = img.pixel(x, y)
-                    a = (rgba >> 24) & 0xFF
-                    a = int(a * opacity) & 0xFF
-                    img.setPixel(x, y, (a << 24) | (rgba & 0x00FFFFFF))
-            return QPixmap.fromImage(img)
+            out = QPixmap(pix.size())
+            out.fill(Qt.transparent)
+            painter = QPainter(out)
+            painter.setOpacity(opacity)
+            painter.drawPixmap(0, 0, pix)
+            painter.end()
+            return out
         except Exception:
             return pix
 
