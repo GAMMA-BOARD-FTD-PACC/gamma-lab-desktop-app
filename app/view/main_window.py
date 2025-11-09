@@ -1,9 +1,12 @@
 from collections import defaultdict
 import os
-from PyQt5.QtWidgets import QMainWindow, QMessageBox, QHBoxLayout, QVBoxLayout, QWidget, QToolButton, QGroupBox, QLabel, QSizePolicy
+from PyQt5.QtWidgets import QMainWindow, QHBoxLayout, QVBoxLayout, QWidget, QToolButton, QGroupBox, QLabel, QSizePolicy, QApplication
 from app.view.main_window_ui import Ui_MainWindow 
-from PyQt5.QtGui import QIcon, QPixmap
+from PyQt5.QtGui import QIcon, QFontMetrics, QFont
 from PyQt5.QtCore import QSize, Qt, QPropertyAnimation, QEasingCurve
+
+from core.plugins.interfaces import IPlugin
+from core.plugins.plugin_alerts import PluginAlerts
 
 class MainWindow(QMainWindow):
     def __init__(self, kernel):
@@ -25,7 +28,7 @@ class MainWindow(QMainWindow):
         self.active_plugin_widget = None #Widget del plugin activo
         self.plugin_widgets = {} #Almacenamiento de los widgets de los plugins para no perder trabajo
 
-        #area de trabajo
+        # Workspace area where plugins render
         self.plugin_area = self.ui.workspace
 
         # Inicializar funcionalidades de la barra lateral
@@ -36,6 +39,36 @@ class MainWindow(QMainWindow):
             self.plugin_layout.setContentsMargins(0,0,0,0)
         else:
             self.plugin_layout = self.plugin_area.layout()
+
+        # Single watermark label (does not intercept mouse events)
+        self._bg_logo_label = QLabel(self.plugin_area)
+        self._bg_logo_label.setObjectName("gammaLabWatermark")
+        self._bg_logo_label.setAlignment(Qt.AlignCenter)
+        self._bg_logo_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self._bg_logo_label.setAttribute(Qt.WA_TranslucentBackground, True)
+        self._bg_logo_label.setAttribute(Qt.WA_NoSystemBackground, True)
+        self._bg_logo_label.setStyleSheet("background: transparent; border: none;")
+        self._bg_logo_pixmap = QPixmap("assets/logos/app-logo.png")
+        # Watermark opacity (applied to PNG alpha channel)
+        # Very subtle for plugins' background
+        self._logo_opacity = 0.03
+        # Keep it behind content by default
+        self._bg_logo_label.lower()
+        self._bg_logo_label.setScaledContents(False)
+        # Ajustar tamaño y escala inicial
+        self._position_background_logo()
+        # Seguir cambios de tamaño del área de trabajo
+        self.plugin_area.installEventFilter(self)
+
+        # Home welcome panel (shown in Home when no plugin is active)
+        self._home_welcome = self._build_home_welcome_widget()
+        self.plugin_layout.addWidget(self._home_welcome)
+
+        # Forced watermark state (not used now, but kept for API symmetry)
+        self._watermark_forced = False
+        # Initial visibility
+        self._update_background_logo_visibility()
+        self._update_home_welcome_visibility()
 
         # Diccionario de secciones
         self.section_buttons = {
@@ -108,8 +141,9 @@ class MainWindow(QMainWindow):
 
             contenedor_botones.addWidget(group_box)
 
-
-    #Agregar un botón de plugin cuando hay el evento de agregar uno nuevo.
+        # Empujar todo a la izquierda
+        contenedor.addStretch(1)
+        
     def add_plugin_button(self, name):
         plugin = self.kernel.get_plugin(name)
         btn = QToolButton()
@@ -144,6 +178,9 @@ class MainWindow(QMainWindow):
 
         self.active_plugin_widget = None
         self.active_plugin = None
+        # Update background/placeholder visibility
+        self._update_background_logo_visibility()
+        self._update_home_welcome_visibility()
 
 
     # Intertar el widget de un plugin activo en el espacio de trabajo
@@ -203,6 +240,9 @@ class MainWindow(QMainWindow):
         widget.setVisible(True)
         self.active_plugin_widget = widget
         self.active_plugin = plugin
+        # Update background/placeholder visibility
+        self._update_background_logo_visibility()
+        self._update_home_welcome_visibility()
 
         # Notificar que se muestra
         if hasattr(plugin, "on_show"):
@@ -210,6 +250,188 @@ class MainWindow(QMainWindow):
                 plugin.on_show()
             except Exception as e:
                 print("Error en on_show del plugin:", e)
+
+    def eventFilter(self, obj, event):
+        if obj is self.plugin_area and event.type() == QEvent.Resize:
+            self._position_background_logo()
+            self._resize_home_welcome()
+        return super().eventFilter(obj, event)
+
+    def _position_background_logo(self):
+        """Center and scale watermark inside the workspace area."""
+        if not hasattr(self, "_bg_logo_label"):
+            return
+        if self._bg_logo_pixmap.isNull():
+            return
+        area_size = self.plugin_area.size()
+        # Scale to ~50% of the shortest side and center
+        target = int(min(area_size.width(), area_size.height()) * 0.5)
+        if target <= 0:
+            return
+        scaled = self._bg_logo_pixmap.scaled(
+            target, target, Qt.KeepAspectRatio, Qt.SmoothTransformation
+        )
+        # Apply opacity to alpha channel (no solid background)
+        scaled = self._apply_alpha_opacity(scaled, self._logo_opacity)
+        w = scaled.width(); h = scaled.height()
+        x = max(0, (area_size.width() - w) // 2)
+        y = max(0, (area_size.height() - h) // 2)
+        self._bg_logo_label.setPixmap(scaled)
+        self._bg_logo_label.setGeometry(x, y, w, h)
+
+    def _has_any_signal(self) -> bool:
+        try:
+            datastore = self.kernel.get_service("DataStore")
+            if not datastore:
+                return False
+            sigs = datastore.get_signals()
+            return bool(sigs)
+        except Exception:
+            return False
+
+    def _has_active_signal(self) -> bool:
+        try:
+            datastore = self.kernel.get_service("DataStore")
+            if not datastore:
+                return False
+            return datastore.get_active_signal() is not None
+        except Exception:
+            return False
+
+    def _has_active_trials(self) -> bool:
+        try:
+            datastore = self.kernel.get_service("DataStore")
+            if not datastore:
+                return False
+            sig = datastore.get_active_signal()
+            if not sig:
+                return False
+            # Si hay algún TrialDataset asociado
+            try:
+                td = sig.get_active_trials(sig.name, None)
+                return td is not None and getattr(td, "trials", None) is not None and td.trials.size > 0
+            except Exception:
+                # Si el método requiere parámetros distintos o falla, asumir que no hay trials activos
+                return sig.number_of_trials_dataset() > 0
+        except Exception:
+            return False
+
+    def _update_background_logo_visibility(self):
+        """Show watermark when there is no active signal and not in Home."""
+        if not hasattr(self, "_bg_logo_label"):
+            return
+        visible = (self.current_section != "Home") and (not self._has_active_signal())
+        self._bg_logo_label.setVisible(visible)
+        if visible:
+            self._bg_logo_label.lower()
+            self._position_background_logo()
+
+    def _build_home_welcome_widget(self) -> QWidget:
+        """Build centered Home welcome with big title, small subtitle and a divider line."""
+        w = QWidget(self.plugin_area)
+        w.setObjectName("homeWelcomePanel")
+
+        outer = QVBoxLayout(w)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # Center block
+        block = QWidget(w)
+        block_layout = QVBoxLayout(block)
+        block_layout.setContentsMargins(40, 40, 40, 40)
+        block_layout.setSpacing(12)
+
+        # Logo (bigger)
+        logo = QLabel(block)
+        logo.setAttribute(Qt.WA_TranslucentBackground, True)
+        logo.setAttribute(Qt.WA_NoSystemBackground, True)
+        logo.setStyleSheet("background: transparent; border: none;")
+        pix = QPixmap("assets/logos/app-logo.png").scaled(140, 140, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        logo.setPixmap(pix)
+        block_layout.addWidget(logo, 0, Qt.AlignHCenter)
+
+        # Title (very large, centered)
+        title = QLabel("Welcome to GAMMA LAB", block)
+        f = title.font()
+        try:
+            f.setPointSize(72)
+        except Exception:
+            pass
+        f.setBold(True)
+        title.setFont(f)
+        title.setStyleSheet("color: #2a63a9;")
+        block_layout.addWidget(title, 0, Qt.AlignHCenter)
+
+        # Small subtitle
+        subtitle = QLabel("To get started, open a signal", block)
+        f2 = subtitle.font()
+        try:
+            f2.setPointSize(max(10, f2.pointSize() + 2))
+        except Exception:
+            pass
+        subtitle.setFont(f2)
+        subtitle.setStyleSheet("color: #6f7a86;")
+        block_layout.addWidget(subtitle, 0, Qt.AlignHCenter)
+
+        # Divider line using app defaults
+        line = QFrame(block)
+        line.setFrameShape(QFrame.HLine)
+        line.setFrameShadow(QFrame.Sunken)
+        block_layout.addWidget(line)
+
+        # Assemble outer layout with vertical centering effect
+        outer.addStretch(1)
+        outer.addWidget(block, 0, Qt.AlignHCenter)
+        outer.addStretch(2)
+
+        w.setVisible(False)
+        return w
+
+    def _update_home_welcome_visibility(self):
+        """Home welcome is visible only in Home when no plugin UI is active."""
+        if not hasattr(self, "_home_welcome"):
+            return
+        show = (self.current_section == "Home") and (self.active_plugin_widget is None)
+        self._home_welcome.setVisible(show)
+
+    # Control explícito desde plugins
+    def show_watermark(self):
+        self._watermark_forced = False
+        if hasattr(self, "_bg_logo_label"):
+            self._update_background_logo_visibility()
+
+    def hide_watermark(self):
+        self._watermark_forced = False
+        if hasattr(self, "_bg_logo_label"):
+            self._update_background_logo_visibility()
+
+    def _apply_alpha_opacity(self, pix: QPixmap, opacity: float) -> QPixmap:
+        try:
+            if pix.isNull():
+                return pix
+            opacity = max(0.0, min(1.0, float(opacity)))
+            img = pix.toImage().convertToFormat(Qt.Format_ARGB32)
+            w, h = img.width(), img.height()
+            for y in range(h):
+                scan = img.scanLine(y)
+                # Python-level bytes; operate per 4 bytes (BGRA)
+                # Fallback simple per-pixel using pixel/ setPixel for portability
+                for x in range(w):
+                    rgba = img.pixel(x, y)
+                    a = (rgba >> 24) & 0xFF
+                    a = int(a * opacity) & 0xFF
+                    img.setPixel(x, y, (a << 24) | (rgba & 0x00FFFFFF))
+            return QPixmap.fromImage(img)
+        except Exception:
+            return pix
+
+    def _schedule_watermark_autohide(self):
+        """Espera a que el plugin cree su contenido (p.ej. VTK) y oculta el watermark."""
+        delays = [0, 120, 350, 1000]
+        for d in delays:
+            QTimer.singleShot(d, self._check_and_autohide_plugin_content)
+
+    # Eliminamos auto-ocultado heurístico; los plugins controlan el watermark
 
                
     # Evento al presionar un botón de plugin: mostrar su interfaz y opcionalmente procesar
@@ -237,6 +459,10 @@ class MainWindow(QMainWindow):
         if topic == "signal_added":
             print(f"Nueva señal añadida: {payload}")
             self.update_signal_list()
+            self._update_background_logo_visibility()
+        elif topic in ("signal_active_changed", "trials_generated", "trial_discard_updated"):
+            # Cambios de estado que afectan si hay datos disponibles
+            self._update_background_logo_visibility()
 
     def setup_sidebar_functionality(self):
         sidebar = self.ui.widget_3
@@ -313,6 +539,9 @@ class MainWindow(QMainWindow):
             print(f"[Main Window] Señal activa cambiada a: {selected_key}")
         except ValueError as e:
             print(f"[Main Window] Error al cambiar señal activa: {e}")
+        finally:
+            # Si hay una señal activa, ocultar marca de agua; si no, mostrarla
+            self._update_background_logo_visibility()
 
 
     def update_signal_list(self):
@@ -341,6 +570,9 @@ class MainWindow(QMainWindow):
 
         self.ui.selected_signal_comboBox.blockSignals(False)
 
+        # Actualizar visibilidad del logo según haya señales cargadas
+        self._update_background_logo_visibility()
+
 
 
         # selected_signal = self.ui.selected_signal_comboBox.currentText()
@@ -364,3 +596,50 @@ class MainWindow(QMainWindow):
     def setup_results_section(self):
         """Inicializa la sección de resultados (por ahora vacía)."""
         pass
+    
+    def _on_app_about_to_quit(self):
+        """Apaga plugins y su UI de forma segura. Idempotente."""
+        if self._app_quitting:
+            return
+        self._app_quitting = True
+
+        # 1) Detén el plugin activo, si lo hay
+        try:
+            if self.active_plugin and hasattr(self.active_plugin, "stop"):
+                self.active_plugin.stop()
+        except Exception as e:
+            print("stop(active_plugin) error:", e)
+
+        # 2) Detén el resto (si tu kernel expone una forma de listarlos)
+        try:
+            # Opción A: si tienes un método para listarlos todos
+            if hasattr(self.kernel, "get_all_plugins"):
+                for name in self.kernel.get_all_plugins():
+                    p = self.kernel.get_plugin(name)
+                    if p is not None and hasattr(p, "stop"):
+                        try: p.stop()
+                        except Exception as e: print(f"stop({name}) error:", e)
+            else:
+                # Opción B: usa los que están instanciados en la UI
+                for name in list(self.plugin_widgets.keys()):
+                    p = self.kernel.get_plugin(name)
+                    if p is not None and hasattr(p, "stop"):
+                        try: p.stop()
+                        except Exception as e: print(f"stop({name}) error:", e)
+        except Exception as e:
+            print("stop(all) error:", e)
+
+        # 3) Oculta widgets y limpia referencias (evita renders tardíos)
+        try:
+            for name, w in list(self.plugin_widgets.items()):
+                if w is not None:
+                    w.setVisible(False)
+            self.plugin_widgets.clear()
+            self.active_plugin_widget = None
+            self.active_plugin = None
+        except Exception as e:
+            print("cleanup widgets error:", e)
+
+    def closeEvent(self, event):
+        self._on_app_about_to_quit()
+        super().closeEvent(event)
