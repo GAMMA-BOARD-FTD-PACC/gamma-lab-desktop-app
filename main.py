@@ -2,7 +2,7 @@
 from pathlib import Path
 import sys
 from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QFontDatabase, QFont
+from PyQt5.QtGui import QFontDatabase, QFont, QIcon
 import resources_rc
 
 from core.kernel import Kernel
@@ -15,7 +15,19 @@ from core.services.fileio import FileIOService
 
 
 def main():
+    # On Windows, set AppUserModelID so the taskbar uses our icon
+    if sys.platform == 'win32':
+        try:
+            import ctypes  # type: ignore
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('GammaLab.DesktopApp')
+        except Exception:
+            pass
     app = QApplication(sys.argv)
+    # Set application icon (taskbar, Alt-Tab). Prefer embedded resource, fallback to file path.
+    icon = QIcon(":/assets/logos/app-logo.png")
+    if icon.isNull():
+        icon = QIcon("assets/logos/app-logo.png")
+    app.setWindowIcon(icon)
    
     fid = QFontDatabase.addApplicationFont(":/assets/fonts/Inter.ttf")
     families = QFontDatabase.applicationFontFamilies(fid)
