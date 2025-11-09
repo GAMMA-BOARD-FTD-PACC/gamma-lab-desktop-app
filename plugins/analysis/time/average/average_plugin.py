@@ -1,34 +1,25 @@
-from pathlib import Path
+from core import kernel
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
 from core.plugins.vtk_context_menu import VTKContextMenu
-from core.services.data_store import DataStore
-from core.services.signal_dataset import SignalDataset
+
+
 from plugins.analysis.time.average.average_plugin_ui import Ui_Average
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QMessageBox, QMenu
+from PyQt5.QtWidgets import QWidget, QVBoxLayout
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 import vtk
 import numpy as np
-from PyQt5.QtCore import Qt
 
 
 
 class Average_plugin(IPlugin):
     def __init__(self, meta:PluginMeta):
         super().__init__(meta)
-        self.mainwin = None
-        self.widget = None
         self.vtk_widget = None
         self.renwin = None
-        self.started = False
-        self.kernel = None
         self.ui = None
-        self.active_signal = None
-        self.active_chanel = None
+        self.vtk_menu: VTKContextMenu | None = None
 
-    def initialize(self, kernel):
-        self.kernel = kernel
-        print("Inicializando Average")
 
     def process(self, data: any):
         if self.vtk_widget:
@@ -38,16 +29,7 @@ class Average_plugin(IPlugin):
         print("Deteniendo Average")
 
         if self.vtk_widget:
-            self.vtk_widget.Disable()
-
-
-    def start(self, kernel):
-        print("Iniciando Average")
-        self.kernel = kernel
-        self.mainwin = kernel.get_service("MainWindow")
-        if self.mainwin:
-            self.started = True
-            print("Average tiene acceso a MainWindow")        
+            self.vtk_widget.Disable()   
 
 
     def get_widget(self, parent=None):
@@ -55,58 +37,37 @@ class Average_plugin(IPlugin):
             self.widget = QWidget(parent)
             self.ui = Ui_Average()
             self.ui.setupUi(self.widget)
+            #Asignar el widget a los alerts
+            self.alerts.parent = self.widget
+
             self.ensure_vtk()
 
             # Conectar botón “Calculate Average”
-            self.ui.mainActionButton.clicked.connect(self._on_calculate_average)
+            self.ui.calculateAverageButton.clicked.connect(self._on_calculate_average)
 
         else:
             self.widget.setParent(parent)
 
         return self.widget
-    
-    def _log(self, *args):
-        print("[Average]", *args)
 
-    def _get_active_signal(self) -> SignalDataset | None:
-        """Devuelve la señal activa"""
-        try:
-            store: DataStore | None = self.mainwin.kernel.get_service("DataStore")
-            if store is None:
-                QMessageBox.warning(self.widget, "Error", "No se encontró el DataStore.")
-                return
-            ds = store.get_active_signal() if store else None
-            if not ds:
-                print("[Average] No hay señal activa registrada en el DataStore.")
-                return
-
-            self._log("_get_active_signal:", "ok" if ds else "None")
-            return ds
-        except Exception as e:
-            self._log("_get_active_signal error:", e)
-            return None
 
     def _on_calculate_average(self):
         """Carga el SignalDataset activo desde el DataStore y muestra sus TrialDataset asociados."""
 
-        self.active_signal = self._get_active_signal()        
-        if self.active_signal is None:
-            QMessageBox.warning(self.widget, "Error", "No hay señal activa para calcular el promedio.")
+        if self.get_active_signal() is None:
             return
         
-        self.active_chanel = self.active_signal.channel_names[0]
         
-        trials = self.active_signal.get_active_trials(self.active_signal.name, self.active_chanel)
-
-        if trials is None or trials.trials.size == 0:
-            QMessageBox.warning(self.widget, "Error", f"No hay trials activos para {self.active_chanel}.")
+        trials = self.get_active_trials()
+        if trials is None:
             return
 
         # Calcular promedio por muestra (a lo largo de los trials)
         av_data = np.mean(trials.trials, axis=1)
         t = trials.time_rel
 
-        print(f"[Average] Promedio calculado → shape: {av_data.shape} ({trials.trials.shape[1]} trials usados)")
+        self._notify(f"Promedio calculado → shape: {av_data.shape} con {trials.trials.shape[1]} trials usados")
+
         
         # Render en VTK
         self.render_average(t, av_data, trials.channel_name, trials.unit)
@@ -124,7 +85,7 @@ class Average_plugin(IPlugin):
         t = np.asarray(t, dtype=float)
         av = np.asarray(av_data, dtype=float)
         if t.ndim != 1 or av.ndim != 1 or t.size != av.size:
-            QMessageBox.warning(self.widget, "Render error", "Vectores de tiempo y señal deben tener la misma longitud 1D.")
+            self.alerts.error( "Time and signal vectors must have the same 1D length.", "Render error")
             return
 
         # Downsample si hay muchísimos puntos (para mantener interacción fluida)
@@ -174,17 +135,22 @@ class Average_plugin(IPlugin):
         chart.SetTitle(f"Average - {channel_name or ''}")
 
         # --- Menú contextual---
-    
-        try:
-            self.vtk_menu = VTKContextMenu(chart, self.vtk_widget, parent=self.widget)
-            self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
 
-        except Exception as e:
-            QMessageBox.information(self.widget, "Menú contextal", "Error creando el menú contextual.\n" + str(e))
-            
-        # Agregar acción personalizada (por ejemplo: mostrar estadísticas)
-        self.vtk_menu.add_action("Mostrar estadísticas", self.on_show_stats)   
-
+        signal_name = self.active_signal.name
+        ch_name = channel_name or "channel"
+        graph_uid = f"average"
+        
+        if self.vtk_menu is not None:
+            self.vtk_menu.on_view_rebuilt(
+                chart,
+                view_id="average",
+                trial_id=None,
+                channel_name=f"{signal_name}:{ch_name}",
+                plugin=self.meta.id,
+                domain=self.meta.subcategory,
+                graph_id=graph_uid
+            )
+        # --- Fin menú contextual---
 
         # Forzar render
         try:
@@ -196,20 +162,16 @@ class Average_plugin(IPlugin):
             except Exception:
                 pass
 
-    
-    def on_show_stats(self):
-        # Acción personalizada del plugin Average
-        QMessageBox.information(self.widget, "Estadísticas", "Promedio calculado correctamente.")
 
     def ensure_vtk(self):
         """Crea e inicializa los widgets VTK y las vistas (context view)."""
         # Crear QVTK dentro del contenedor ya definido en el .ui
         if not self.vtk_widget:
-            self.vtk_widget = QVTKRenderWindowInteractor(self.ui.VTK_render_Qwidget)
+            self.vtk_widget = QVTKRenderWindowInteractor(self.ui.plotArea)
             
-            layout = QVBoxLayout(self.ui.VTK_render_Qwidget)
+            layout = QVBoxLayout(self.ui.plotArea)
             layout.setContentsMargins(0, 0, 0, 0)
-            self.ui.VTK_render_Qwidget.setLayout(layout)
+            self.ui.plotArea.setLayout(layout)
             layout.addWidget(self.vtk_widget)
 
         # ContextView (facilita charting)
@@ -217,6 +179,30 @@ class Average_plugin(IPlugin):
         self.view.SetRenderWindow(self.vtk_widget.GetRenderWindow())
         self.view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
         self.vtk_widget.Initialize()
+        
+        # Menú
+        if self.vtk_menu is None:
+            base_scope = {
+                "view_id": "average",
+                "graph_id": "average:blank",
+                "trial_id": None,           
+                "channel_name": None,       
+                "plugin": "average",
+                "domain": "time",
+            }
+            try:
+                self.vtk_menu = VTKContextMenu(
+                    chart=None,
+                    vtk_widget=self.vtk_widget,
+                    plugin_name="average",
+                    measurements_enabled=True,
+                    measure_scope=base_scope,
+                    parent=self.widget
+                )
+                self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
+            except Exception as e:            
+                self.alerts.info(f"Error creating contextual menu\n {str(e)}", "Contextual menu")
+
 
 
    
