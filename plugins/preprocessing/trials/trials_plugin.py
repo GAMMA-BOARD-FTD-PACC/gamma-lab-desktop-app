@@ -1,7 +1,6 @@
-from pathlib import Path
 import sys
 from PyQt5 import QtWidgets, QtCore
-from PyQt5.QtWidgets import QWidget, QComboBox, QVBoxLayout, QFormLayout, QLabel, QSpinBox, QDoubleSpinBox, QPushButton, QFrame, QMessageBox
+from PyQt5.QtWidgets import QWidget
 import vtk
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
@@ -19,8 +18,6 @@ class TrialsPlugin(IPlugin):
 
     def __init__(self, meta: PluginMeta):
         super().__init__(meta)
-        self.kernel = None
-        self.mainwin = None
         self.ui = None
 
         self.params = {
@@ -32,7 +29,9 @@ class TrialsPlugin(IPlugin):
             "inter_stim_time": 0.1
         }
 
-        self.widget: QWidget | None = None
+
+
+
         self.vtk_interactor: QVTKRenderWindowInteractor | None = None
         self.vtk_view: vtk.vtkContextView | None = None
         self.chart: vtk.vtkChartXY | None = None
@@ -43,27 +42,18 @@ class TrialsPlugin(IPlugin):
         
         self.vtk_menu: VTKContextMenu | None = None
 
-    # ---------------- Logs ----------------
-    def _log(self, *args):
-        # print("[TRIALS]", *args)
-        sys.stdout.flush()
 
-    # -------------- Ciclo de vida ----------
-    def initialize(self, kernel):
-        self.kernel = kernel
-        self._log("initialize")
-
-    def start(self, kernel):
-        self.kernel = kernel
-        self.mainwin = kernel.get_service("MainWindow")
-        self._log("start: mainwin?", bool(self.mainwin))
 
     def stop(self):
-        self._log("stop")
+        self._log("stop() – tearing down VTK")
+        self.vtk_view.GetRenderWindow().GetInteractor().Disable()
 
     def process(self, data: any):
         self._log(f"process{data}")
-        self._populate_channels_once()
+        if self.vtk_interactor:
+            self.vtk_interactor.Enable()
+
+        #self._populate_channels_once()
 
     # -------------- UI ---------------------
     def get_widget(self, parent=None):
@@ -71,6 +61,7 @@ class TrialsPlugin(IPlugin):
             self._log("get_widget: creando UI")
             self.ui = Ui_Trials(parent)
             self.widget = self.ui
+            self.alerts.parent = self.widget
 
             self._ensure_vtk()
             self.ui.Btn_generate_trials.clicked.connect(self._on_generate_clicked)
@@ -90,6 +81,8 @@ class TrialsPlugin(IPlugin):
         self._log("ensure_vtk(): enter")
         
         self.vtk_interactor = QVTKRenderWindowInteractor(self.ui.plotArea)
+        self.vtk_interactor.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
+        self.vtk_interactor.destroyed.connect(self._on_vtk_widget_destroyed)
         self.ui.plotArea.setLayout(QtWidgets.QVBoxLayout())
         self.ui.plotArea.layout().setContentsMargins(0, 0, 0, 0)
         self.ui.plotArea.layout().addWidget(self.vtk_interactor)
@@ -124,6 +117,26 @@ class TrialsPlugin(IPlugin):
             self.vtk_menu.set_datastore(self.kernel.get_service("DataStore"))
         self._log("ensure_vtk(): scheduled init")
 
+    def _on_vtk_widget_destroyed(self, *args):
+        # seguridad adicional si Qt destruye el widget
+        try:
+            if self.vtk_view is not None:
+                rw = self.vtk_view.GetRenderWindow()
+                if rw is not None:
+                    try:
+                        rw.AbortRenderOn()
+                    except Exception:
+                        pass
+                    try:
+                        rw.Finalize()
+                    except Exception:
+                        pass
+        except Exception as e:
+            self._log("_on_vtk_widget_destroyed:", e)
+        finally:
+            self.vtk_view = None
+            self.vtk_interactor = None
+            self.chart = None
     def _init_controls(self):
         self._log("_init_controls: set defaults")
         self.ui.thresholdDoubleSpinBox.setRange(0.0, 1e12)
@@ -146,6 +159,16 @@ class TrialsPlugin(IPlugin):
         self._apply_interstim_ui_rules(self.ui.stimNumberSpinBox.value())
 
     
+    def on_kernel_event(self, topic: str, payload: object):
+        """
+        Escucha eventos emitidos por el Kernel.
+        """
+        if topic == "signal_active_changed" or topic =="signal_added":
+            print(f"Nueva señal cambiada: {payload}")
+            self._populate_channels_once()
+
+
+
     def _on_stim_count_changed(self, val: int):
         """Callback cuando cambia el número de estímulos: aplica reglas al campo de ISI."""
         try:
@@ -178,18 +201,6 @@ class TrialsPlugin(IPlugin):
         isi.setToolTip("Tiempo entre estímulos (s). Debe ser > 0 cuando hay ≥2 estímulos por trial.")
         isi.blockSignals(False)
         
-    def _get_active_signal(self) -> SignalDataset | None:
-        """Devuelve la señal activa"""
-        try:
-            store: DataStore | None = self.kernel.get_service("DataStore")
-            ds = store.get_active_signal() if store else None
-            self._active_ds = ds
-            self._log("_get_active_signal:", "ok" if ds else "None")
-            return ds
-        except Exception as e:
-            self._log("_get_active_signal error:", e)
-            return None
-
 
     def _populate_channel_combos(self, ds: SignalDataset):
         """
@@ -246,7 +257,7 @@ class TrialsPlugin(IPlugin):
 
     def _populate_channels_once(self):
         """Intenta cargar la señal activa y poblar el combo (silencioso si no hay)."""
-        ds = self._get_active_signal()
+        ds = self.get_active_signal()
         if ds:
             self._populate_channel_combos(ds)
         else:
@@ -256,31 +267,29 @@ class TrialsPlugin(IPlugin):
     def _on_generate_clicked(self):
         #self._log("_on_generate_clicked")
 
-        ds = self._get_active_signal()
+        ds = self.get_active_signal()
         if ds is None:
-            QMessageBox.warning(self.widget, "Selección", "No hay señal activa en el DataStore.")
             return
         
         if self.ui.channelComboBox.count() == 0:
-            self._populate_channel_combo(ds)
+            self._populate_channel_combos(ds)
             if self.ui.channelComboBox.count() == 0:
-                QMessageBox.warning(self.widget, "Canales", "La señal activa no tiene canales disponibles.")
+                self.alerts.warning("The active signal has no available channels.")
                 return
 
         ch = self.ui.channelComboBox.currentData()
         if ch is None:
             ch = self.ui.channelComboBox.currentIndex()
         if ch is None or ch < 0:
-            QMessageBox.warning(self.widget, "Parámetros",
-                                "Seleccione un canal válido.")
+            self.alerts.warning("Select a channel.")
             return
         
         stim_ch = self.ui.stimChannelComboBox.currentData()
         if stim_ch is None:
             stim_ch = self.ui.stimChannelComboBox.currentIndex()
         if stim_ch is None or stim_ch < 0:
-            QMessageBox.warning(self.widget, "Parámetros",
-                                "Seleccione un canal de estímulos.")
+            self.alerts.warning("Select a stimulus channel.")
+
             return
 
         th   = float(self.ui.thresholdDoubleSpinBox.value())
@@ -293,13 +302,12 @@ class TrialsPlugin(IPlugin):
         inter_stim_time  = None if inter_stim_time <= 0 else inter_stim_time
 
         if mode == "fixed" and not (t1 > t0):
-            QMessageBox.warning(self.widget, "Parámetros", "t1 debe ser mayor que t0.")
+            self.alerts.warning("t1 must be greater than t0.")
             return
 
         self._log("params →", dict(channel=int(ch), threshold=th, t0=t0, t1=t1,
                                 end_mode=mode, stim_expected=stim, inter_stim_time=inter_stim_time))
 
-        print("")
         try:
             td = cut_trials_single_channel(
             ds=ds,
@@ -313,8 +321,7 @@ class TrialsPlugin(IPlugin):
         )
         except Exception as e:
             self._log("cut_trials_single_channel error:", e)
-            QMessageBox.critical(self.widget, "Error",
-                                f"Falló la generación de trials:\n{e}")
+            self.alerts.error(f"Error generating trials: {e}")
             return
 
         #self._log("TD listo:", td.trials.shape, td.time_rel.shape, "onsets:", len(td.onsets_s))
@@ -330,11 +337,8 @@ class TrialsPlugin(IPlugin):
         self.last_td = td
         self.navigate_trial(0)
 
-        if self.mainwin:
-            self.mainwin.statusBar().showMessage(
-                f"Trials: T={td.trials.shape[1]}, Ns={td.trials.shape[0]}, canal='{td.channel_name}'",
-                4000
-            )
+        self._notify(f"Trials: T={td.trials.shape[1]}, Ns={td.trials.shape[0]}, canal='{td.channel_name}'")
+   
 
     # -------------- Navegación entre trials ----------------------
     def navigate_trial(self, direction: int):
@@ -344,15 +348,15 @@ class TrialsPlugin(IPlugin):
         direction = -1 → anterior
         """
         if not self.last_td:
-            QMessageBox.information(self.widget, "Navegación", "No hay trials cargados.")
+            self.alerts.info("No trials loaded.", "Navigation")
             return
 
         td = self.last_td
-        sd = self._get_active_signal()
+        sd = self.get_active_signal()
         
         _, T = td.trials.shape
         if T == 0:
-            QMessageBox.information(self.widget, "Navegación", "No hay trials disponibles.")
+            self.alerts.info("No trials available.", "Navigation")
             return
 
         if not self.visible_trials:
@@ -374,30 +378,26 @@ class TrialsPlugin(IPlugin):
             pass
         self.ui.Btn_discard_trial.clicked.connect(lambda _, idx=new_idx: self._on_discard_trial(idx, T))
 
-        
-        # Feedback en barra de estado
-        if self.mainwin:
-            self.mainwin.statusBar().showMessage(
-                f"Trial {new_idx + 1} de {T}", 2000
-            )
+        self._notify(f"Trial {new_idx + 1} of {T}")
+   
 
 
     def _on_discard_trial(self, index: int, T: int):
 
-        ds = self._get_active_signal()
+        ds = self.get_active_signal()
         ch = self.ui.channelComboBox.currentText()
+
+        if not ds:
+            return
 
         """Alterna el estado de descarte del trial actual (añadir o remover de la lista del SignalDataset)."""
         if not self.last_td:
-            QMessageBox.warning(self.widget, "Descartar Trial", "No hay trials cargados.")
+            self.alerts.warning("No trials loaded.", "Discard trial")
             return
-        
-        if not ds:
-            QMessageBox.warning(self.widget, "Descartar Trial", "No se encontró la señal activa.")
-            return
+    
       
         if not self.visible_trials:
-            QMessageBox.warning(self.widget, "Descartar Trial", "No hay trial seleccionado.")
+            self.alerts.warning("No trial selected.", "Discard trial")
             return
 
         estado = ds.is_trial_discarded(ds.name, ch, index)
@@ -407,22 +407,12 @@ class TrialsPlugin(IPlugin):
             # Incluir nuevamente
             ds.include_trial(ds.name, ch, index)
             self._update_trial_ui(ds, index, T, False)
-            QMessageBox.information(
-                self.widget,
-                "Trial incluido",
-                f"El trial {index + 1} ha sido incluido nuevamente."
-            )
+            self.alerts.info(f"Trial {index + 1} included.", "Include trial")
         else:
             # Marcar como descartado
             ds.discard_trial(ds.name, ch, index)
             self._update_trial_ui(ds, index, T, True)
-
-            QMessageBox.information(
-                self.widget,
-                "Trial descartado",
-                f"El trial {index + 1} ha sido descartado y no se tendrá en cuenta."
-            )
-    
+            self.alerts.info(f"Trial {index + 1} discarded.", "Discard trial")
 
     def _update_trial_ui(self, ds: SignalDataset, index: int, total: int = None, estado_descartado: bool = None):
         """Actualiza el label y botón del trial actual según si está descartado."""
@@ -489,19 +479,19 @@ class TrialsPlugin(IPlugin):
             
         if self.vtk_menu is not None:
             self.vtk_menu.set_chart(self.chart)
-            ds = self._get_active_signal()
+            ds = self.get_active_signal()
             signal_name = getattr(ds, "name", "signal")
             trial_idx = (self.visible_trials[0] if self.visible_trials else 0)
 
             curr_channel_name = getattr(td, "channel_name", "") or "channel"
 
-            graph_uid = f"trials:{signal_name}:{curr_channel_name}"
+            graph_uid = f"trial {trial_idx}"
             print(f"trial idx={trial_idx}")
             self.vtk_menu.on_view_rebuilt(
                 self.chart,
                 view_id="trials",
                 trial_id=trial_idx,
-                channel_name=curr_channel_name,
+                channel_name=f"{signal_name}:{curr_channel_name}",
                 plugin="trials",
                 domain="time",
                 graph_id=graph_uid

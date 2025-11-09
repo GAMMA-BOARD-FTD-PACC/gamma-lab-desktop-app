@@ -1,0 +1,266 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+    <class>Filter</class>
+    <widget class="QWidget" name="Filter">
+        <property name="geometry">
+            <rect>
+                <x>0</x>
+                <y>0</y>
+                <width>948</width>
+                <height>493</height>
+            </rect>
+        </property>
+        <property name="font">
+            <font>
+                <family>aakar</family>
+                <pointsize>10</pointsize>
+            </font>
+        </property>
+        <property name="windowTitle">
+            <string>Form</string>
+        </property>
+
+        <layout class="QHBoxLayout" name="horizontalLayout_3">
+            <item>
+                <widget class="QSplitter" name="splitter">
+                    <property name="orientation">
+                        <enum>Qt::Horizontal</enum>
+                    </property>
+
+                    <widget class="QWidget" name="gridLayoutWidget_2">
+                        <layout class="QGridLayout" name="gridLayout_graphics">
+                            <property name="leftMargin"><number>20</number></property>
+                            <property name="topMargin"><number>20</number></property>
+                            <property name="rightMargin"><number>20</number></property>
+                            <property name="bottomMargin"><number>20</number></property>
+                            <property name="spacing"><number>20</number></property>
+
+                            <item row="0" column="0"><widget class="QGraphicsView" name="filteredSignal"/></item>
+                            <item row="1" column="0"><widget class="QGraphicsView" name="filteredTrial"/></item>
+                        </layout>
+                    </widget>
+
+                    <widget class="QWidget" name="verticalLayoutWidget">
+                        <layout class="QVBoxLayout" name="verticalLayout_parameters">
+                            <property name="spacing"><number>20</number></property>
+                            <property name="topMargin"><number>20</number></property>
+                            <property name="bottomMargin"><number>20</number></property>
+
+                            <item>
+                                <widget class="QLabel" name="label_parameters">
+                                    <property name="maximumSize">
+                                        <size><width>16777215</width><height>20</height></size>
+                                    </property>
+                                    <property name="font">
+                                        <font><family>aakar</family><pointsize>12</pointsize></font>
+                                    </property>
+                                    <property name="text"><string>Parameters</string></property>
+                                </widget>
+                            </item>
+
+                            <item>
+                                <layout class="QVBoxLayout" name="verticalLayout_filters_param">
+                                    <property name="spacing"><number>20</number></property>
+
+                                    <item>
+                                        <layout class="QVBoxLayout" name="verticalLayout_filter">
+                                            <property name="spacing"><number>0</number></property>
+
+                                            <item>
+                                                <widget class="QLabel" name="label_filters">
+                                                    <property name="font">
+                                                        <font><family>aakar</family><pointsize>12</pointsize></font>
+                                                    </property>
+                                                    <property name="text"><string>Filters</string></property>
+                                                </widget>
+                                            </item>
+
+                                            <item>
+                                                <widget class="Line" name="line_filters">
+                                                    <property name="orientation"><enum>Qt::Horizontal</enum></property>
+                                                </widget>
+                                            </item>
+
+                                            <item>
+                                                <layout class="QFormLayout" name="formLayout_type">
+                                                    <property name="horizontalSpacing"><number>20</number></property>
+                                                    <property name="verticalSpacing"><number>6</number></property>
+                                                    <property name="leftMargin"><number>10</number></property>
+                                                    <property name="topMargin"><number>6</number></property>
+                                                    <property name="rightMargin"><number>10</number></property>
+
+                                                    <item row="0" column="0">
+                                                        <widget class="QLabel" name="label_type">
+                                                            <property name="font">
+                                                                <font><family>aakar</family><pointsize>12</pointsize></font>
+                                                            </property>
+                                                            <property name="text"><string>Type</string></property>
+                                                        </widget>
+                                                    </item>
+
+                                                    <item row="0" column="1">
+                                                        <widget class="QComboBox" name="type_select">
+                                                            <item><property name="text"><string>Butterworth</string></property></item>
+                                                            <item><property name="text"><string>Chebyshev</string></property></item>
+                                                            <item><property name="text"><string>Bessel</string></property></item>
+                                                            <item><property name="text"><string>Elliptic</string></property></item>
+                                                        </widget>
+                                                    </item>
+                                                </layout>
+                                            </item>
+                                        </layout>
+                                    </item>
+
+                                    <item>
+                                        <layout class="QVBoxLayout" name="verticalLayout_range">
+                                            <property name="spacing"><number>0</number></property>
+
+                                            <item>
+                                                <widget class="QLabel" name="label_range">
+                                                    <property name="font">
+                                                        <font><family>aakar</family><pointsize>12</pointsize></font>
+                                                    </property>
+                                                    <property name="text"><string>Range</string></property>
+                                                </widget>
+                                            </item>
+
+                                            <item>
+                                                <widget class="Line" name="line_range">
+                                                    <property name="orientation"><enum>Qt::Horizontal</enum></property>
+                                                </widget>
+                                            </item>
+
+                                            <item>
+                                                <widget class="QLabel" name="label_frequency">
+                                                    <property name="font">
+                                                        <font><family>aakar</family><pointsize>10</pointsize></font>
+                                                    </property>
+                                                    <property name="text"><string>Frequency (Hz)</string></property>
+                                                </widget>
+                                            </item>
+
+                                            <!-- High Frequency -->
+                                            <item>
+                                                <layout class="QFormLayout" name="formLayout_high">
+                                                    <property name="labelAlignment">
+                                                        <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+                                                    </property>
+                                                    <property name="formAlignment">
+                                                        <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                                                    </property>
+                                                    <property name="horizontalSpacing"><number>20</number></property>
+                                                    <property name="verticalSpacing"><number>0</number></property>
+                                                    <property name="leftMargin"><number>20</number></property>
+                                                    <property name="rightMargin"><number>10</number></property>
+                                                    <property name="bottomMargin"><number>0</number></property>
+
+                                                    <item row="0" column="0">
+                                                        <widget class="QLabel" name="label_high">
+                                                            <property name="font">
+                                                                <font><family>aakar</family><pointsize>12</pointsize></font>
+                                                            </property>
+                                                            <property name="text"><string>High</string></property>
+                                                        </widget>
+                                                    </item>
+
+                                                    <item row="0" column="1">
+                                                        <widget class="QDoubleSpinBox" name="doubleSpinBox_high">
+                                                            <property name="alignment"><set>Qt::AlignCenter</set></property>
+                                                            <property name="buttonSymbols">
+                                                                <enum>QAbstractSpinBox::NoButtons</enum>
+                                                            </property>
+                                                            <property name="minimum"><double>-999999.000000</double></property>
+                                                            <property name="maximum"><double>999999.000000</double></property>
+                                                            <property name="decimals"><number>3</number></property>
+                                                        </widget>
+                                                    </item>
+                                                </layout>
+                                            </item>
+
+                                            <!-- Low Frequency -->
+                                            <item>
+                                                <layout class="QFormLayout" name="formLayout_low">
+                                                    <property name="labelAlignment">
+                                                        <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+                                                    </property>
+                                                    <property name="formAlignment">
+                                                        <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                                                    </property>
+                                                    <property name="horizontalSpacing"><number>20</number></property>
+                                                    <property name="verticalSpacing"><number>0</number></property>
+                                                    <property name="leftMargin"><number>20</number></property>
+                                                    <property name="rightMargin"><number>10</number></property>
+                                                    <property name="bottomMargin"><number>0</number></property>
+
+                                                    <item row="0" column="0">
+                                                        <widget class="QLabel" name="label_low">
+                                                            <property name="font">
+                                                                <font><family>aakar</family><pointsize>12</pointsize></font>
+                                                            </property>
+                                                            <property name="text"><string>Low</string></property>
+                                                        </widget>
+                                                    </item>
+
+                                                    <item row="0" column="1">
+                                                        <widget class="QDoubleSpinBox" name="doubleSpinBox_low">
+                                                            <property name="alignment"><set>Qt::AlignCenter</set></property>
+                                                            <property name="buttonSymbols">
+                                                                <enum>QAbstractSpinBox::NoButtons</enum>
+                                                            </property>
+                                                            <property name="minimum"><double>-999999.000000</double></property>
+                                                            <property name="maximum"><double>999999.000000</double></property>
+                                                            <property name="decimals"><number>3</number></property>
+                                                        </widget>
+                                                    </item>
+                                                </layout>
+                                            </item>
+                                        </layout>
+                                    </item>
+
+                                    <item>
+                                        <layout class="QVBoxLayout" name="verticalLayout_order">
+                                            <property name="spacing"><number>0</number></property>
+
+                                            <item>
+                                                <widget class="QLabel" name="label_order">
+                                                    <property name="font">
+                                                        <font><family>aakar</family><pointsize>12</pointsize></font>
+                                                    </property>
+                                                    <property name="text"><string>Order</string></property>
+                                                </widget>
+                                            </item>
+
+                                            <item>
+                                                <widget class="Line" name="line_order">
+                                                    <property name="orientation"><enum>Qt::Horizontal</enum></property>
+                                                </widget>
+                                            </item>
+
+                                            <item>
+                                                <widget class="QSpinBox" name="spinBox_order">
+                                                    <property name="alignment"><set>Qt::AlignCenter</set></property>
+                                                    <property name="buttonSymbols">
+                                                        <enum>QAbstractSpinBox::NoButtons</enum>
+                                                    </property>
+                                                </widget>
+                                            </item>
+                                        </layout>
+                                    </item>
+
+                                    <item>
+                                        <widget class="QPushButton" name="pushButton_filter">
+                                            <property name="text"><string>Filter</string></property>
+                                        </widget>
+                                    </item>
+                                </layout>
+                            </item>
+                        </layout>
+                    </widget>
+                </widget>
+            </item>
+        </layout>
+    </widget>
+
+    <resources/>
+    <connections/>
+</ui>

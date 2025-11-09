@@ -1,10 +1,12 @@
 from datetime import datetime
-from PyQt5.QtWidgets import QFileDialog, QMessageBox
+from PyQt5.QtWidgets import QFileDialog
 import os
 import vtk
 import pandas as pd
 import csv
 import json
+
+from core.plugins.plugin_alerts import PluginAlerts
 
 class ExportService:
     """
@@ -13,6 +15,8 @@ class ExportService:
     - Recibe callbacks para obtener chart activo y nombres (signal/channel/plugin).
     """
     def __init__(self, parent, vtk_widget, get_active_chart, get_names, last_dir_getter, last_dir_setter):
+        self.alerts = PluginAlerts()
+        self.alerts.parent = parent
         self.parent = parent
         self.vtk_widget = vtk_widget
         self.get_active_chart = get_active_chart
@@ -33,7 +37,9 @@ class ExportService:
                 base_name = f"{signal_name}_{channel_name}_{plugin_name}_{stamp}.{format}"
             else:
                 base_name = f"{signal_name}_{plugin_name}_{stamp}.{format}"
-
+            
+            print(f"[Export] names -> signal='{signal_name}', channel='{channel_name}', plugin='{plugin_name}'")
+            
             initial_path = os.path.join(self._get_last_dir(), base_name)
 
             if not filename:
@@ -61,17 +67,17 @@ class ExportService:
             elif ext in ["tiff", "tif"]:
                 writer = vtk.vtkTIFFWriter()
             else:
-                QMessageBox.warning(self.parent, "Error", f"Formato '{format}' no soportado.")
+                self.alerts.error(f"Format '{format}' not suported.")
                 return
 
             writer.SetFileName(filename)
             writer.SetInputConnection(w2i.GetOutputPort())
             writer.Write()
 
-            QMessageBox.information(self.parent, "Exportación exitosa", f"Imagen exportada correctamente {base_name}")
+            self.alerts.info(f"Image exported successfully {base_name}", "Successful export")
 
         except Exception as e:
-            QMessageBox.warning(self.parent, "Error al exportar imagen", str(e))
+            self.alerts.error("Error exporting image", str(e))
 
     # ---------- tabla ----------
     def export_table(self, fmt: str, filename: str = None):
@@ -82,10 +88,10 @@ class ExportService:
         try:
             chart = self.get_active_chart()
             if not chart:
-                QMessageBox.warning(self.parent, "Error", "No hay gráfico activo para exportar.")
+                self.alerts.error("There is no chart to export.")
                 return
             if chart.GetNumberOfPlots() == 0:
-                QMessageBox.warning(self.parent, "Error", "El gráfico no contiene datos para exportar.")
+                self.alerts.error("The chart does not contain data to export.")
                 return
 
             signal_name, channel_name, plugin_name = self.get_names()
@@ -94,7 +100,7 @@ class ExportService:
                 f"{signal_name}_{channel_name}_{plugin_name}_{stamp}.{fmt}"
                 if channel_name else f"{signal_name}_{plugin_name}_{stamp}.{fmt}"
             )
-
+            print(f"[Export] names -> signal='{signal_name}', channel='{channel_name}', plugin='{plugin_name}'")
             initial_path = os.path.join(self._get_last_dir(), base_name)
 
             if not filename:
@@ -144,7 +150,7 @@ class ExportService:
                 with open(filename, "w", encoding="utf-8") as f:
                     json.dump(data_dict, f, ensure_ascii=False, indent=4)
 
-            QMessageBox.information(self.parent, "Exportación exitosa", f"Datos exportados correctamente a:\n{base_name}")
+            self.alerts.info(f"Data successfully exported to:\n{base_name}", "Successful export")
 
         except Exception as e:
-            QMessageBox.warning(self.parent, "Error al exportar tabla", str(e))
+            self.alerts.error(f"Error exporting table \n{str(e)}")

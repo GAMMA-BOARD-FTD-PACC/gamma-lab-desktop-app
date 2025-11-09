@@ -7,11 +7,10 @@ class Ui_Trials(QtWidgets.QWidget):
 
     def setupUi(self):
         self.setObjectName("TrialsWidget")
-        self.resize(938, 665)
 
         # ===== Root =====
         self._root = QtWidgets.QVBoxLayout(self)
-        self._root.setContentsMargins(10, 10, 10, 10)
+        self._root.setContentsMargins(0, 0, 5, 0)
         self._root.setSpacing(0)
 
         # ===== Splitter L/R =====
@@ -28,10 +27,9 @@ class Ui_Trials(QtWidgets.QWidget):
 
         # ----- Right: Parameters panel con scroll -----
         self.scrollArea = QtWidgets.QScrollArea(self.splitter)
-        self.scrollArea.setWidgetResizable(True)  # Se ajusta al tamaño disponible
+        self.scrollArea.setWidgetResizable(True)
         self.scrollArea.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.scrollArea.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
-
 
         # Contenedor interno del scroll
         self.panel = QtWidgets.QWidget()
@@ -41,59 +39,56 @@ class Ui_Trials(QtWidgets.QWidget):
 
         # Asignar el panel como contenido del scroll
         self.scrollArea.setWidget(self.panel)
-
+        self.splitter.setSizes([700, 300])
 
         # ===== Header: Parameters =====
         self.lblParameters = QtWidgets.QLabel(self.panel)
-        _f_h = self.lblParameters.font()
-        _f_h.setPointSize(_f_h.pointSize() + 2)
-        _f_h.setBold(True)
-        self.lblParameters.setFont(_f_h)
         self.lblParameters.setText("Parameters")
+        self.lblParameters.setProperty("variant", "title")     # 👈
         self.vbox.addWidget(self.lblParameters)
 
         self.sep0 = QtWidgets.QFrame(self.panel)
         self.sep0.setFrameShape(QtWidgets.QFrame.HLine)
-        self.sep0.setFrameShadow(QtWidgets.QFrame.Sunken)
+        self.sep0.setProperty("role", "section-divider")       # 👈
         self.vbox.addWidget(self.sep0)
-
-        _f_sub = self.lblParameters.font()
-        _f_sub.setPointSize(_f_sub.pointSize() - 2)
-        _f_sub.setBold(True)
 
         # ===== Subtítulo: Channel =====
         self.lblChannelTitle = QtWidgets.QLabel(self.panel)
-        self.lblChannelTitle.setFont(_f_sub)
         self.lblChannelTitle.setText("Channel")
+        self.lblChannelTitle.setProperty("variant", "subtitle")  # 👈
         self.vbox.addWidget(self.lblChannelTitle)
 
         self.sep1 = QtWidgets.QFrame(self.panel)
         self.sep1.setFrameShape(QtWidgets.QFrame.HLine)
         self.sep1.setFrameShadow(QtWidgets.QFrame.Plain)
+        self.sep1.setProperty("role", "divider")                 # 👈
         self.vbox.addWidget(self.sep1)
 
+        # --- Form Channel ---
         self.formChannel = QtWidgets.QFormLayout()
         self.formChannel.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         self.formChannel.setFormAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
 
         self.channelLabel = QtWidgets.QLabel(self.panel)
         self.channelLabel.setText("Name")
-        self.channelComboBox = QtWidgets.QComboBox(self.panel) 
-        self.channelComboBox.setObjectName("channelComboBox") # se mantiene el nombre
+        self.channelLabel.setProperty("variant", "input")        # 👈
+        self.channelComboBox = QtWidgets.QComboBox(self.panel)
+        self.channelComboBox.setObjectName("channelComboBox")
         self.formChannel.setWidget(0, QtWidgets.QFormLayout.LabelRole, self.channelLabel)
         self.formChannel.setWidget(0, QtWidgets.QFormLayout.FieldRole, self.channelComboBox)
 
         self.vbox.addLayout(self.formChannel)
-        
+
         # ===== Subtítulo: Stim Channel =====
         self.lblStimChanTitle = QtWidgets.QLabel(self.panel)
-        self.lblStimChanTitle.setFont(_f_sub)
         self.lblStimChanTitle.setText("Stim Channel")
+        self.lblStimChanTitle.setProperty("variant", "subtitle")  # 👈
         self.vbox.addWidget(self.lblStimChanTitle)
 
         self.sep1b = QtWidgets.QFrame(self.panel)
         self.sep1b.setFrameShape(QtWidgets.QFrame.HLine)
         self.sep1b.setFrameShadow(QtWidgets.QFrame.Plain)
+        self.sep1b.setProperty("role", "divider")                 # 👈
         self.vbox.addWidget(self.sep1b)
 
         self.formStimChan = QtWidgets.QFormLayout()
@@ -102,9 +97,10 @@ class Ui_Trials(QtWidgets.QWidget):
 
         self.stimChannelLabel = QtWidgets.QLabel(self.panel)
         self.stimChannelLabel.setText("Name")
+        self.stimChannelLabel.setProperty("variant", "input")     # 👈
 
         self.stimChannelComboBox = QtWidgets.QComboBox(self.panel)
-        self.stimChannelComboBox.setObjectName("stimChannelComboBox")  # para detectar onsets
+        self.stimChannelComboBox.setObjectName("stimChannelComboBox")
         self.stimChannelComboBox.setToolTip("Canal usado para detectar onsets/estímulos")
 
         self.formStimChan.setWidget(0, QtWidgets.QFormLayout.LabelRole, self.stimChannelLabel)
@@ -114,20 +110,22 @@ class Ui_Trials(QtWidgets.QWidget):
 
         # ===== Subtítulo: Threshold =====
         self.lblThTitle = QtWidgets.QLabel(self.panel)
-        self.lblThTitle.setFont(_f_sub)
         self.lblThTitle.setText("Threshold")
+        self.lblThTitle.setProperty("variant", "subtitle")        # 👈
         self.vbox.addWidget(self.lblThTitle)
 
         self.sep2 = QtWidgets.QFrame(self.panel)
         self.sep2.setFrameShape(QtWidgets.QFrame.HLine)
         self.sep2.setFrameShadow(QtWidgets.QFrame.Plain)
+        self.sep2.setProperty("role", "divider")                  # 👈
         self.vbox.addWidget(self.sep2)
 
         self.formTh = QtWidgets.QFormLayout()
         self.formTh.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
 
         self.thresholdLabel = QtWidgets.QLabel(self.panel)
-        self.thresholdLabel.setText("")  # como en la captura, solo el valor con sufijo
+        self.thresholdLabel.setText("")
+        self.thresholdLabel.setProperty("variant", "input")       # 👈 (aunque está vacío)
         self.thresholdDoubleSpinBox = QtWidgets.QDoubleSpinBox(self.panel)
         self.thresholdDoubleSpinBox.setDecimals(4)
         self.thresholdDoubleSpinBox.setRange(-1e9, 1e9)
@@ -141,21 +139,22 @@ class Ui_Trials(QtWidgets.QWidget):
 
         # ===== Subtítulo: Stim Number =====
         self.lblStimTitle = QtWidgets.QLabel(self.panel)
-        self.lblStimTitle.setFont(_f_sub)
         self.lblStimTitle.setText("Stim Number")
+        self.lblStimTitle.setProperty("variant", "subtitle")       # 👈
         self.vbox.addWidget(self.lblStimTitle)
 
         self.sep3 = QtWidgets.QFrame(self.panel)
         self.sep3.setFrameShape(QtWidgets.QFrame.HLine)
         self.sep3.setFrameShadow(QtWidgets.QFrame.Plain)
+        self.sep3.setProperty("role", "divider")                   # 👈
         self.vbox.addWidget(self.sep3)
 
         self.formStim = QtWidgets.QFormLayout()
         self.formStim.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
 
-        # etiqueta vacía para que se vea solo el campo (como tu mock)
         self.stimNumberLabel = QtWidgets.QLabel(self.panel)
         self.stimNumberLabel.setText("")
+        self.stimNumberLabel.setProperty("variant", "input")       # 👈
         self.stimNumberSpinBox = QtWidgets.QSpinBox(self.panel)
         self.stimNumberSpinBox.setRange(0, 1_000_000)
         self.stimNumberSpinBox.setValue(1)
@@ -166,13 +165,14 @@ class Ui_Trials(QtWidgets.QWidget):
 
         # ===== Subtítulo: Time =====
         self.lblTimeTitle = QtWidgets.QLabel(self.panel)
-        self.lblTimeTitle.setFont(_f_sub)
         self.lblTimeTitle.setText("Time")
+        self.lblTimeTitle.setProperty("variant", "subtitle")        # 👈
         self.vbox.addWidget(self.lblTimeTitle)
 
         self.sep4 = QtWidgets.QFrame(self.panel)
         self.sep4.setFrameShape(QtWidgets.QFrame.HLine)
         self.sep4.setFrameShadow(QtWidgets.QFrame.Plain)
+        self.sep4.setProperty("role", "divider")                    # 👈
         self.vbox.addWidget(self.sep4)
 
         self.formTime = QtWidgets.QFormLayout()
@@ -180,6 +180,7 @@ class Ui_Trials(QtWidgets.QWidget):
 
         self.initialTimeLabel = QtWidgets.QLabel(self.panel)
         self.initialTimeLabel.setText("Initial Time")
+        self.initialTimeLabel.setProperty("variant", "input")       # 👈
         self.initialTimeDoubleSpinBox = QtWidgets.QDoubleSpinBox(self.panel)
         self.initialTimeDoubleSpinBox.setDecimals(4)
         self.initialTimeDoubleSpinBox.setRange(-1e9, 1e9)
@@ -188,6 +189,7 @@ class Ui_Trials(QtWidgets.QWidget):
 
         self.finalTimeLabel = QtWidgets.QLabel(self.panel)
         self.finalTimeLabel.setText("Final Time")
+        self.finalTimeLabel.setProperty("variant", "input")         # 👈
         self.finalTimeDoubleSpinBox = QtWidgets.QDoubleSpinBox(self.panel)
         self.finalTimeDoubleSpinBox.setDecimals(4)
         self.finalTimeDoubleSpinBox.setRange(-1e9, 1e9)
@@ -196,19 +198,20 @@ class Ui_Trials(QtWidgets.QWidget):
 
         self.interStimTimeLabel = QtWidgets.QLabel(self.panel)
         self.interStimTimeLabel.setText("Inter Stim Time")
+        self.interStimTimeLabel.setProperty("variant", "input")     # 👈
         self.interStimTimeDoubleSpinBox = QtWidgets.QDoubleSpinBox(self.panel)
         self.interStimTimeDoubleSpinBox.setDecimals(4)
         self.interStimTimeDoubleSpinBox.setRange(-1e9, 1e9)
         self.interStimTimeDoubleSpinBox.setSingleStep(0.001)
         self.interStimTimeDoubleSpinBox.setValue(0.0)
 
-        #Trial End Mode
+        # Trial End Mode
         self.endModeComboLabel = QtWidgets.QLabel(self.panel)
         self.endModeComboLabel.setText("Trial End Mode")
+        self.endModeComboLabel.setProperty("variant", "input")      # 👈
         self.endModeCombo = QtWidgets.QComboBox(self.panel)
         self.endModeCombo.addItem("Cut to the next stim", userData="until_next_onset")
         self.endModeCombo.addItem("Fixed window", userData="fixed")
-        
 
         self.formTime.addRow(self.initialTimeLabel, self.initialTimeDoubleSpinBox)
         self.formTime.addRow(self.finalTimeLabel, self.finalTimeDoubleSpinBox)
@@ -219,16 +222,17 @@ class Ui_Trials(QtWidgets.QWidget):
 
         # ===== Subtítulo: Trials =====
         self.lblTrialsTitle = QtWidgets.QLabel(self.panel)
-        self.lblTrialsTitle.setFont(_f_sub)
         self.lblTrialsTitle.setText("Trials")
+        self.lblTrialsTitle.setProperty("variant", "subtitle")      # 👈
         self.vbox.addWidget(self.lblTrialsTitle)
 
         self.sep5 = QtWidgets.QFrame(self.panel)
         self.sep5.setFrameShape(QtWidgets.QFrame.HLine)
         self.sep5.setFrameShadow(QtWidgets.QFrame.Plain)
+        self.sep5.setProperty("role", "divider")                    # 👈
         self.vbox.addWidget(self.sep5)
 
-        #==== Botones de navegación de trials ====
+        # ==== Botones de navegación de trials ====
         self.trialNavLayout = QtWidgets.QHBoxLayout()
 
         self.Btn_prev_trial = QtWidgets.QPushButton(self.panel)
@@ -249,14 +253,13 @@ class Ui_Trials(QtWidgets.QWidget):
         self.Btn_discard_trial.setMinimumHeight(32)
         self.trialNavLayout.addWidget(self.Btn_discard_trial)
 
-        # Agregar el layout horizontal a la caja vertical principal
         self.vbox.addLayout(self.trialNavLayout)
 
-        #label para numero de trial revisado
+        # label para numero de trial revisado
         self.currentTrialLabel = QtWidgets.QLabel(self.panel)
         self.currentTrialLabel.setText("Current Trial : -")
         self.currentTrialLabel.setAlignment(QtCore.Qt.AlignCenter)
-        self.currentTrialLabel.setStyleSheet("font-weight: bold; padding: 4px;")
+        self.currentTrialLabel.setProperty("variant", "subtitle")    # 👈
         self.vbox.addWidget(self.currentTrialLabel)
 
         # ===== Spacer & Actions =====
@@ -269,9 +272,8 @@ class Ui_Trials(QtWidgets.QWidget):
         self.vbox.addWidget(self.Btn_generate_trials)
 
         # Tamaños por defecto del splitter
-        self.splitter.setStretchFactor(0, 1)  # El VtkViewer (izquierda) se expande
-        self.splitter.setStretchFactor(1, 0)  # El panel derecho ocupa solo su tamaño mínimo
-
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setStretchFactor(1, 0)
 
         self.retranslateUi()
 

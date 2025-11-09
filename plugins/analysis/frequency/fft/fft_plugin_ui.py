@@ -1,134 +1,175 @@
-# ui/fft_plugin_ui.py
-# -*- coding: utf-8 -*-
 from PyQt5 import QtCore, QtWidgets
 
 class Ui_Fft(object):
-    def setupUi(self, Form):
-        Form.setObjectName("Form")
-        Form.resize(760, 520)
+    def setupUi(self, Fft):
+        Fft.setObjectName("Fft")
 
-        # Layout raíz del Form
-        self._root = QtWidgets.QVBoxLayout(Form)
-        self._root.setContentsMargins(10, 10, 10, 10)
-        self._root.setSpacing(0)
+        self.mainWindow = QtWidgets.QHBoxLayout(Fft)
+        self.mainWindow.setObjectName("mainWindow")
+        self.mainWindow.setSpacing(0)
 
-        # ====== Splitter: izquierda visor / derecha panel ======
-        self.splitter = QtWidgets.QSplitter(Form)
+        self.splitter = QtWidgets.QSplitter(Fft)
         self.splitter.setOrientation(QtCore.Qt.Horizontal)
         self.splitter.setObjectName("splitter")
-        self._root.addWidget(self.splitter)
+        self.mainWindow.addWidget(self.splitter)
 
-        # --- Lado izquierdo: contenedor para el gráfico/VTK ---
+        # --- Left Area: Plot ---
         self.plotArea = QtWidgets.QFrame(self.splitter)
-        self.plotArea.setObjectName("plotArea")
         self.plotArea.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.plotArea.setFrameShadow(QtWidgets.QFrame.Raised)
+        self.plotArea.setObjectName("plotArea")
 
-        # --- Lado derecho: panel de parámetros ---
-        self.panel = QtWidgets.QWidget(self.splitter)
-        self.panel.setObjectName("panel")
-        self.vbox = QtWidgets.QVBoxLayout(self.panel)
-        self.vbox.setContentsMargins(8, 8, 8, 8)
-        self.vbox.setSpacing(12)
+        # --- Right Area: Panel ---
+        self.scrollArea = QtWidgets.QScrollArea(self.splitter)
+        self.scrollArea.setWidgetResizable(True)
+        self.scrollArea.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.scrollArea.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
 
-        # ====== Header: Parameters ======
-        self.lblParameters = QtWidgets.QLabel(self.panel)
-        font_h = self.lblParameters.font()
-        font_h.setPointSize(font_h.pointSize() + 2)
-        font_h.setBold(True)
-        self.lblParameters.setFont(font_h)
-        self.lblParameters.setText("Parameters")
-        self.vbox.addWidget(self.lblParameters)
+        self.layoutWidget = QtWidgets.QWidget(self.splitter)
+        self.layoutWidget.setObjectName("layoutWidget")
 
-        self.sep1 = QtWidgets.QFrame(self.panel)
-        self.sep1.setFrameShape(QtWidgets.QFrame.HLine)
-        self.sep1.setFrameShadow(QtWidgets.QFrame.Sunken)
-        self.vbox.addWidget(self.sep1)
+        self.paramsLayout = QtWidgets.QVBoxLayout(self.layoutWidget)
+        self.paramsLayout.setObjectName("paramsLayout")
+        self.paramsLayout.setSpacing(12)
 
-        # ====== Subtítulo: Sample density ======
-        self.lblSampleTitle = QtWidgets.QLabel(self.panel)
-        font_st = self.lblSampleTitle.font()
-        font_st.setBold(True)
-        self.lblSampleTitle.setFont(font_st)
-        self.lblSampleTitle.setText("Sample density")
-        self.vbox.addWidget(self.lblSampleTitle)
+        self.scrollArea.setWidget(self.layoutWidget)
+        self.splitter.widget(1).setMaximumWidth(300)
 
-        self.formSample = QtWidgets.QFormLayout()
-        self.formSample.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        self.formSample.setFormAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        # === Parameters Header ===
+        self.parametersLabel = QtWidgets.QLabel(self.layoutWidget)
+        self.parametersLabel.setObjectName("parametersLabel")
+        self.parametersLabel.setProperty("variant", "title")
+        self.paramsLayout.addWidget(self.parametersLabel)
 
-        self.sampleDensityLabel = QtWidgets.QLabel(self.panel)
-        self.sampleDensityLabel.setText("Target Fs")
-        self.formSample.setWidget(0, QtWidgets.QFormLayout.LabelRole, self.sampleDensityLabel)
+        self.paramsLine = QtWidgets.QFrame(self.layoutWidget)
+        self.paramsLine.setFrameShape(QtWidgets.QFrame.HLine)
+        self.paramsLine.setObjectName("paramsLine")
+        self.paramsLine.setProperty("role", "section-divider") 
+        self.paramsLayout.addWidget(self.paramsLine)
 
-        self.sampleDensityDoubleSpinBox = QtWidgets.QDoubleSpinBox(self.panel)
-        self.sampleDensityDoubleSpinBox.setDecimals(3)
-        self.sampleDensityDoubleSpinBox.setRange(0.0, 1_000_000.0)
-        self.sampleDensityDoubleSpinBox.setSingleStep(10.0)
-        self.sampleDensityDoubleSpinBox.setValue(1000.0)
-        self.sampleDensityDoubleSpinBox.setSuffix(" Hz")
-        self.formSample.setWidget(0, QtWidgets.QFormLayout.FieldRole, self.sampleDensityDoubleSpinBox)
+        # --- Sample density ---
+        self.sampleDensity = QtWidgets.QVBoxLayout()
+        self.sampleDensity.setObjectName("sampleDensity")
 
-        self.vbox.addLayout(self.formSample)
+        self.sampleDensityLabel = QtWidgets.QLabel(self.layoutWidget)
+        self.sampleDensityLabel.setObjectName("sampleDensityLabel")
+        self.sampleDensityLabel.setProperty("variant", "subtitle")
+        self.sampleDensity.addWidget(self.sampleDensityLabel)
 
-        # Separador
-        self.sep2 = QtWidgets.QFrame(self.panel)
-        self.sep2.setFrameShape(QtWidgets.QFrame.HLine)
-        self.sep2.setFrameShadow(QtWidgets.QFrame.Sunken)
-        self.vbox.addWidget(self.sep2)
+        self.sampleDensityLine = QtWidgets.QFrame(self.layoutWidget)
+        self.sampleDensityLine.setFrameShape(QtWidgets.QFrame.HLine)
+        self.sampleDensityLine.setObjectName("sampleDensityLine")
+        self.sampleDensityLine.setProperty("role", "divider")
+        self.sampleDensity.addWidget(self.sampleDensityLine)
 
-        # ====== Subtítulo: Range ======
-        self.lblRangeTitle = QtWidgets.QLabel(self.panel)
-        self.lblRangeTitle.setFont(font_st)
-        self.lblRangeTitle.setText("Range")
-        self.vbox.addWidget(self.lblRangeTitle)
+        self.sampleDensityInput = QtWidgets.QHBoxLayout()
+        self.sampleDensityInput.setObjectName("sampleDensityInput")
 
-        self.formRange = QtWidgets.QFormLayout()
-        self.formRange.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        self.sampleDensitySpinBox = QtWidgets.QSpinBox(self.layoutWidget)
+        self.sampleDensitySpinBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.sampleDensitySpinBox.setObjectName("sampleDensitySpinBox")
+        self.sampleDensityInput.addWidget(self.sampleDensitySpinBox)
 
-        self.highFrecuencyLabel = QtWidgets.QLabel(self.panel)
-        self.highFrecuencyLabel.setText("High")
-        self.formRange.setWidget(0, QtWidgets.QFormLayout.LabelRole, self.highFrecuencyLabel)
+        self.hzLabel = QtWidgets.QLabel(self.layoutWidget)
+        self.hzLabel.setObjectName("hzLabel")
+        self.hzLabel.setProperty("variant", "input")
 
-        self.highFrecuencyDoubleSpinBox = QtWidgets.QDoubleSpinBox(self.panel)
-        self.highFrecuencyDoubleSpinBox.setDecimals(2)
-        self.highFrecuencyDoubleSpinBox.setRange(0.0, 1_000_000.0)
-        self.highFrecuencyDoubleSpinBox.setSingleStep(1.0)
-        self.highFrecuencyDoubleSpinBox.setValue(500.0)
-        self.highFrecuencyDoubleSpinBox.setSuffix(" Hz")
-        self.formRange.setWidget(0, QtWidgets.QFormLayout.FieldRole, self.highFrecuencyDoubleSpinBox)
+        self.sampleDensityInput.addWidget(self.hzLabel)
+        self.sampleDensity.addLayout(self.sampleDensityInput)
+        self.paramsLayout.addLayout(self.sampleDensity)
 
-        self.lowFrecuencyLabel = QtWidgets.QLabel(self.panel)
-        self.lowFrecuencyLabel.setText("Low")
-        self.formRange.setWidget(1, QtWidgets.QFormLayout.LabelRole, self.lowFrecuencyLabel)
+        # --- Range ---
+        self.rangeLayout = QtWidgets.QVBoxLayout()
+        self.rangeLayout.setObjectName("rangeLayout")
 
-        self.lowFrecuencyDoubleSpinBox = QtWidgets.QDoubleSpinBox(self.panel)
-        self.lowFrecuencyDoubleSpinBox.setDecimals(2)
-        self.lowFrecuencyDoubleSpinBox.setRange(0.0, 1_000_000.0)
-        self.lowFrecuencyDoubleSpinBox.setSingleStep(1.0)
-        self.lowFrecuencyDoubleSpinBox.setValue(0.0)
-        self.lowFrecuencyDoubleSpinBox.setSuffix(" Hz")
-        self.formRange.setWidget(1, QtWidgets.QFormLayout.FieldRole, self.lowFrecuencyDoubleSpinBox)
+        self.rangeLabel = QtWidgets.QLabel(self.layoutWidget)
+        self.rangeLabel.setObjectName("rangeLabel")
+        self.rangeLabel.setProperty("variant", "subtitle")
+        self.rangeLayout.addWidget(self.rangeLabel)
 
-        self.vbox.addLayout(self.formRange)
+        self.rangeLine = QtWidgets.QFrame(self.layoutWidget)
+        self.rangeLine.setFrameShape(QtWidgets.QFrame.HLine)
+        self.rangeLine.setObjectName("rangeLine")
+        self.rangeLine.setProperty("role", "divider")
+        self.rangeLayout.addWidget(self.rangeLine)
 
-        # Spacer
-        self.vbox.addStretch(1)
+        self.frequencyLayout = QtWidgets.QVBoxLayout()
+        self.frequencyLayout.setObjectName("frequencyLayout")
 
-        # Botón
-        self.pushButton = QtWidgets.QPushButton(self.panel)
-        self.pushButton.setObjectName("mainActionButton")
-        self.pushButton.setMinimumHeight(36)
-        self.vbox.addWidget(self.pushButton)
+        self.frequencyLabel = QtWidgets.QLabel(self.layoutWidget)
+        self.frequencyLabel.setObjectName("frequencyLabel")
+        self.frequencyLabel.setProperty("variant", "input")
+        self.frequencyLayout.addWidget(self.frequencyLabel)
 
-        self.splitter.setStretchFactor(0, 1)  # El VtkViewer (izquierda) se expande
-        self.splitter.setStretchFactor(1, 0)  # El panel derecho ocupa solo su tamaño mínimo
+        # Low Frequency
+        self.lowFqLayout = QtWidgets.QHBoxLayout()
+        self.lowFqLayout.setObjectName("lowFqLayout")
 
+        self.lowLabel = QtWidgets.QLabel(self.layoutWidget)
+        self.lowLabel.setObjectName("lowLabel")
+        self.lowLabel.setProperty("variant", "input")
+        self.lowFqLayout.addWidget(self.lowLabel)
 
-        self.retranslateUi(Form)
-        QtCore.QMetaObject.connectSlotsByName(Form)
+        self.lowFrequencySpinBox = QtWidgets.QDoubleSpinBox(self.layoutWidget)
+        self.lowFrequencySpinBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.lowFrequencySpinBox.setObjectName("lowFrequencySpinBox")
+        self.lowFqLayout.addWidget(self.lowFrequencySpinBox)
 
-    def retranslateUi(self, Form):
-        _ = QtCore.QCoreApplication.translate
-        Form.setWindowTitle(_("FFT", "FFT"))
-        self.pushButton.setText(_("FFT", "Calculate FFT"))
+        self.hzLowFreqLabel = QtWidgets.QLabel(self.layoutWidget)
+        self.hzLowFreqLabel.setObjectName("hzLowFreqLabel")
+        self.hzLowFreqLabel.setProperty("variant", "input")
+        self.lowFqLayout.addWidget(self.hzLowFreqLabel)
+
+        self.frequencyLayout.addLayout(self.lowFqLayout)
+    
+        # High Frequency
+        self.highFqLayout = QtWidgets.QHBoxLayout()
+        self.highFqLayout.setObjectName("highFqLayout")
+
+        self.highLabel = QtWidgets.QLabel(self.layoutWidget)
+        self.highLabel.setObjectName("highLabel")
+        self.highLabel.setProperty("variant", "input")
+        self.highFqLayout.addWidget(self.highLabel)
+
+        self.highFrequencySpinBox = QtWidgets.QDoubleSpinBox(self.layoutWidget)
+        self.highFrequencySpinBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.highFrequencySpinBox.setObjectName("highFrequencySpinBox")
+        self.highFqLayout.addWidget(self.highFrequencySpinBox)
+
+        self.hzHighFreqLabel = QtWidgets.QLabel(self.layoutWidget)
+        self.hzHighFreqLabel.setObjectName("hzHighFreqLabel")
+        self.hzHighFreqLabel.setProperty("variant", "input")
+        self.highFqLayout.addWidget(self.hzHighFreqLabel)
+
+        self.frequencyLayout.addLayout(self.highFqLayout)
+        
+        self.rangeLayout.addLayout(self.frequencyLayout)
+        self.paramsLayout.addLayout(self.rangeLayout)
+
+        # --- Button Calculate FFT ---
+        self.paramsLayout.addStretch(1)
+
+        self.calculateFftButton = QtWidgets.QPushButton(self.layoutWidget)
+        self.calculateFftButton.setObjectName("mainActionButton")
+        self.paramsLayout.addWidget(self.calculateFftButton)
+
+        # Size splitter
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setStretchFactor(1, 0)
+
+        self.retranslateUi(Fft)
+        QtCore.QMetaObject.connectSlotsByName(Fft)
+
+    def retranslateUi(self, Fft):
+        _translate = QtCore.QCoreApplication.translate
+        Fft.setWindowTitle(_translate("Fft", "Fft"))
+        self.parametersLabel.setText(_translate("Fft", "Parameters"))
+        self.sampleDensityLabel.setText(_translate("Fft", "Sample density"))
+        self.hzLabel.setText(_translate("Fft", "Hz"))
+        self.rangeLabel.setText(_translate("Fft", "Range"))
+        self.frequencyLabel.setText(_translate("Fft", "Frequency (Hz)"))
+        self.highLabel.setText(_translate("Fft", "High"))
+        self.hzHighFreqLabel.setText(_translate("Fft", "Hz"))
+        self.lowLabel.setText(_translate("Fft", "Low"))
+        self.hzLowFreqLabel.setText(_translate("Fft", "Hz"))
+        self.calculateFftButton.setText(_translate("Fft", "Calculate FFT"))

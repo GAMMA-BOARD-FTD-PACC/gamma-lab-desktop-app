@@ -13,153 +13,202 @@ class Ui_ErpPlot(QtWidgets.QWidget):
 
     def setupUi(self):
         self.setObjectName("ErpPlotWidget")
-        self.resize(1100, 650)
 
         # ====== Root layout ======
         root = QtWidgets.QHBoxLayout(self)
-        root.setContentsMargins(8, 8, 8, 8)
-        root.setSpacing(8)
+        root.setSpacing(0)
 
         # ====== Splitter principal (horizontal) ======
         self.main_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal, self)
         self.main_splitter.setObjectName("main_splitter")
+
         root.addWidget(self.main_splitter)
 
-        # ====== Centro: QSplitter con 2 zonas de gráficos ======
+        # ====== Center: QSplitter with 2 graphic zones ======
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical, self)
         self.splitter.setObjectName("splitterPlots")
 
-        # Arriba: butterfly plot
+        # Up: butterfly plot
         self.butterflyPlot = QtWidgets.QFrame(self.splitter)
         self.butterflyPlot.setObjectName("butterflyPlot")
         self.butterflyPlot.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.butterflyPlot.setMinimumHeight(220)
 
-        # Abajo: heatmap
+        # Down: heatmap
         self.heatmapPlot = QtWidgets.QFrame(self.splitter)
         self.heatmapPlot.setObjectName("heatmapPlot")
         self.heatmapPlot.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.heatmapPlot.setMinimumHeight(220)
 
-        self.splitter.setSizes([350, 250])
-        #root.addWidget(self.splitter, 1)  # expansible
+        self.main_splitter.addWidget(self.splitter)
 
+        # ====== Right: Panel de parámetros ======
+        self.scrollArea = QtWidgets.QScrollArea(self.main_splitter)
+        self.scrollArea.setWidgetResizable(True)
+        self.scrollArea.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.scrollArea.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
 
-        # ====== Derecha: Panel de parámetros ======
-        self.panel = QtWidgets.QFrame(self)
+        self.panel = QtWidgets.QWidget(self.main_splitter)
         self.panel.setObjectName("panel_param")
-        self.panel.setMinimumWidth(320)
         self.panel.setMaximumWidth(360)
-        panelLay = QtWidgets.QVBoxLayout(self.panel)
-        panelLay.setContentsMargins(8, 8, 8, 8)
-        panelLay.setSpacing(10)
 
-        # --- Group: Parameters ---
-        self.grpParameters = QtWidgets.QGroupBox("Parameters", self.panel)
-        self.grpParameters.setObjectName("grpParameters")
-        g1 = QtWidgets.QVBoxLayout(self.grpParameters)
-        g1.setContentsMargins(10, 8, 10, 8)
-        g1.setSpacing(8)
+        self.panelLay = QtWidgets.QVBoxLayout(self.panel)
+        self.panelLay.setContentsMargins(8, 8, 8, 8)
+        self.panelLay.setSpacing(12)
 
-        self.chkSelectAll = QtWidgets.QCheckBox("Select all trials", self.grpParameters)
+        self.scrollArea.setWidget(self.panel)
+
+        # === Parameters Header ===
+        self.parametersLabel = QtWidgets.QLabel(self.panel)
+        self.parametersLabel.setObjectName("parametersLabel")
+        self.parametersLabel.setProperty("variant", "title")
+        self.panelLay.addWidget(self.parametersLabel)
+
+        self.paramsLine = QtWidgets.QFrame(self.panel)
+        self.paramsLine.setFrameShape(QtWidgets.QFrame.HLine)
+        self.paramsLine.setObjectName("paramsLine")
+        self.paramsLine.setProperty("role", "section-divider")
+        self.panelLay.addWidget(self.paramsLine)
+
+        # --- Parameters: Trials Selection ---
+        self.trialsSelection = QtWidgets.QVBoxLayout()
+        self.trialsSelection.setObjectName("trialsSelection")
+
+        self.trialsSelectionLabel = QtWidgets.QLabel(self.panel)
+        self.trialsSelectionLabel.setObjectName("trialsSelectionLabel")
+        self.trialsSelectionLabel.setProperty("variant", "subtitle")
+        self.trialsSelection.addWidget(self.trialsSelectionLabel)
+
+        self.trialsSelectionLine = QtWidgets.QFrame(self.panel)
+        self.trialsSelectionLine.setFrameShape(QtWidgets.QFrame.HLine)
+        self.trialsSelectionLine.setObjectName("trialsSelectionLine")
+        self.trialsSelectionLine.setProperty("role", "divider")
+        self.trialsSelection.addWidget(self.trialsSelectionLine)
+
+        # Checkbox: Select all trials
+        self.chkSelectAll = QtWidgets.QCheckBox("Select all trials", self.panel)
         self.chkSelectAll.setObjectName("chkSelectAll")
         self.chkSelectAll.setChecked(True)
+        self.trialsSelection.addWidget(self.chkSelectAll)
 
-        rowSingle = QtWidgets.QHBoxLayout()
-        self.chkSingleTrial = QtWidgets.QCheckBox("Single trial", self.grpParameters)
+        # Row: Single trial
+        self.singleTrialRow = QtWidgets.QHBoxLayout()
+        self.singleTrialRow.setObjectName("singleTrialRow")
+
+        self.chkSingleTrial = QtWidgets.QCheckBox("Single trial", self.panel)
         self.chkSingleTrial.setObjectName("chkSingleTrial")
-        self.spnSingleTrial = QtWidgets.QSpinBox(self.grpParameters)
+        self.singleTrialRow.addWidget(self.chkSingleTrial)
+
+        self.spnSingleTrial = QtWidgets.QSpinBox(self.panel)
         self.spnSingleTrial.setObjectName("spnSingleTrial")
         self.spnSingleTrial.setEnabled(False)
         self.spnSingleTrial.setMinimum(1)
-        rowSingle.addWidget(self.chkSingleTrial)
-        rowSingle.addStretch(1)
-        rowSingle.addWidget(self.spnSingleTrial)
+        self.spnSingleTrial.setAlignment(QtCore.Qt.AlignCenter)
+        self.singleTrialRow.addStretch(1)
+        self.singleTrialRow.addWidget(self.spnSingleTrial)
 
-        g1.addWidget(self.chkSelectAll)
-        g1.addLayout(rowSingle)
-        panelLay.addWidget(self.grpParameters)
+        self.trialsSelection.addLayout(self.singleTrialRow)
 
-        # --- Group: Range ---
-        self.grpRange = QtWidgets.QGroupBox("Range", self.panel)
-        self.grpRange.setObjectName("grpRange")
-        g2 = QtWidgets.QGridLayout(self.grpRange)
-        g2.setContentsMargins(10, 8, 10, 8)
-        g2.setHorizontalSpacing(6)
-        g2.setVerticalSpacing(6)
+        # Add section to main layout
+        self.panelLay.addLayout(self.trialsSelection)
 
-        self.chkUseRange = QtWidgets.QCheckBox("Trials", self.grpRange)
+        # --- Range Section ---
+        self.rangeSection = QtWidgets.QVBoxLayout()
+        self.rangeSection.setObjectName("rangeSection")
+
+        self.rangeLabel = QtWidgets.QLabel(self.panel)
+        self.rangeLabel.setObjectName("rangeLabel")
+        self.rangeLabel.setProperty("variant", "subtitle")
+        self.rangeSection.addWidget(self.rangeLabel)
+
+        self.rangeLine = QtWidgets.QFrame(self.panel)
+        self.rangeLine.setFrameShape(QtWidgets.QFrame.HLine)
+        self.rangeLine.setObjectName("rangeLine")
+        self.rangeLine.setProperty("role", "divider")
+        self.rangeSection.addWidget(self.rangeLine)
+
+        # Row: Trials range
+        self.rangeRow = QtWidgets.QHBoxLayout()
+        self.rangeRow.setObjectName("rangeRow")
+
+        self.chkUseRange = QtWidgets.QCheckBox(self.panel)
         self.chkUseRange.setObjectName("chkUseRange")
         self.chkUseRange.setChecked(False)
+        self.rangeRow.addWidget(self.chkUseRange)
 
-        self.spnFrom = QtWidgets.QSpinBox(self.grpRange)
+        self.spnFrom = QtWidgets.QSpinBox(self.panel)
         self.spnFrom.setObjectName("spnFrom")
         self.spnFrom.setEnabled(False)
         self.spnFrom.setMinimum(1)
+        self.spnFrom.setAlignment(QtCore.Qt.AlignCenter)
+        self.rangeRow.addWidget(self.spnFrom)
 
-        self.lblTo = QtWidgets.QLabel("To", self.grpRange)
-        self.lblTo.setAlignment(QtCore.Qt.AlignCenter)
+        self.toLabel = QtWidgets.QLabel(self.panel)
+        self.toLabel.setAlignment(QtCore.Qt.AlignCenter)
+        self.toLabel.setProperty("variant", "input")
+        self.rangeRow.addWidget(self.toLabel)
 
-        self.spnTo = QtWidgets.QSpinBox(self.grpRange)
+        self.spnTo = QtWidgets.QSpinBox(self.panel)
         self.spnTo.setObjectName("spnTo")
         self.spnTo.setEnabled(False)
         self.spnTo.setMinimum(1)
+        self.spnTo.setAlignment(QtCore.Qt.AlignCenter)
+        self.rangeRow.addWidget(self.spnTo)
 
-        g2.addWidget(self.chkUseRange, 0, 0)
-        g2.addWidget(self.spnFrom,     0, 1)
-        g2.addWidget(self.lblTo,       0, 2)
-        g2.addWidget(self.spnTo,       0, 3)
-        panelLay.addWidget(self.grpRange)
+        self.rangeRow.addStretch(1)
+        self.rangeSection.addLayout(self.rangeRow)
 
-        # --- Group: Trials (filtro + lista) ---
-        self.grpTrials = QtWidgets.QGroupBox("Trials", self.panel)
-        self.grpTrials.setObjectName("grpTrials")
-        g3 = QtWidgets.QVBoxLayout(self.grpTrials)
-        g3.setContentsMargins(10, 8, 10, 8)
-        g3.setSpacing(6)
+        self.panelLay.addLayout(self.rangeSection)
 
-        self.txtFilter = QtWidgets.QLineEdit(self.grpTrials)
+        # --- Filter trials ---
+        self.trialsSection = QtWidgets.QVBoxLayout()
+        self.trialsSection.setObjectName("trialsSection")
+
+        self.trialsLabel = QtWidgets.QLabel(self.panel)
+        self.trialsLabel.setObjectName("trialsLabel")
+        self.trialsLabel.setProperty("variant", "subtitle")
+        self.trialsSection.addWidget(self.trialsLabel)
+
+        self.trialsLine = QtWidgets.QFrame(self.panel)
+        self.trialsLine.setFrameShape(QtWidgets.QFrame.HLine)
+        self.trialsLine.setObjectName("trialsLine")
+        self.trialsLine.setProperty("role", "divider")
+        self.trialsSection.addWidget(self.trialsLine)
+
+        # --- Group: Trials (filter + list) ---
+        # Filter input
+        self.trialsFilterLayout = QtWidgets.QHBoxLayout()
+        self.trialsFilterLayout.setObjectName("trialsFilterLayout")
+
+        self.txtFilter = QtWidgets.QLineEdit(self.panel)
         self.txtFilter.setObjectName("txtFilter")
-        self.txtFilter.setPlaceholderText("filter…")
-        g3.addWidget(self.txtFilter)
+        self.txtFilter.setPlaceholderText("Filter…")
+        self.trialsFilterLayout.addWidget(self.txtFilter)
 
-        self.lstTrials = QtWidgets.QListWidget(self.grpTrials)
+        self.trialsSection.addLayout(self.trialsFilterLayout)
+
+        # Trials list
+        self.lstTrials = QtWidgets.QListWidget(self.panel)
         self.lstTrials.setObjectName("lstTrials")
         self.lstTrials.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
         self.lstTrials.setAlternatingRowColors(True)
-        g3.addWidget(self.lstTrials, 1)
+        self.lstTrials.setMinimumHeight(120)
+        self.trialsSection.addWidget(self.lstTrials)
 
-        panelLay.addWidget(self.grpTrials, 1)
+        self.panelLay.addLayout(self.trialsSection)
 
-        # --- Plot button ---
-        self.btnPlot = QtWidgets.QPushButton("Plot ERP", self.panel)
-        self.btnPlot.setObjectName("mainActionButton")
+        # --- Button Plot ERP ---
+        self.panelLay.addStretch(1)
 
-       # self.btnPlot.setObjectName("btnPlot")
-        self.btnPlot.setMinimumHeight(36)
-        panelLay.addWidget(self.btnPlot)
+        self.plotErpButton = QtWidgets.QPushButton(self.panel)
+        self.plotErpButton.setObjectName("mainActionButton")
+        self.panelLay.addWidget(self.plotErpButton)
 
-        panelLay.addStretch(1)
-        #root.addWidget(self.panel, 0)  # no expansible principal
-        self.main_splitter.addWidget(self.splitter)
-
-
-        self.panel.setMinimumWidth(250)
-        # self.panel.setMaximumWidth(600)
-        self.main_splitter.setSizes([1000, self.panel.minimumWidth()])
-
-
-        self.main_splitter.addWidget(self.splitter)
-        self.main_splitter.addWidget(self.panel)
-
-        
-        # Tamaños por defecto del splitter
-        self.main_splitter.setStretchFactor(0, 1)  # El VtkViewer (izquierda) se expande
-        self.main_splitter.setStretchFactor(1, 0)  # El panel derecho ocupa solo su tamaño mínimo
-
+        # Size splitter
+        self.main_splitter.setStretchFactor(0, 1)
+        self.main_splitter.setStretchFactor(1, 0)
 
         self._wireDefaultState()
         self.retranslateUi()
+        QtCore.QMetaObject.connectSlotsByName(self)
 
     def _wireDefaultState(self):
         # Estados por defecto y reglas de habilitación
@@ -205,4 +254,11 @@ class Ui_ErpPlot(QtWidgets.QWidget):
         self.lstTrials.setEnabled(manual)
 
     def retranslateUi(self):
+        _translate = QtCore.QCoreApplication.translate
         self.setWindowTitle("ERP Plot")
+        self.parametersLabel.setText(_translate("ERP", "Parameters"))
+        self.trialsSelectionLabel.setText(_translate("ERP", "Trials"))
+        self.rangeLabel.setText(_translate("ERP", "Range"))
+        self.toLabel.setText(_translate("ERP", "To"))
+        self.trialsLabel.setText(_translate("ERP", "List"))
+        self.plotErpButton.setText(_translate("ERP", "Plot ERP"))

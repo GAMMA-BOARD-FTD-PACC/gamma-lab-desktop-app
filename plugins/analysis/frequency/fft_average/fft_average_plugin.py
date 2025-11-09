@@ -5,7 +5,6 @@ import vtk
 import numpy as np
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 from PyQt5 import QtWidgets, QtCore
-from PyQt5.QtWidgets import QMessageBox
 
 from core.plugins.meta import PluginMeta
 from core.plugins.vtk_context_menu import VTKContextMenu
@@ -16,25 +15,13 @@ from plugins.analysis.frequency.fft_average.fft_average_plugin_ui import Ui_Fft_
 class Fft_average_plugin(IPlugin):
     def __init__(self, meta: PluginMeta):
         super().__init__(meta)
-        self.mainwin = None
-        self.widget = None
         
-        self.widget: QtWidgets.QWidget | None = None
         self.ui: Ui_Fft_Average | None = None
         
         self.vtk_interactor: QVTKRenderWindowInteractor | None = None
         self.vtk_view: vtk.vtkContextView | None = None
         self.chart: vtk.vtkChartXY | None = None
-
-        self.active_signal: SignalDataset | None = None
         
-    def initialize(self, kernel):
-        self.kernel = kernel
-        self._log("initialize()")
-
-    def start(self, kernel):
-        self._log("start() - obteniendo MainWindow")
-        self.mainwin = kernel.get_service("MainWindow")
 
     def stop(self):
         self._log("stop")
@@ -53,36 +40,35 @@ class Fft_average_plugin(IPlugin):
             self.ui = Ui_Fft_Average()
             self.widget = QtWidgets.QWidget(parent)
             self.ui.setupUi(self.widget)
+            self.alerts.parent = self.widget
 
             self._log("UI creada. plotArea:", bool(self.ui.plotArea),
-                      "panel:", bool(self.ui.panel),
+                      "panel:", bool(self.ui.layoutWidget),
                       "splitter:", bool(self.ui.splitter))
             self._wire_ui()
 
         else:
             self.widget.setParent(parent)
         return self.widget
-
-    #=== LOGS ===#
-    def _notify(self, msg: str):
-        if self.mainwin:
-            try:
-                self.mainwin.statusBar().showMessage(msg, 3000)
-                return
-            except Exception:
-                pass
-        self._log(msg)
         
-    def _log(self, *args):
-        print("[FFT-AVERAGE]", *args)
-        sys.stdout.flush()
 
     ## === UI === ##
     def _wire_ui(self):
         self._log("wire ui")
-        self.ui.pushButton.clicked.connect(self._on_calculate_clicked)
-        self.ui.lowFrecuencyDoubleSpinBox.valueChanged.connect(self._sync_range)
-        self.ui.highFrecuencyDoubleSpinBox.valueChanged.connect(self._sync_range)
+        self.ui.calculateFftAvgButton.clicked.connect(self._on_calculate_clicked)
+        self.ui.lowFrequencySpinBox.valueChanged.connect(self._sync_range)
+        self.ui.highFrequencySpinBox.valueChanged.connect(self._sync_range)
+        self.ui.sampleDensitySpinBox.setRange(0, 10000)
+        self.ui.sampleDensitySpinBox.setSingleStep(10)
+        self.ui.sampleDensitySpinBox.setValue(1000)
+        self.ui.highFrequencySpinBox.setDecimals(2)
+        self.ui.highFrequencySpinBox.setRange(0.0, 10000)
+        self.ui.highFrequencySpinBox.setSingleStep(1.0)
+        self.ui.highFrequencySpinBox.setValue(500.0)
+        self.ui.lowFrequencySpinBox.setDecimals(2)
+        self.ui.lowFrequencySpinBox.setRange(0.0, 10000)
+        self.ui.lowFrequencySpinBox.setSingleStep(1.0)
+        self.ui.lowFrequencySpinBox.setValue(0.0)
 
     def _on_calculate_clicked(self):
             self._log("_on_calculate_clicked()")
@@ -93,9 +79,9 @@ class Fft_average_plugin(IPlugin):
                 return
 
             # 2) Parámetros UI
-            target_fs = float(self.ui.sampleDensityDoubleSpinBox.value())  # 0 = sin remuestreo
-            lo = float(self.ui.lowFrecuencyDoubleSpinBox.value())
-            hi = float(self.ui.highFrecuencyDoubleSpinBox.value())
+            target_fs = float(self.ui.sampleDensitySpinBox.value())  # 0 = sin remuestreo
+            lo = float(self.ui.lowFrequencySpinBox.value())
+            hi = float(self.ui.highFrequencySpinBox.value())
             if lo > hi:
                 lo, hi = hi, lo
 
@@ -108,14 +94,14 @@ class Fft_average_plugin(IPlugin):
             self._notify(f"FFT listo: fs_eff={fs_eff:.2f} Hz, {freq.size} bins, trials={mag_avg.shape[1]}")
 
     def _sync_range(self):
-        lo = float(self.ui.lowFrecuencyDoubleSpinBox.value())
-        hi = float(self.ui.highFrecuencyDoubleSpinBox.value())
+        lo = float(self.ui.lowFrequencySpinBox.value())
+        hi = float(self.ui.highFrequencySpinBox.value())
         if lo > hi:
             sender = self.widget.sender()
-            if sender is self.ui.lowFrecuencyDoubleSpinBox:
-                self.ui.highFrecuencyDoubleSpinBox.setValue(lo)
+            if sender is self.ui.lowFrequencySpinBox:
+                self.ui.highFrequencySpinBox.setValue(lo)
             else:
-                self.ui.lowFrecuencyDoubleSpinBox.setValue(hi)
+                self.ui.lowFrequencySpinBox.setValue(hi)
         self._log(f"range sync: low={lo}, high={hi}")
     
         # ------- VTK -------
@@ -146,20 +132,16 @@ class Fft_average_plugin(IPlugin):
           X:  np.ndarray (Ns, T)  matriz de trials (columnas = trials)
           ch_name: nombre de canal (opcional para título)
         """
-        if not self.mainwin:
+
+         
+        if self.get_active_signal() is None:
             return None, None, None
 
-        store = self.mainwin.kernel.get_service("DataStore")
-        if store is None:
-            QMessageBox.warning(self.widget, "Error", "No se encontró el DataStore.")
+        td = self.get_active_trials()
+
+        if td is None or td.trials.size == 0:
             return None, None, None
 
-        self.active_signal = store.get_active_signal()
-        if not self.active_signal or not getattr(self.active_signal, "trials_dataset", None):
-            self._log("No hay señal activa o no tiene TrialDataset.")
-            return None, None, None
-
-        td = self.active_signal.trials_dataset[-1] 
         fs = float(getattr(td, "sampling_rate", 0.0))
         X  = np.asarray(getattr(td, "trials", None), dtype=np.float64)  # (Ns, T)
         ch = getattr(td, "channel_name", "")
@@ -269,7 +251,7 @@ class Fft_average_plugin(IPlugin):
             self.vtk_menu = VTKContextMenu(self.chart, self.vtk_interactor, self.active_signal.name, ch_name,self.meta.id,  parent=self.widget)
 
         except Exception as e:
-            QMessageBox.information(self.widget, "Menú contextal", "Error creando el menú contextual.\n" + str(e))
+            self.alerts.error(f"Error creating the context menu.\n {str(e)}")
      
 
 
