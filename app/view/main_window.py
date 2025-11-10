@@ -262,29 +262,27 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 print("Error starting plugin:", e)
 
-        # Reuse if it already exists
-        if plugin.name() in self.plugin_widgets:
-            widget = self.plugin_widgets[plugin.name()]
-        else:
-            # Get widget from plugin
-            try:
-                widget = plugin.get_widget(parent=self.plugin_area)
-            except Exception as e:
-                self.alerts.error(f"An error occurred while rendering the plugin widget '{plugin.name()}'.\n\nDetails:\n{str(e)}", "Error rendering plugin")
-                print("[Main Window] Error in plugin get_widget:", e)
-                widget = None
+        # Always let the plugin hand back its widget so it can re-parent
+        # and refresh internal state when re-entering the view.
+        try:
+            widget = plugin.get_widget(parent=self.plugin_area)
+        except Exception as e:
+            self.alerts.error(f"An error occurred while rendering the plugin widget '{plugin.name()}'.\n\nDetails:\n{str(e)}", "Error rendering plugin")
+            print("[Main Window] Error in plugin get_widget:", e)
+            widget = None
 
-            # If no widget is returned, create a placeholder
-            if widget is None:
-                self.alerts.error(f"No UI available for the plugin '{plugin.name()}'.", "Error rendering plugin")
+        # If no widget is returned, create a placeholder
+        if widget is None:
+            self.alerts.error(f"No UI available for the plugin '{plugin.name()}'.", "Error rendering plugin")
 
+            placeholder = QWidget(parent=self.plugin_area)
+            layout = QVBoxLayout(placeholder)
+            layout.addWidget(QLabel(f"No UI available for {plugin.name()}"))
+            widget = placeholder
 
-                placeholder = QWidget(parent=self.plugin_area)
-                layout = QVBoxLayout(placeholder)
-                layout.addWidget(QLabel(f"No UI available for {plugin.name()}"))
-                widget = placeholder
-
-            widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        # Add to layout only once; preserve cached reference for next activations
+        if plugin.name() not in self.plugin_widgets:
             self.plugin_layout.addWidget(widget)
             self.plugin_widgets[plugin.name()] = widget
 
