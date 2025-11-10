@@ -1,6 +1,6 @@
 '''
-    Es el servicio donde se van a almacenar todas las entidades procesadas, como la señal cruda, y los trials_dataset
-    Se accede a ella usando clave valor
+    Service to store all processed entities, such as the raw signal and trials datasets.
+    Accessed via key/value pairs.
 '''
 
 from core.services.signal_dataset import SignalDataset
@@ -9,30 +9,30 @@ class DataStore:
     def __init__(self):
         self._data = {}
 
-    #Guardar una entidad por una clave núnica
+    # Store an entity by a unique key
     def set(self, key, value):
         self._data[key] = value
 
-    #Obtener una entidad por su clave
+    # Get an entity by its key
     def get(self, key, default=None):
         return self._data.get(key, default)
 
-    #Verificar si exsite una clave
+    # Check if a key exists
     def has(self, key):
         return key in self._data
     
-    #Regresa todos los items (clave, valor)
+    # Return all items (key, value)
     def items(self):
         return list(self._data.items())
     
-    #Eliminar una entidad por su clave
+    # Remove an entity by its key
     def remove(self, key):
         del self._data[key]
 
 
     """
-        Agrega una nueva señal al DataStore usando el nombre del archivo como clave
-        Retorna la clave usada.
+        Add a new signal to the DataStore using the file name (or a generated key).
+        Returns the key used.
     """
 
     def add_signal(self, signal, key: str = None):
@@ -46,41 +46,40 @@ class DataStore:
         return key
     
 
-    #Retorna todas las señales almacenadas que sean instancias de SignalDataset.
+    # Return all stored signals that are instances of SignalDataset.
     def get_signals(self):
         return {k: v for k, v in self._data.items() if isinstance(v, SignalDataset)}
     
 
     def set_active_signal(self, key: str):
         """
-        Define la señal activa usando la clave de una señal almacenada.
-        Lanza ValueError si la clave no existe o no corresponde a una señal.
+        Set the active signal using the key of a stored signal.
+        Raises ValueError if the key does not exist or is not a signal.
         """
         if key not in self._data:
-            raise ValueError(f"La señal con clave '{key}' no existe en el DataStore.")
+            raise ValueError(f"The signal with key '{key}' does not exist in the DataStore.")
         if not isinstance(self._data[key], SignalDataset):
-            raise ValueError(f"El elemento '{key}' no es una señal válida (SignalDataset).")
+            raise ValueError(f"Item '{key}' is not a valid signal (SignalDataset).")
 
         self._data["active_signal"] = key
 
 
-    #Retornar la señal activa (instancia de SignalDataset). - Devuelve None si no hay una activa definida.
+    # Return the active signal (SignalDataset instance). Returns None if not set.
     def get_active_signal(self):
         key = self._data.get("active_signal")
         if key and key in self._data:
             return self._data[key]
         return None
 
-    #Retornar la clave del signal activo (string) o None si no hay.
+    # Return the active signal key (string) or None if not set.
     def get_active_signal_key(self):
         return self._data.get("active_signal")
 
-    #Eliminar la referencia a la señal activa (no borra la señal del DataStore).
+    # Clear the active signal reference (does not delete the signal from the DataStore).
     def clear_active_signal(self):
         if "active_signal" in self._data:
             del self._data["active_signal"]
     
-    #Verificar si una clave corresponde a la señal activa
-
+    # Check whether a key corresponds to the active signal
     def is_active_signal(self, key: str):
         return self._data.get("active_signal") == key

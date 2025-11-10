@@ -52,7 +52,7 @@ class Ui_Trials(QtWidgets.QWidget):
         self.sep0.setProperty("role", "section-divider")       # 👈
         self.vbox.addWidget(self.sep0)
 
-        # ===== Subtítulo: Channel =====
+        # ===== Subtitle: Channel =====
         self.lblChannelTitle = QtWidgets.QLabel(self.panel)
         self.lblChannelTitle.setText("Channel")
         self.lblChannelTitle.setProperty("variant", "subtitle")  # 👈
@@ -79,7 +79,7 @@ class Ui_Trials(QtWidgets.QWidget):
 
         self.vbox.addLayout(self.formChannel)
 
-        # ===== Subtítulo: Stim Channel =====
+        # ===== Subtitle: Stim Channel =====
         self.lblStimChanTitle = QtWidgets.QLabel(self.panel)
         self.lblStimChanTitle.setText("Stim Channel")
         self.lblStimChanTitle.setProperty("variant", "subtitle")  # 👈
@@ -101,14 +101,14 @@ class Ui_Trials(QtWidgets.QWidget):
 
         self.stimChannelComboBox = QtWidgets.QComboBox(self.panel)
         self.stimChannelComboBox.setObjectName("stimChannelComboBox")
-        self.stimChannelComboBox.setToolTip("Canal usado para detectar onsets/estímulos")
+        self.stimChannelComboBox.setToolTip("Channel used to detect onsets/stimuli")
 
         self.formStimChan.setWidget(0, QtWidgets.QFormLayout.LabelRole, self.stimChannelLabel)
         self.formStimChan.setWidget(0, QtWidgets.QFormLayout.FieldRole, self.stimChannelComboBox)
 
         self.vbox.addLayout(self.formStimChan)
 
-        # ===== Subtítulo: Threshold =====
+        # ===== Subtitle: Threshold =====
         self.lblThTitle = QtWidgets.QLabel(self.panel)
         self.lblThTitle.setText("Threshold")
         self.lblThTitle.setProperty("variant", "subtitle")        # 👈
@@ -125,7 +125,7 @@ class Ui_Trials(QtWidgets.QWidget):
 
         self.thresholdLabel = QtWidgets.QLabel(self.panel)
         self.thresholdLabel.setText("")
-        self.thresholdLabel.setProperty("variant", "input")       # 👈 (aunque está vacío)
+        self.thresholdLabel.setProperty("variant", "input")       # left intentionally blank
         self.thresholdDoubleSpinBox = QtWidgets.QDoubleSpinBox(self.panel)
         self.thresholdDoubleSpinBox.setDecimals(4)
         self.thresholdDoubleSpinBox.setRange(-1e9, 1e9)
@@ -137,7 +137,7 @@ class Ui_Trials(QtWidgets.QWidget):
 
         self.vbox.addLayout(self.formTh)
 
-        # ===== Subtítulo: Stim Number =====
+        # ===== Subtitle: Stim Number =====
         self.lblStimTitle = QtWidgets.QLabel(self.panel)
         self.lblStimTitle.setText("Stim Number")
         self.lblStimTitle.setProperty("variant", "subtitle")       # 👈
@@ -163,7 +163,7 @@ class Ui_Trials(QtWidgets.QWidget):
 
         self.vbox.addLayout(self.formStim)
 
-        # ===== Subtítulo: Time =====
+        # ===== Subtitle: Time =====
         self.lblTimeTitle = QtWidgets.QLabel(self.panel)
         self.lblTimeTitle.setText("Time")
         self.lblTimeTitle.setProperty("variant", "subtitle")        # 👈
@@ -220,7 +220,7 @@ class Ui_Trials(QtWidgets.QWidget):
 
         self.vbox.addLayout(self.formTime)
 
-        # ===== Subtítulo: Trials =====
+        # ===== Subtitle: Trials =====
         self.lblTrialsTitle = QtWidgets.QLabel(self.panel)
         self.lblTrialsTitle.setText("Trials")
         self.lblTrialsTitle.setProperty("variant", "subtitle")      # 👈
@@ -232,7 +232,7 @@ class Ui_Trials(QtWidgets.QWidget):
         self.sep5.setProperty("role", "divider")                    # 👈
         self.vbox.addWidget(self.sep5)
 
-        # ==== Botones de navegación de trials ====
+        # ==== Trials navigation buttons ====
         self.trialNavLayout = QtWidgets.QHBoxLayout()
 
         self.Btn_prev_trial = QtWidgets.QPushButton(self.panel)
@@ -271,7 +271,7 @@ class Ui_Trials(QtWidgets.QWidget):
         self.Btn_generate_trials.setMinimumHeight(36)
         self.vbox.addWidget(self.Btn_generate_trials)
 
-        # Tamaños por defecto del splitter
+        # Default splitter sizes
         self.splitter.setStretchFactor(0, 1)
         self.splitter.setStretchFactor(1, 0)
 

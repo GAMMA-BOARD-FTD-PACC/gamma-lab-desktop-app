@@ -38,23 +38,23 @@ def main():
     
     kernel = Kernel()
 
-    # 1) Servicios core
+    # 1) Core services
     kernel.register_service("DataStore", DataStore())
     kernel.register_service("FileIO", FileIOService())
 
-    # 2) Descubrir e instanciar plugins
+    # 2) Discover and instantiate plugins
     plugins_dir = Path(__file__).resolve().parent / "plugins"
     pm = PluginManager(plugins_dir)
     pm.load_all()
 
-    # 3) Registrar plugins en el kernel POR NOMBRE (desde properties.yml)
+    # 3) Register plugins in the kernel BY NAME (from properties.yml)
     for meta, plugin in pm.all():
         try:
             kernel.register_plugin(meta.name, plugin)
         except Exception as e:
-            print(f"No se pudo registrar '{meta.name}':", e)
+            print(f"Could not register '{meta.name}':", e)
 
-    # 4) Ventana principal (después de registrar plugins)
+    # 4) Main window (after registering plugins)
     main_win = MainWindow(kernel)
     kernel.register_service("MainWindow", main_win)
 

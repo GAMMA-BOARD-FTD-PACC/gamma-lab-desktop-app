@@ -11,11 +11,11 @@ from core.services.settingsService import SettingsService
 
 class VTKContextMenu:
     """
-    Menú contextual general para vistas basadas en VTK.
-    - Zoom y atajos (Ctrl/Shift + rueda)
-    - Acciones personalizadas registrables
-    - Delegación en servicios: ExportService y MeasurementService
-    - Contexto extendido para mediciones (view_id, trial_id, channel_name, plugin, domain, graph_id)
+    General context menu for VTK-based views.
+    - Zoom and shortcuts (Ctrl/Shift + wheel)
+    - Registerable custom actions
+    - Delegation to services: ExportService and MeasurementService
+    - Extended context for measurements (view_id, trial_id, channel_name, plugin, domain, graph_id)
     """
     last_export_dir = os.getcwd()
 
@@ -43,31 +43,31 @@ class VTKContextMenu:
         self.plugin_name = plugin_name
 
         self._measurements_enabled = bool(measurements_enabled)
-        self._measure_scope = dict(measure_scope or {})   # copia defensiva
+        self._measure_scope = dict(measure_scope or {})   # defensive copy
 
         self.custom_actions = []
         self._datastore = None
         self._debug = True
 
-        # Servicio de configuración persistente
+        # Persistent settings service
         self.settings = SettingsService()
 
-        # wiring zoom/ratón
+        # Wire zoom/mouse
         self._install_wheel_shortcuts()
         self._install_mouse_observers()
 
-        # asegurar zoom con rueda
+        # Ensure zoom with mouse wheel
         for ch in self._get_charts():
             if ch:
                 ch.SetZoomWithMouseWheel(True)
                 ch.SetAxisZoom(0, True)
                 ch.SetAxisZoom(1, True)
 
-        # menú contextual
+        # Context menu
         self.vtk_widget.setContextMenuPolicy(Qt.CustomContextMenu)
         self.vtk_widget.customContextMenuRequested.connect(self.show_menu)
 
-        # servicios
+        # Services
         def _get_names():
             return (self.signal_name or "signal",
                     self.channel_name or None,
@@ -129,7 +129,7 @@ class VTKContextMenu:
     def _active_chart(self):
         return (self.chart[0] if isinstance(self.chart, list) and self.chart else self.chart)
 
-    # ---------- setters públicos ----------
+    # ---------- public setters ----------
     def set_signal_name(self, name):
         self.signal_name = name
 
@@ -150,7 +150,7 @@ class VTKContextMenu:
                 self.measure_service.on_chart_changed()
 
     def set_datastore(self, store):
-        """Inyecta el servicio DataStore (dict-like con get/set)."""
+        """Inject the DataStore service (dict-like with get/set)."""
         self._datastore = store
 
     def set_measurements_enabled(self, enabled: bool):
@@ -180,7 +180,7 @@ class VTKContextMenu:
         except Exception:
             pass
 
-    # ---------- rueda ----------
+    # ---------- wheel ----------
     def _install_wheel_shortcuts(self):
         old_wheel_event = self.vtk_widget.wheelEvent
 
@@ -200,7 +200,7 @@ class VTKContextMenu:
 
         self.vtk_widget.wheelEvent = custom_wheel_event
 
-    # ---------- menú ----------
+    # ---------- menu ----------
     def add_action(self, text, callback):
         self.custom_actions.append((text, callback))
 
@@ -220,21 +220,21 @@ class VTKContextMenu:
         zoom_menu = menu.addMenu("Zoom")
         zoom_menu.addAction("Horizontal (X)", lambda: self.set_zoom_mode("x"))
         zoom_menu.addAction("Vertical (Y)",   lambda: self.set_zoom_mode("y"))
-        zoom_menu.addAction("Ambos ejes (X+Y)", lambda: self.set_zoom_mode("xy"))
-        zoom_menu.addAction("Restablecer vista", self.reset_zoom)
+        zoom_menu.addAction("Both axes (X+Y)", lambda: self.set_zoom_mode("xy"))
+        zoom_menu.addAction("Reset view", self.reset_zoom)
 
-        # Medidas
-        measure_menu = menu.addMenu("Medidas")
+        # Measurements
+        measure_menu = menu.addMenu("Measurements")
         act_slope = measure_menu.addAction(
-            "Pendiente (2 puntos)",
+            "Slope (2 points)",
             lambda: self.measure_service.start('slope')
         )
         act_amp = measure_menu.addAction(
-            "Amplitud (2 puntos)",
+            "Amplitude (2 points)",
             lambda: self.measure_service.start('amplitude')
         )
         act_slope_all_trials = measure_menu.addAction(
-            "Pendiente (todos los trials)",
+            "Slope (all trials)",
             lambda: self.measure_service.start('slope_all_trials')
         )
 
@@ -243,18 +243,18 @@ class VTKContextMenu:
         act_amp.setEnabled(can_measure and self.measure_service.state == 'idle')
         act_slope_all_trials.setEnabled(can_measure and self.measure_service.state == 'idle')
 
-        act_cancel = measure_menu.addAction("Cancelar medición (Esc)", self.measure_service.cancel)
+        act_cancel = measure_menu.addAction("Cancel measurement (Esc)", self.measure_service.cancel)
         act_cancel.setEnabled(self.measure_service.state != 'idle')
         measure_menu.addSeparator()
 
-        act_show_lines = measure_menu.addAction("Mostrar/Ocultar todas las líneas", self.measure_service.toggle_overlay)
+        act_show_lines = measure_menu.addAction("Show/Hide all lines", self.measure_service.toggle_overlay)
         act_show_lines.setEnabled(can_measure)
-        act_delete_last = measure_menu.addAction("Eliminar última medición", self.measure_service.remove_last_measurement)
+        act_delete_last = measure_menu.addAction("Delete last measurement", self.measure_service.remove_last_measurement)
         act_delete_last.setEnabled(can_measure)
-        act_delete_all = measure_menu.addAction("Eliminar TODAS las mediciones", self.measure_service.clear_all_measurements)
+        act_delete_all = measure_menu.addAction("Delete ALL measurements", self.measure_service.clear_all_measurements)
         act_delete_all.setEnabled(can_measure)
 
-        # Exportar
+        # Export
         menu.addSeparator()
         export_img_menu = menu.addMenu("Export as image")
         export_img_menu.addAction("png",  lambda: self.export_service.export_image("png"))

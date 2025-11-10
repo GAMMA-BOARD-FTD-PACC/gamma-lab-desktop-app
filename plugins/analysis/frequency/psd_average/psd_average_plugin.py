@@ -120,7 +120,7 @@ class Psd_average_plugin(IPlugin):
         self.ui.plotArea.setLayout(QtWidgets.QVBoxLayout())
         self.ui.plotArea.layout().setContentsMargins(0, 0, 0, 0)
         self.ui.plotArea.layout().addWidget(self.vtk_interactor)
-        self._log("ensure_vtk(): interactor embebido")
+        self._log("ensure_vtk(): embedded interactor")
 
         self.vtk_view = vtk.vtkContextView()
         self.vtk_view.SetRenderWindow(self.vtk_interactor.GetRenderWindow())
@@ -323,8 +323,8 @@ class Psd_average_plugin(IPlugin):
         self._log(f"Plotting {table.GetNumberOfColumns()-1} PSD Average curve.")
         
         plot = self.chart.AddPlot(vtk.vtkChart.LINE)
-        plot.SetInputData(table, 0, 1) # Plotea solo la primera (y única) columna
-        plot.SetWidth(2.0) # Línea gruesa para el promedio
+        plot.SetInputData(table, 0, 1) # Plot only the first (and only) column
+        plot.SetWidth(2.0) # Thick line for the average
 
        # --- Context menu ---
         try:
@@ -336,7 +336,7 @@ class Psd_average_plugin(IPlugin):
 
    
         self.vtk_view.GetRenderWindow().Render()
-        # Ocultar watermark al tener gráfico
+        # Hide watermark once a chart is displayed
         try:
             if self.mainwin:
                 self.mainwin.hide_watermark()

@@ -7,9 +7,9 @@ from core.services.trial_dataset import TrialDataset
 
 
 '''
-    En esta clase se guardan los datos puros transformados directamente de los archicos leídos
-    Es el formato general de señal cruda.
-    Contiene los metadatos como los datos generales de la señal. 
+    Holds raw data transformed directly from the loaded files.
+    General format for raw signals.
+    Contains metadata and general information about the signal.
 '''
 @dataclass
 class SignalDataset:
@@ -29,14 +29,14 @@ class SignalDataset:
     __discarded_trials: Dict[tuple[str, str], set[int]] = field(default_factory=dict)
 
 
-    # Caché interna para evitar recomputar los mismos trials_dataset
+    # Internal cache to avoid recomputing the same trials_dataset
     __filtered_cache: Dict[tuple[str, str], TrialDataset] = field(default_factory=dict, init=False, repr=False)
     __discard_versions: Dict[tuple[str, str], int] = field(default_factory=dict, init=False, repr=False)
 
-    #Agregar un trial_dataset a la lista de trials dataset
+    # Add a trial_dataset to the trials list
     def add_trial_dataset(self, trial: "TrialDataset"):
         if not isinstance(trial, TrialDataset):
-            raise ValueError("trial debe ser de tipo TrialDataset")
+            raise ValueError("trial must be of type TrialDataset")
         self.__trials_dataset.append(trial)
 
     def number_of_trials_dataset(self):
@@ -44,29 +44,29 @@ class SignalDataset:
 
     def get_active_trials(self, file_name: str, channel_name: str = None):
         """
-        Retorna el TrialDataset activo para un archivo y canal específicos,
-        aplicando los descartes definidos en self.__discarded_trials.
+        Return the active TrialDataset for a specific file and channel,
+        applying discards defined in self.__discarded_trials.
 
-        Parámetros:
-            name (str): Nombre del archivo origen.
-            channel_name (str): Nombre del canal.
+        Parameters:
+            name (str): Source file name.
+            channel_name (str): Channel name.
 
-        Retorna:
-            TrialDataset | None: El dataset filtrado o None si no existe.
+        Returns:
+            TrialDataset | None: The filtered dataset or None if it does not exist.
         """
 
-        '''Cambiar en futuros desarrollos'''
-          # Tomar el último TD si no se pasa channel_name
+        '''Change in future developments'''
+        # Take the last TD if channel_name is not provided
 
         if not self.__trials_dataset or len(self.__trials_dataset) == 0:
-            print(f"[SignalDataset] La señal '{self.name}' no tiene TrialDataset cargados aún.")
+            print(f"[SignalDataset] The signal '{self.name}' has no TrialDataset loaded yet.")
             return None
         
         channel_name = self.__trials_dataset[-1].channel_name
 
         key = (file_name, channel_name)
 
-        # Buscar el dataset correspondiente
+        # Find the corresponding dataset
         td = next(
             (t for t in self.__trials_dataset 
              if Path(t.source).name == file_name and t.channel_name == channel_name),
@@ -74,24 +74,24 @@ class SignalDataset:
         )
 
         if td is None:
-            print(f"[SignalDataset] No se encontró dataset para {key}")
+            print(f"[SignalDataset] No dataset found for {key}")
             return None
 
-        # Obtener los descartes específicos de ese dataset
+        # Get the discards specific to that dataset
         discarded = self.__discarded_trials.get(key, set())
         version = len(discarded)
 
-        # Si existe en caché y no ha cambiado la versión de descartes se reutiliza
+        # If present in cache and discard version hasn't changed, reuse it
         if key in self.__filtered_cache and self.__discard_versions.get(key) == version:
             return self.__filtered_cache[key]
 
-        # Si no hay descartes, retornar el dataset original
+        # If there are no discards, return the original dataset
         if not discarded:
             self.__filtered_cache[key] = td
             self.__discard_versions[key] = version
             return td
 
-        #aplicar filtro para filtrar
+        # Apply filter
 
         Ns, T = td.trials.shape
         valid_mask = np.ones(T, dtype=bool)
@@ -100,15 +100,15 @@ class SignalDataset:
             if 0 <= idx < T:
                 valid_mask[idx] = False
 
-        # Si todos los trials son válidos, se retorna directamente el dataset original
+        # If all trials are valid, return the original dataset directly
         if valid_mask.all():
             return td
 
-        # Aplicar el filtro solo a los índices válidos
+        # Apply the filter only to valid indices
         filtered_trials = td.trials[:, valid_mask]
         filtered_onsets = [on for i, on in enumerate(td.onsets_s) if valid_mask[i]] if td.onsets_s else []
 
-        # Crear una nueva instancia filtrada (sin copiar arrays innecesariamente)
+        # Create a new filtered instance (without copying arrays unnecessarily)
         filtered_dataset = TrialDataset(
             source=td.source,
             sampling_rate=td.sampling_rate,
@@ -124,36 +124,36 @@ class SignalDataset:
             metadata=td.metadata
         )
 
-          # Guardar en caché con versión actual
+        # Cache with current version
         self.__filtered_cache[key] = filtered_dataset
         self.__discard_versions[key] = version
 
         return filtered_dataset
 
     def discard_trial(self, source: str, channel: str, index: int):
-        """Descarta un trial específico del canal indicado."""
+        """Discard a specific trial from the given channel."""
         key = (source, channel)
         self.__discarded_trials.setdefault(key, set()).add(index)
-        print(f"discarted trials: {self.__discarded_trials}:  ")
+        print(f"discarded trials: {self.__discarded_trials} :")
         self.__invalidate_cache(key)
 
 
     def include_trial(self, source: str, channel: str, index: int):
-        """Vuelve a incluir un trial previamente descartado."""
+        """Re-include a previously discarded trial."""
         key = (source, channel)
         if key in self.__discarded_trials:
             self.__discarded_trials[key].discard(index)
             if not self.__discarded_trials[key]:
-                del self.__discarded_trials[key]  # limpia entradas vacías
+                del self.__discarded_trials[key]  # clean empty entries
         self.__invalidate_cache(key)
 
 
     def clear_discarded_trials(self): 
-        """Limpia todos los descartes y cache."""
+        """Clear all discards and cache."""
         self.__discarded_trials.clear()
         self.__filtered_cache.clear()
         self.__discard_versions.clear()
-        print("[SignalDataset] Cache y descartes limpiados")
+        print("[SignalDataset] Cache and discards cleared")
     
     def is_trial_discarded(self, source: str, channel: str, index: int) -> bool:
         key = (source, channel)
@@ -164,4 +164,4 @@ class SignalDataset:
         if key in self.__filtered_cache:
             del self.__filtered_cache[key]
             del self.__discard_versions[key]
-            print(f"[SignalDataset] Caché invalidada para {key}")
+            print(f"[SignalDataset] Cache invalidated for {key}")

@@ -24,7 +24,7 @@
      </rect>
     </property>
     <property name="text">
-     <string>Lectura de señal abf usando VTK y pyqt</string>
+    <string>Read ABF signal using VTK and PyQt</string>
     </property>
    </widget>
    <widget class="QFrame" name="VtkViewr">
@@ -53,7 +53,7 @@
      </rect>
     </property>
     <property name="text">
-     <string>Abrir señal</string>
+    <string>Open signal</string>
     </property>
    </widget>
   </widget>

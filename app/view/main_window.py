@@ -24,7 +24,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.kernel = kernel
 
-        #Registrar la ventana principal como un servicio en el kernel para que los plugins puedan acceder a ella.
+        # Register the main window as a service in the kernel so plugins can access it.
         self.kernel.register_service("MainWindow", self)
 
         # Prefer embedded resource; fallback to file path
@@ -42,14 +42,14 @@ class MainWindow(QMainWindow):
         self.kernel.event.connect(self.on_kernel_event)
 
         self.current_section = "Home"
-        self.active_plugin = None #Plugin activo actualmente
-        self.active_plugin_widget = None #Widget del plugin activo
-        self.plugin_widgets = {} #Almacenamiento de los widgets de los plugins para no perder trabajo
+        self.active_plugin = None  # Currently active plugin
+        self.active_plugin_widget = None  # Widget of the active plugin
+        self.plugin_widgets = {}  # Store plugin widgets to preserve work/state
 
         # Workspace area where plugins render
         self.plugin_area = self.ui.workspace
 
-        # Inicializar funcionalidades de la barra lateral
+        # Initialize sidebar functionality
         self.setup_sidebar_functionality()
 
         if not self.plugin_area.layout():
@@ -73,9 +73,9 @@ class MainWindow(QMainWindow):
         # Keep it behind content by default
         self._bg_logo_label.lower()
         self._bg_logo_label.setScaledContents(False)
-        # Ajustar tamaño y escala inicial
+        # Adjust initial size and scale
         self._position_background_logo()
-        # Seguir cambios de tamaño del área de trabajo
+        # Track workspace area resize events
         self.plugin_area.installEventFilter(self)
 
         # Home welcome panel (shown in Home when no plugin is active)
@@ -88,7 +88,7 @@ class MainWindow(QMainWindow):
         self._update_background_logo_visibility()
         self._update_home_welcome_visibility()
 
-        # Diccionario de secciones
+        # Section button dictionary
         self.section_buttons = {
             "Home": self.ui.bnt_home,
             "Preprocessing": self.ui.btn_preprocessing,
@@ -101,7 +101,7 @@ class MainWindow(QMainWindow):
             btn.setCheckable(True)
             btn.clicked.connect(lambda _, s=section: self.switch_section(s))
 
-        # Mostrar por defecto plugins de Home
+        # Show Home plugins by default
         self.switch_section(self.current_section)
         
         self._app_quitting = False
@@ -111,25 +111,25 @@ class MainWindow(QMainWindow):
 
 
     '''buttons section'''
-    # Actualizar plugins al registrar uno nuevo
+    # Update buttons when a new plugin is registered
     def on_plugin_registered(self, name):
         plugin = self.kernel.get_plugin(name)
         if plugin and plugin.category() == self.current_section:
             
             self.add_plugin_button(name)
 
-    # Cambiar de sección
+    # Switch section
     def switch_section(self, section):
         self.current_section = section
         self.setWindowTitle(f"Gamma Lab - {self.current_section}")
 
-        # Toggle del botón de sección
+        # Toggle the section button
         for btn in self.section_buttons.values():
             btn.setChecked(False)
         if section in self.section_buttons:
             self.section_buttons[section].setChecked(True)
 
-        # Layout del contenedor azul
+        # Layout of the blue container
         contenedor = self.ui.buttonContainer.layout()
         while contenedor.count():
             item = contenedor.takeAt(0)
@@ -137,18 +137,18 @@ class MainWindow(QMainWindow):
             if w:
                 w.deleteLater()
 
-        # Alinear a la izquierda y sin espacios externos
+        # Align left with no outer margins
         contenedor.setContentsMargins(0, 0, 0, 0)
         contenedor.setSpacing(8)
         contenedor.setAlignment(Qt.AlignLeft)
 
-        # Agrupar plugins por subcategoría
+        # Group plugins by subcategory
         subcategories = defaultdict(list)
         for name in self.kernel.get_plugins_by_category(section):
             plugin = self.kernel.get_plugin(name)
             subcategories[plugin.subcategory()].append(name)
 
-        # Construir cada subcategoría y poner divider entre ellas
+        # Build each subcategory and put a divider between them
         subcats = list(subcategories.items())
         for idx, (subcat, plugins) in enumerate(subcats):
             group_box = QGroupBox(subcat, self.ui.buttonContainer)
@@ -175,19 +175,19 @@ class MainWindow(QMainWindow):
         btn.setCheckable(False)
         btn.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
 
-        # Slot fijo (coherente con QSS)
+        # Fixed size (consistent with QSS)
         btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         btn.setMinimumWidth(96); btn.setMaximumWidth(96)
         btn.setMinimumHeight(76)
 
-        # Icono
+        # Icon
         try:
             icon_path = plugin.icon()
             if icon_path:
                 btn.setIcon(QIcon(icon_path))
                 btn.setIconSize(QSize(26, 26))
         except Exception as e:
-            print("Icono no disponible para plugin", name, "->", e)
+            print("Icon not available for plugin", name, "->", e)
 
         label = plugin.name()
         fm_width = 96 - 8
@@ -198,34 +198,34 @@ class MainWindow(QMainWindow):
 
     def _wrap_button_text(self, text: str, font: QFont, max_width: int) -> str:
         """
-        Inserta un salto de línea óptimo para que el texto quepa en 1–2 líneas
-        dentro de 'max_width'. Si ya cabe en una línea, lo deja igual.
+        Insert an optimal line break so the text fits in 1–2 lines
+        within 'max_width'. If it already fits on one line, leave it as is.
         """
         fm = QFontMetrics(font)
         if fm.horizontalAdvance(text) <= max_width:
             return text
 
-        # Intentar partir en el último espacio que deje primera línea <= max_width
+        # Try to break at the last space so the first line fits <= max_width
         words = text.split()
         if len(words) == 1:
-            # Sin espacios; corta “a mano” en ~caracteres que quepan
+            # No spaces; hard-cut at the largest substring that fits
             for i in range(len(text)-1, 0, -1):
                 if fm.horizontalAdvance(text[:i]) <= max_width:
                     return text[:i] + "\n" + text[i:]
             return text  # fallback
         else:
-            # Construir línea 1 con el mayor número de palabras que quepan
+            # Build line 1 with the maximum number of words that fit
             line1 = words[0]
             for w in words[1:]:
                 candidate = f"{line1} {w}"
                 if fm.horizontalAdvance(candidate) <= max_width:
                     line1 = candidate
                 else:
-                    # resto pasa a segunda línea
+                    # The rest goes to the second line
                     line2 = " ".join(words[len(line1.split()):])
-                    # si la segunda aún es muy larga, no pasa nada: el alto del botón lo soporta
+                    # If the second line is still too long, it's fine: button height supports it
                     return line1 + "\n" + line2
-            # si entraron todas, ya no hace falta segunda línea
+            # If everything fit, no second line needed
             return line1
 
     # Clean workspace
@@ -244,51 +244,51 @@ class MainWindow(QMainWindow):
         self._update_home_welcome_visibility()
 
 
-    # Intertar el widget de un plugin activo en el espacio de trabajo
+    # Insert the active plugin's widget into the workspace
     def show_plugin_widget(self, plugin: IPlugin):
         try:
             plugin.process(None)
         except Exception as e:
-            print("Error al reanudar plugin:", e)
+            print("Error resuming plugin:", e)
         
         if plugin is None:
             return
 
-        # Iniciar plugin si aún no fue iniciado
+        # Start plugin if not started yet
         if not getattr(plugin, "started", False):
             try:
                 plugin.start(self.kernel)
                 plugin.started = True
             except Exception as e:
-                print("Error iniciando plugin:", e)
+                print("Error starting plugin:", e)
 
-        # Reutilizar si ya existe
+        # Reuse if it already exists
         if plugin.name() in self.plugin_widgets:
             widget = self.plugin_widgets[plugin.name()]
         else:
-            # Obtener widget desde plugin
+            # Get widget from plugin
             try:
                 widget = plugin.get_widget(parent=self.plugin_area)
             except Exception as e:
                 self.alerts.error(f"An error occurred while rendering the plugin widget '{plugin.name()}'.\n\nDetails:\n{str(e)}", "Error rendering plugin")
-                print("[Main Window] Error en get_widget del plugin:", e)
+                print("[Main Window] Error in plugin get_widget:", e)
                 widget = None
 
-            # Si no retorna widget, crear placeholder
+            # If no widget is returned, create a placeholder
             if widget is None:
-                self.alerts.error(f"No hay interfaz para el plugin '{plugin.name()}'.", "Error rendering plugin")
+                self.alerts.error(f"No UI available for the plugin '{plugin.name()}'.", "Error rendering plugin")
 
 
                 placeholder = QWidget(parent=self.plugin_area)
                 layout = QVBoxLayout(placeholder)
-                layout.addWidget(QLabel(f"No hay interfaz para {plugin.name()}"))
+                layout.addWidget(QLabel(f"No UI available for {plugin.name()}"))
                 widget = placeholder
 
             widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             self.plugin_layout.addWidget(widget)
             self.plugin_widgets[plugin.name()] = widget
 
-        # Ocultar anterior y mostrar el nuevo
+        # Hide previous and show the new one
         self.clear_plugin_area()
         widget.setVisible(True)
         self.active_plugin_widget = widget
@@ -297,12 +297,12 @@ class MainWindow(QMainWindow):
         self._update_background_logo_visibility()
         self._update_home_welcome_visibility()
 
-        # Notificar que se muestra
+        # Notify it is shown
         if hasattr(plugin, "on_show"):
             try:
                 plugin.on_show()
             except Exception as e:
-                print("Error en on_show del plugin:", e)
+                print("Error in plugin on_show:", e)
 
     def eventFilter(self, obj, event):
         if obj is self.plugin_area and event.type() == QEvent.Resize:
@@ -358,12 +358,12 @@ class MainWindow(QMainWindow):
             sig = datastore.get_active_signal()
             if not sig:
                 return False
-            # Si hay algún TrialDataset asociado
+            # If there is any TrialDataset associated
             try:
                 td = sig.get_active_trials(sig.name, None)
                 return td is not None and getattr(td, "trials", None) is not None and td.trials.size > 0
             except Exception:
-                # Si el método requiere parámetros distintos o falla, asumir que no hay trials activos
+                # If the method signature differs or fails, assume there are no active trials
                 return sig.number_of_trials_dataset() > 0
         except Exception:
             return False
@@ -446,7 +446,7 @@ class MainWindow(QMainWindow):
         show = (self.current_section == "Home") and (self.active_plugin_widget is None)
         self._home_welcome.setVisible(show)
 
-    # Control explícito desde plugins
+    # Explicit control from plugins
     def show_watermark(self):
         self._watermark_forced = False
         if hasattr(self, "_bg_logo_label"):
@@ -474,62 +474,62 @@ class MainWindow(QMainWindow):
             return pix
 
     def _schedule_watermark_autohide(self):
-        """Espera a que el plugin cree su contenido (p.ej. VTK) y oculta el watermark."""
+        """Wait for the plugin to create its content (e.g., VTK) and hide the watermark."""
         delays = [0, 120, 350, 1000]
         for d in delays:
             QTimer.singleShot(d, self._check_and_autohide_plugin_content)
 
-    # Eliminamos auto-ocultado heurístico; los plugins controlan el watermark
+    # Heuristic auto-hide removed; plugins control the watermark
 
                
-    # Evento al presionar un botón de plugin: mostrar su interfaz y opcionalmente procesar
+    # Event when a plugin button is clicked: show its UI and optionally process
     def on_button_click(self, name):
         plugin = self.kernel.get_plugin(name)
         if plugin:
-            print(f"Se hizo clic en plugin {name}")
+            print(f"Plugin button clicked: {name}")
             self.show_plugin_widget(plugin)
             if hasattr(plugin, "process"):
                 try:
-                    plugin.process("Ventana abierta")
+                    plugin.process("Window opened")
                 except Exception as e:
-                    print("Error en process del plugin:", e)
+                    print("Error in plugin process:", e)
         else:
-            print("Plugin no encontrado:", name)
+            print("Plugin not found:", name)
 
 
 
-    '''Barra lateral'''
+    '''Sidebar'''
 
     def on_kernel_event(self, topic: str, payload: object):
         """
-        Escucha eventos emitidos por el Kernel.
+        Listen to events emitted by the Kernel.
         """
         if topic == "signal_added":
-            print(f"Nueva señal añadida: {payload}")
+            print(f"New signal added: {payload}")
             self.update_signal_list()
             self._update_background_logo_visibility()
         elif topic in ("signal_active_changed", "trials_generated", "trial_discard_updated"):
-            # Cambios de estado que afectan si hay datos disponibles
+            # State changes that affect data availability
             self._update_background_logo_visibility()
 
     def setup_sidebar_functionality(self):
         sidebar = self.ui.widget_3
         sidebar.setMaximumWidth(250)
-        """Inicializa y conecta todas las funciones de la barra lateral."""
-        # Collapse de la barra lateral
+        """Initialize and connect all sidebar functions."""
+        # Sidebar collapse
         self.ui.collapse_explorer_btn.clicked.connect(lambda: self.toggle_sidebar_collapse(sidebar))
         self.ui.collapse_explorer_btn.setIcon(QIcon("assets/icons/home/icn_collapse.png"))
 
         self.update_signal_list()
-        # Selección de señal
+        # Signal selection
         self.ui.selected_signal_comboBox.currentIndexChanged.connect(self.on_signal_selected)
 
-        # Secciones futuras
+        # Future sections
         self.setup_explorer_section()
         self.setup_calculus_section()
         self.setup_results_section()
 
-    # Comprimir y expandir la barra lateral
+    # Collapse and expand the sidebar
     def toggle_sidebar_collapse(self, sidebar):
         
         current_width = sidebar.width()
@@ -537,10 +537,10 @@ class MainWindow(QMainWindow):
         if current_width > 0:
             self._last_sidebar_width = current_width
 
-            # Permitir colapso total
+            # Allow full collapse
             sidebar.setMinimumWidth(0)
 
-            # Animación de colapso
+            # Collapse animation
             self._sidebar_animation = QPropertyAnimation(sidebar, b"maximumWidth")
             self._sidebar_animation.setDuration(250)
             self._sidebar_animation.setStartValue(current_width)
@@ -553,10 +553,10 @@ class MainWindow(QMainWindow):
         else:
             width = getattr(self, "_last_sidebar_width", 250)
 
-            # Restaurar ancho y límite mínimo
+            # Restore width and minimum limit
             sidebar.setMinimumWidth(100)
 
-            # Animación de expansión
+            # Expansion animation
             self._sidebar_animation = QPropertyAnimation(sidebar, b"maximumWidth")
             self._sidebar_animation.setDuration(250)
             self._sidebar_animation.setStartValue(0)
@@ -569,50 +569,50 @@ class MainWindow(QMainWindow):
 
     def on_signal_selected(self):
         """
-        Se ejecuta cuando el usuario cambia la señal seleccionada en el comboBox.
-        Actualiza la señal activa en el DataStore.
+        Runs when the user changes the selected signal in the combo box.
+        Updates the active signal in the DataStore.
         """
         datastore = self.kernel.get_service("DataStore")
         if not datastore:
-            print("⚠️ No se encontró el servicio DataStore.")
+            print("⚠️ DataStore service not found.")
             return
 
         selected_key = self.ui.selected_signal_comboBox.currentText()
         if not selected_key:
-            print("No hay señal seleccionada.")
+            print("No signal selected.")
             return
 
         try:
             datastore.set_active_signal(selected_key)
             self.kernel.emit_event("signal_active_changed", {"key": selected_key})
 
-            print(f"[Main Window] Señal activa cambiada a: {selected_key}")
+            print(f"[Main Window] Active signal changed to: {selected_key}")
         except ValueError as e:
-            print(f"[Main Window] Error al cambiar señal activa: {e}")
+            print(f"[Main Window] Error changing active signal: {e}")
         finally:
-            # Si hay una señal activa, ocultar marca de agua; si no, mostrarla
+            # Hide watermark if a signal is active; otherwise show it
             self._update_background_logo_visibility()
 
 
     def update_signal_list(self):
-        """Maneja la selección de una señal del comboBox."""
+        """Handle the selection of a signal from the combo box."""
 
         datastore = self.kernel.get_service("DataStore")
         if not datastore:
-            print("No se encontró el servicio DataStore.")
+            print("DataStore service not found.")
             return
         
         signals = datastore.get_signals()
         active_signal_key = datastore.get_active_signal_key()
 
-        #limpiar combo
+        # Clear combo
         self.ui.selected_signal_comboBox.blockSignals(True)
         self.ui.selected_signal_comboBox.clear()
 
         for key in signals.keys():
             self.ui.selected_signal_comboBox.addItem(key)
 
-        # Seleccionar la señal activa si hay
+        # Select the active signal if present
         if active_signal_key and active_signal_key in signals:
             index = self.ui.selected_signal_comboBox.findText(active_signal_key)
             if index >= 0:
@@ -620,49 +620,49 @@ class MainWindow(QMainWindow):
 
         self.ui.selected_signal_comboBox.blockSignals(False)
 
-        # Actualizar visibilidad del logo según haya señales cargadas
+        # Update logo visibility depending on loaded signals
         self._update_background_logo_visibility()
 
 
 
         # selected_signal = self.ui.selected_signal_comboBox.currentText()
         # if selected_signal:
-        #     print(f"Señal seleccionada: {selected_signal}")
-        #     # Aquí podrías notificar al kernel o cargar la señal seleccionada
+        #     print(f"Selected signal: {selected_signal}")
+        #     # Here you could notify the kernel or load the selected signal
         # else:
-        #     print("No hay señal seleccionada.")
+        #     print("No signal selected.")
         pass
 
 
-    # === FUNCIONES FUTURAS (placeholder con pass) ===
+    # === FUTURE FUNCTIONS (placeholder with pass) ===
     def setup_explorer_section(self):
-        """Inicializa la sección de explorador (por ahora vacía)."""
+        """Initialize the explorer section (currently empty)."""
         pass
 
     def setup_calculus_section(self):
-        """Inicializa la sección de cálculos (por ahora vacía)."""
+        """Initialize the calculations section (currently empty)."""
         pass
 
     def setup_results_section(self):
-        """Inicializa la sección de resultados (por ahora vacía)."""
+        """Initialize the results section (currently empty)."""
         pass
     
     def _on_app_about_to_quit(self):
-        """Apaga plugins y su UI de forma segura. Idempotente."""
+        """Shut down plugins and their UI safely. Idempotent."""
         if self._app_quitting:
             return
         self._app_quitting = True
 
-        # 1) Detén el plugin activo, si lo hay
+        # 1) Stop the active plugin, if any
         try:
             if self.active_plugin and hasattr(self.active_plugin, "stop"):
                 self.active_plugin.stop()
         except Exception as e:
             print("stop(active_plugin) error:", e)
 
-        # 2) Detén el resto (si tu kernel expone una forma de listarlos)
+        # 2) Stop the rest (if your kernel exposes a way to list them)
         try:
-            # Opción A: si tienes un método para listarlos todos
+            # Option A: if you have a method to list them all
             if hasattr(self.kernel, "get_all_plugins"):
                 for name in self.kernel.get_all_plugins():
                     p = self.kernel.get_plugin(name)
@@ -670,7 +670,7 @@ class MainWindow(QMainWindow):
                         try: p.stop()
                         except Exception as e: print(f"stop({name}) error:", e)
             else:
-                # Opción B: usa los que están instanciados en la UI
+                # Option B: use those that are instantiated in the UI
                 for name in list(self.plugin_widgets.keys()):
                     p = self.kernel.get_plugin(name)
                     if p is not None and hasattr(p, "stop"):
@@ -679,7 +679,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print("stop(all) error:", e)
 
-        # 3) Oculta widgets y limpia referencias (evita renders tardíos)
+        # 3) Hide widgets and clear references (avoid late renders)
         try:
             for name, w in list(self.plugin_widgets.items()):
                 if w is not None:

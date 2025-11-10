@@ -12,13 +12,13 @@ dist/
 # Archivos de PyInstaller
 *.spec
 
-# Cachés de Python
+# Python caches
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 
-# Configuración de IDEs
+# IDE configuration
 .vscode/
 .idea/
 

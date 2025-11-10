@@ -26,7 +26,7 @@ class Average_plugin(IPlugin):
             self.vtk_widget.Enable()
 
     def stop(self):
-        print("Deteniendo Average")
+        print("Stopping Average")
 
         if self.vtk_widget:
             self.vtk_widget.Disable()   
@@ -37,12 +37,12 @@ class Average_plugin(IPlugin):
             self.widget = QWidget(parent)
             self.ui = Ui_Average()
             self.ui.setupUi(self.widget)
-            #Asignar el widget a los alerts
+            # Assign the widget to alerts
             self.alerts.parent = self.widget
 
             self.ensure_vtk()
 
-            # Conectar botón “Calculate Average”
+            # Connect "Calculate Average" button
             self.ui.calculateAverageButton.clicked.connect(self._on_calculate_average)
 
         else:
@@ -52,7 +52,7 @@ class Average_plugin(IPlugin):
 
 
     def _on_calculate_average(self):
-        """Carga el SignalDataset activo desde el DataStore y muestra sus TrialDataset asociados."""
+        """Load the active SignalDataset from the DataStore and use its associated TrialDataset."""
 
         if self.get_active_signal() is None:
             return
@@ -62,33 +62,33 @@ class Average_plugin(IPlugin):
         if trials is None:
             return
 
-        # Calcular promedio por muestra (a lo largo de los trials)
+        # Compute per-sample average across trials
         av_data = np.mean(trials.trials, axis=1)
         t = trials.time_rel
 
-        self._notify(f"Promedio calculado → shape: {av_data.shape} con {trials.trials.shape[1]} trials usados")
+        self._notify(f"Average computed -> shape: {av_data.shape} with {trials.trials.shape[1]} trials used")
 
         
-        # Render en VTK
+        # Render in VTK
         self.render_average(t, av_data, trials.channel_name, trials.unit)
 
     def render_average(self, t, av_data, channel_name=None, unit=None):
         """
-        Renderiza el promedio usando vtkContextView + vtkChartXY
-        t: array 1D de tiempos
-        av_data: array 1D de valores promedio
+        Render the average using vtkContextView + vtkChartXY
+        t: 1D array of times
+        av_data: 1D array of average values
         """
         if self.view is None:
             self.ensure_vtk()
 
-        # Validaciones mínimas
+        # Basic validations
         t = np.asarray(t, dtype=float)
         av = np.asarray(av_data, dtype=float)
         if t.ndim != 1 or av.ndim != 1 or t.size != av.size:
             self.alerts.error( "Time and signal vectors must have the same 1D length.", "Render error")
             return
 
-        # Downsample si hay muchísimos puntos (para mantener interacción fluida)
+        # Downsample if there are many points (to keep UI responsive)
         MAX_SAMPLES = 2000
         N = t.size
         if N > MAX_SAMPLES:
@@ -99,7 +99,7 @@ class Average_plugin(IPlugin):
             t_plot = t
             av_plot = av
 
-        # Limpiar escena y crear tabla VTK
+        # Clear scene and create VTK table
         scene = self.view.GetScene()
         scene.ClearItems()
 
@@ -119,13 +119,13 @@ class Average_plugin(IPlugin):
         scene.AddItem(chart)
 
 
-        # Dibujar línea
+        # Draw line
         plot = chart.AddPlot(vtk.vtkChart.LINE)
         plot.SetInputData(table, 0, 1)
-        # Opcionales: ancho y color
+        # Optional: width and color
         try:
             plot.SetWidth(1.5)
-            # SetColor espera RGBA (0..255) en algunas versiones
+            # SetColor expects RGBA (0..255) in some versions
             plot.SetColor(0, 0, 0, 255)
         except Exception:
             pass
@@ -134,7 +134,7 @@ class Average_plugin(IPlugin):
         chart.GetAxis(vtk.vtkAxis.LEFT).SetTitle(unit or "Amplitude")
         chart.SetTitle(f"Average - {channel_name or ''}")
 
-        # --- Menú contextual---
+        # --- Context menu ---
 
         signal_name = self.active_signal.name
         ch_name = channel_name or "channel"
@@ -150,13 +150,13 @@ class Average_plugin(IPlugin):
                 domain=self.meta.subcategory,
                 graph_id=graph_uid
             )
-        # --- Fin menú contextual---
+        # --- End context menu ---
 
-        # Forzar render
+        # Force render
         try:
             self.view.GetRenderWindow().Render()
         except Exception:
-            # Fallback: si view no tiene RenderWindow usar vtk_widget
+            # Fallback: if view lacks a RenderWindow use vtk_widget
             try:
                 self.vtk_widget.GetRenderWindow().Render()
             except Exception:
@@ -164,8 +164,8 @@ class Average_plugin(IPlugin):
 
 
     def ensure_vtk(self):
-        """Crea e inicializa los widgets VTK y las vistas (context view)."""
-        # Crear QVTK dentro del contenedor ya definido en el .ui
+        """Create and initialize VTK widgets and the context view."""
+        # Create QVTK inside the container defined in the .ui
         if not self.vtk_widget:
             self.vtk_widget = QVTKRenderWindowInteractor(self.ui.plotArea)
             
@@ -174,13 +174,13 @@ class Average_plugin(IPlugin):
             self.ui.plotArea.setLayout(layout)
             layout.addWidget(self.vtk_widget)
 
-        # ContextView (facilita charting)
+        # ContextView (facilitates charting)
         self.view = vtk.vtkContextView()
         self.view.SetRenderWindow(self.vtk_widget.GetRenderWindow())
         self.view.GetRenderer().SetBackground(0.98, 0.98, 0.98)
         self.vtk_widget.Initialize()
         
-        # Menú
+        # Menu
         if self.vtk_menu is None:
             base_scope = {
                 "view_id": "average",

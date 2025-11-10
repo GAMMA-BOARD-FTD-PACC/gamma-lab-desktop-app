@@ -64,7 +64,7 @@ def _time_window_indices(t: np.ndarray, a: float, b: float) -> Tuple[int, int]:
     i_b = max(0, min(i_b, t.shape[0]))
     return i_a, i_b
 
-# ----------------- Lógica pública -----------------
+# ----------------- Public logic -----------------
 
 def apply_modification_to_all_valid(kernel, *, mode: str, point_a: float, point_b: float = 0.0):
     """
@@ -78,7 +78,7 @@ def apply_modification_to_all_valid(kernel, *, mode: str, point_a: float, point_
     sd, file_name = _get_active_signal_and_name(kernel)
     channel_name = _get_current_channel_name(sd)
 
-    # 1) Leer trials ACTIVOS (filtrados por descartes) del dataset
+    # 1) Read ACTIVE trials (filtered by discards) from the dataset
     td_active = sd.get_active_trials(file_name, channel_name)
     if td_active is None:
         raise RuntimeError(f"No active trials for ({file_name}, {channel_name}).")
@@ -145,7 +145,7 @@ def apply_modification_to_all_valid(kernel, *, mode: str, point_a: float, point_
         trials_active = trials_active[:, :T_act]
         orig_indices = orig_indices[:T_act]
 
-    # 4) Crear una copia para modificar
+    # 4) Create a copy to modify
     out_active = trials_active.copy()
 
     if mode in ("blank", "cut"):
@@ -201,12 +201,12 @@ def apply_modification_to_all_valid(kernel, *, mode: str, point_a: float, point_
     else:
         raise ValueError(f"Unknown mode: {mode}")
 
-    # 5) Escribir los cambios en el TrialDataset BASE (por columnas mapeadas)
+    # 5) Write changes into the BASE TrialDataset (by mapped columns)
     for k, orig_col in enumerate(orig_indices):
         if 0 <= orig_col < td_base.trials.shape[1]:
             td_base.trials[:, orig_col] = out_active[:, k]
 
-    # 6) Marcar metadata de modificados (opcional)
+    # 6) Mark metadata of modified trials (optional)
     try:
         mods = td_base.metadata.get("modified_trials", set())
         mods = set(mods)
@@ -216,7 +216,7 @@ def apply_modification_to_all_valid(kernel, *, mode: str, point_a: float, point_
         td_base.metadata = getattr(td_base, "metadata", {}) or {}
         td_base.metadata["modified_trials"] = set(orig_indices)
 
-    # 7) Notificar a la UI (si el pipeline lo usa)
+    # 7) Notify the UI (if the pipeline uses it)
     if hasattr(kernel, "event"):
         try:
             kernel.event.emit("trials_generated", {"signal": file_name, "channel": channel_name})

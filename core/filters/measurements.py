@@ -3,7 +3,7 @@ from bisect import bisect_left, bisect_right
 from math import isfinite
 def two_point_metrics(p1, p2, kind="slope"):
     """
-    p1, p2: tuplas (x, y)
+    p1, p2: tuples (x, y)
     """
     x1, y1 = map(np.float64, p1)
     x2, y2 = map(np.float64, p2)
@@ -11,11 +11,11 @@ def two_point_metrics(p1, p2, kind="slope"):
     dx = x2 - x1
     dy = y2 - y1
 
-    # pendiente y distancia euclídea
+    # Slope and Euclidean distance
     slope = np.inf if dx == 0 else dy / dx
     dist = np.hypot(dx, dy)
 
-    # salida homogénea
+    # Homogeneous output
     return {
         "type": kind,
         "p1": (float(x1), float(y1)),
@@ -27,7 +27,7 @@ def two_point_metrics(p1, p2, kind="slope"):
     }
     
 def _slice_window(xs, ys, x1, x2):
-    """Devuelve (i0, i1) y vistas xs[i0:i1], ys[i0:i1] con x1<=x<x2."""
+    """Return (i0, i1) and views xs[i0:i1], ys[i0:i1] with x1<=x<x2."""
     if x2 < x1:
         x1, x2 = x2, x1
     i0 = bisect_left(xs, x1)
@@ -38,8 +38,8 @@ def _slice_window(xs, ys, x1, x2):
 
 def amplitude_in_window(xs, ys, x1, x2):
     """
-    Amplitud pico-a-pico en [x1, x2].
-    Retorna dict:
+    Peak-to-peak amplitude in [x1, x2].
+    Returns a dict:
       {
         "type": "amplitude",
         "x1": x1r, "x2": x2r, "n": n,
@@ -53,7 +53,7 @@ def amplitude_in_window(xs, ys, x1, x2):
     if n == 0:
         return None
 
-    # busca min y max dentro de la ventana
+    # Find min and max within the window
     y_min = None; y_max = None
     j_min = j_max = None
     for j, v in enumerate(wys):

@@ -14,24 +14,24 @@ def _detect_onsets_abs(
     debug: bool = False,
 ) -> np.ndarray:
     """
-    Detecta flancos ascendentes donde |signal| pasa de <=threshold a >threshold.
-    SIN antirrebote. Devuelve np.ndarray[int64] con índices de muestra.
+    Detect rising edges where |signal| crosses from <= threshold to > threshold.
+    NO debouncing. Returns np.ndarray[int64] with sample indices.
     """
     x = np.abs(signal.astype(np.float64, copy=False))
     thr = float(threshold)
 
     if x.size < 2:
-        if debug: print("[Onsets] Señal corta.")
+        if debug: print("[Onsets] Short signal.")
         return np.empty((0,), dtype=np.int64)
 
     above = x > thr
     rising = (np.flatnonzero((~above[:-1]) & (above[1:])) + 1).astype(np.int64)
     if debug:
-        print(f"[Onsets] K={rising.size} (sin antirrebote). Primeros: {rising[:10].tolist() if rising.size else []}")
+        print(f"[Onsets] K={rising.size} (no debounce). First: {rising[:10].tolist() if rising.size else []}")
     return rising
 
 
-# ============ Ensamble general ============
+# ============ General assemble ============
 def _assemble_trials_general(
     trials: np.ndarray,
     stim_per_trial: int,
@@ -43,14 +43,14 @@ def _assemble_trials_general(
 ) -> np.ndarray:
     Ns_in, T_raw = trials.shape
     if stim_per_trial <= 1 or T_raw == 0:
-        if debug: print("[ASSEMBLE] nada que hacer")
+        if debug: print("[ASSEMBLE] nothing to do")
         return trials
 
     head_len = int(np.floor(tis * fs))
     head_len = max(0, min(head_len, Ns_in))
     G = T_raw // stim_per_trial
     if G == 0:
-        if debug: print("[ASSEMBLE] no hay grupos completos")
+        if debug: print("[ASSEMBLE] no complete groups")
         return trials
 
     Ns_out = head_len + (stim_per_trial - 1) * Ns_in
@@ -71,7 +71,7 @@ def _assemble_trials_general(
 
 def _group_onsets_indices(K: int, stim_per_trial_for_cut: int) -> list:
     """
-    Devuelve 'group_starts': índices (en la lista de onsets) del primer onset de cada grupo.
+    Return 'group_starts': indices (in the onsets list) of the first onset of each group.
     """
     T = int(math.ceil(K / stim_per_trial_for_cut)) if K > 0 else 0
     return [i * stim_per_trial_for_cut for i in range(T)]
@@ -82,9 +82,9 @@ def _compute_windows(
     group_starts: list, stim_per_trial_for_cut: int
 ) -> Tuple[list, int]:
     """
-    Calcula ventanas [a,b) en índices de muestra para cada 'trial' a extraer,
-    devolviendo también Ns (alto de la matriz) = max(b-a) para pad.
-    Para 'fixed', b = a_onset + n1. Para 'until_next_onset', b = onset del siguiente grupo.
+    Compute windows [a,b) in sample indices for each trial to extract,
+    also returning Ns (matrix height) = max(b-a) for padding.
+    For 'fixed', b = a_onset + n1. For 'until_next_onset', b = onset of the next group.
     """
     n0 = int(round(t0 * fs))
     if end_mode == "fixed":
@@ -119,8 +119,8 @@ def _extract_trials_matrix(
     pad_value: float
 ) -> np.ndarray:
     """
-    Extrae cada ventana [a_clip, b_clip) de y_tgt y la coloca en una columna con padding.
-    'a_orig' (tercer valor en tupla window) sirve para alinear al inicio cuando recortamos por clip.
+    Extract each window [a_clip, b_clip) from y_tgt and place it in a padded column.
+    'a_orig' (third value in window tuple) is used to align to start when clipping.
     """
     T = len(windows)
     trials = np.full((Ns, T), pad_value, dtype=np.float64)
@@ -149,12 +149,12 @@ def cut_trials_single_channel(
 
     fs = float(ds.sampling_rate)
     C, N = ds.signals.shape
-    if not (0 <= channel < C): raise ValueError(f"channel fuera de rango (C={C})")
+    if not (0 <= channel < C): raise ValueError(f"channel out of range (C={C})")
     trig_ch = stim_channel if stim_channel is not None else channel
-    if not (0 <= trig_ch < C): raise ValueError(f"stim_channel fuera de rango (C={C})")
+    if not (0 <= trig_ch < C): raise ValueError(f"stim_channel out of range (C={C})")
 
-    y_trig = ds.signals[trig_ch].astype(np.float64, copy=False)  # detectar onsets
-    y_tgt  = ds.signals[channel].astype(np.float64, copy=False)  # cortar
+    y_trig = ds.signals[trig_ch].astype(np.float64, copy=False)  # detect onsets
+    y_tgt  = ds.signals[channel].astype(np.float64, copy=False)  # cut
 
     if debug:
         trig_name = ds.channel_names[trig_ch] if trig_ch < len(ds.channel_names) else f"ch{trig_ch}"
@@ -163,7 +163,7 @@ def cut_trials_single_channel(
         #     f"thr={threshold} t0={t0} t1={t1} mode={end_mode} S={stim_expected} isi={inter_stim_time}")
 
     if stim_expected is not None and int(stim_expected) <= 0:
-        print(f"[TRIALS] No hay estímulos esperados (S={stim_expected})")
+        print(f"[TRIALS] No expected stimuli (S={stim_expected})")
         trials = y_tgt.reshape(-1, 1)
         time_rel = np.arange(y_tgt.shape[0], dtype=np.float64) / fs
         dur = time_rel[-1] if time_rel.size else 0.0
@@ -175,13 +175,13 @@ def cut_trials_single_channel(
             trials=trials, onsets_s=[], isi_s=[],
             metadata={
                 "end_mode": end_mode,
-                "stim_per_trial": 0,          # <- importante para dejar rastro
+                "stim_per_trial": 0,          # <- important to keep a trace
                 "stim_detected": 0,
                 "trials_built": 1,
                 "stim_channel_index": int(trig_ch),
                 "stim_channel_name": (ds.channel_names[trig_ch] if trig_ch < len(ds.channel_names) else f"ch{trig_ch}"),
                 "pad_value": float(pad_value),
-                "note": "forced_no_stim",     # <- marca clara del flujo forzado
+                "note": "forced_no_stim",     # <- clear mark of the forced flow
             },
         )
         
@@ -204,11 +204,11 @@ def cut_trials_single_channel(
                 "stim_channel_index": int(trig_ch),
                 "stim_channel_name": (ds.channel_names[trig_ch] if trig_ch < len(ds.channel_names) else f"ch{trig_ch}"),
                 "pad_value": float(pad_value),
-                "note": "sin_estímulos",
+                "note": "no_stimuli",
             },
         )
 
-    # 2) Agrupación para el corte
+    # 2) Grouping for cutting
     force_per_onset_for_assemble = (
         end_mode == "until_next_onset"
         and (inter_stim_time and inter_stim_time > 0)
@@ -218,18 +218,18 @@ def cut_trials_single_channel(
         1 if not (stim_expected and stim_expected > 0) else int(stim_expected)
     )
 
-    # 3) Grupos y ventanas
+    # 3) Groups and windows
     group_starts = _group_onsets_indices(K, stim_per_trial_for_cut)
     windows, Ns = _compute_windows(onsets_all, N, fs, t0, t1, end_mode, group_starts, stim_per_trial_for_cut)
 
-    # 4) Extraer matriz
+    # 4) Extract matrix
     trials = _extract_trials_matrix(y_tgt, windows, Ns, pad_value)
 
-    # 5) Eje tiempo relativo
+    # 5) Relative time axis
     time_rel = (np.arange(Ns, dtype=np.int64) / fs).astype(np.float64) + t0
     t1_report = float(time_rel[-1]) if time_rel.size else 0.0
 
-    # 6) onsets/ISI por grupo
+    # 6) Onsets/ISI per group
     first_onsets = [onsets_all[s] for s in group_starts]
     onsets_s_sel = [float(i) / fs for i in first_onsets]
 
@@ -245,7 +245,7 @@ def cut_trials_single_channel(
             isi_detail_s.append([])
             isi_mean_s.append(0.0)
 
-    # 7) Ensamble opcional
+    # 7) Optional assemble
     if (stim_expected and stim_expected >= 2) and (inter_stim_time and inter_stim_time > 0):
         trials = _assemble_trials_general(
             trials, stim_per_trial=int(stim_expected), tis=float(inter_stim_time), fs=fs,
@@ -271,9 +271,9 @@ def cut_trials_single_channel(
         time_rel = (np.arange(Ns_new, dtype=np.int64) / fs).astype(np.float64) + t0
         t1_report = float(time_rel[-1]) if time_rel.size else 0.0
 
-    # 8) Sanidad: onsets_s vs T
+    # 8) Sanity check: onsets_s vs T
     if len(onsets_s_sel) not in (0, trials.shape[1]):
-        if debug: print(f"[WARN] onsets_s len={len(onsets_s_sel)} != T={trials.shape[1]}. Se vacía.")
+        if debug: print(f"[WARN] onsets_s len={len(onsets_s_sel)} != T={trials.shape[1]}. Emptied.")
         onsets_s_sel = []
 
     return TrialDataset(
@@ -296,7 +296,7 @@ def cut_trials_single_channel(
             "isi_expected_s": (float(inter_stim_time) if inter_stim_time is not None else None),
             "target_channel_index": int(channel),
             "target_channel_name": (ds.channel_names[channel] if channel < len(ds.channel_names) else f"ch{channel}"),
-            "note": "assemble aplicado" if ((stim_expected or 1) >= 2 and inter_stim_time and inter_stim_time > 0)
-                    else "sin assemble",
+            "note": "assemble applied" if ((stim_expected or 1) >= 2 and inter_stim_time and inter_stim_time > 0)
+                    else "no assemble",
         },
     )

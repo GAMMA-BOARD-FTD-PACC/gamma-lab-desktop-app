@@ -56,7 +56,7 @@ class Psd_plugin(IPlugin):
             self._wire_ui()
             self._init_defaults()  # MATLAB-like defaults
 
-            # Mostrar watermark hasta que se genere el gráfico
+            # Show watermark until the chart is generated
             try:
                 if self.mainwin:
                     self.mainwin.show_watermark()
@@ -445,7 +445,7 @@ class Psd_plugin(IPlugin):
 
         self.vtk_view.GetRenderWindow().Render()
 
-        # Ocultar watermark al tener contenido
+        # Hide watermark once content is present
         try:
             if self.mainwin:
                 self.mainwin.hide_watermark()

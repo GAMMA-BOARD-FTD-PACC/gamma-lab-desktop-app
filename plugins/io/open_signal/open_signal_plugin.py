@@ -49,7 +49,7 @@ class OpenSignalPlugin(IPlugin):
             self.vtk_interactor.Disable()
 
     def process(self, data: any):
-        """Restaura renderización y vuelve a activar interacción."""
+        """Restore rendering and re-enable interaction."""
         if self.vtk_interactor:
             self.vtk_interactor.Enable()
 
@@ -73,7 +73,7 @@ class OpenSignalPlugin(IPlugin):
         return self.ui
 
     def _ensure_vtk(self):
-        """Embeddear un QVTKRenderWindowInteractor y usar vtkContextView (charts)."""
+        """Embed a QVTKRenderWindowInteractor and use vtkContextView (charts)."""
         self._log("ensure_vtk(): enter")
 
         container = self.ui.vtkContainer
@@ -84,7 +84,7 @@ class OpenSignalPlugin(IPlugin):
 
         self.vtk_interactor = QVTKRenderWindowInteractor(container)
         container.layout().addWidget(self.vtk_interactor)
-        self._log("ensure_vtk(): interactor embebido")
+        self._log("ensure_vtk(): embedded interactor")
 
         _orig_resize = self.vtk_interactor.resizeEvent
         def _resize_wrapper(ev):
@@ -117,7 +117,7 @@ class OpenSignalPlugin(IPlugin):
             self.vtk_menu = None
             self.alerts.error("Error creating the context menu.\n" + str(e))
 
-        # callback de sincronización
+        # synchronization callback
         self._setup_sync_callback()
 
         try:
@@ -127,7 +127,7 @@ class OpenSignalPlugin(IPlugin):
         self._log("ensure_vtk(): scheduled init")
 
     def _setup_sync_callback(self):
-        """Configura el callback para sincronizar los ejes X de todos los charts."""
+        """Configure callback to synchronize X axes across all charts."""
         if not self.vtk_interactor:
             return
 
@@ -136,7 +136,7 @@ class OpenSignalPlugin(IPlugin):
                 return
             self._is_syncing = True
             try:
-                # 1) ¿Dónde está el cursor?
+                # 1) Where is the cursor?
                 try:
                     mx, my = self.vtk_interactor.GetEventPosition()
                 except Exception:
@@ -170,7 +170,7 @@ class OpenSignalPlugin(IPlugin):
  
         self._sync_callback = sync_axes
         
-        # Agregar observers para diferentes eventos de interacción
+        # Add observers for different interaction events
         self.vtk_interactor.AddObserver(vtk.vtkCommand.InteractionEvent, self._sync_callback)
         self.vtk_interactor.AddObserver(vtk.vtkCommand.MouseWheelForwardEvent, self._sync_callback)
         self.vtk_interactor.AddObserver(vtk.vtkCommand.MouseWheelBackwardEvent, self._sync_callback)
@@ -178,21 +178,21 @@ class OpenSignalPlugin(IPlugin):
         self.vtk_interactor.AddObserver(vtk.vtkCommand.LeftButtonReleaseEvent, self._sync_callback)
         self.vtk_interactor.AddObserver(vtk.vtkCommand.MouseMoveEvent, self._sync_callback)
 
-    # ---------------- archivo / datos ----------------
+    # ---------------- file / data ----------------
     def _on_open_clicked(self):
-        # Recuperar última carpeta abierta desde la configuración
+        # Get last opened folder from settings
         last_dir = self.settings.get("last_open_dir", str(Path.cwd()))
 
         fname, _ = QtWidgets.QFileDialog.getOpenFileName(
             self.ui,
-            "Seleccionar archivo de señal",
+            "Select signal file",
             last_dir,
-            "Señales (*.abf *.edf *.ebf *.mat);;Archivos ABF (*.abf);;Archivos EDF (*.edf);;Archivos EBF (*.ebf);;Archivos MAT (*.mat)"
+            "Signals (*.abf *.edf *.ebf *.mat);;ABF Files (*.abf);;EDF Files (*.edf);;EBF Files (*.ebf);;MAT Files (*.mat)"
         )
         if not fname:
             return
         
-        # Guardar la carpeta seleccionada como última usada
+        # Save the selected folder as last used
         self.settings.set("last_open_dir", str(Path(fname).parent))
 
         fileio: FileIOService | None = self.kernel.get_service("FileIO")
@@ -210,16 +210,16 @@ class OpenSignalPlugin(IPlugin):
         if store.has(name_aux):
             reply = QMessageBox.warning(
                 self.ui,
-                "Advertencia",
-                f"Ya existe una señal con el nombre '{name_aux}'.\n\n"
-                "Si continúa, se sobrescribirá la señal existente y se perderá el trabajo anterior.\n\n"
-                "¿Desea continuar?",
+                "Warning",
+                f"A signal named '{name_aux}' already exists.\n\n"
+                "If you continue, the existing signal will be overwritten and previous work will be lost.\n\n"
+                "Do you want to continue?",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No
             )
             if reply == QMessageBox.No:
                 if self.mainwin:
-                    self.mainwin.statusBar().showMessage("Carga cancelada por el usuario.", 4000)
+                    self.mainwin.statusBar().showMessage("Load canceled by user.", 4000)
                 return
             
 
@@ -233,17 +233,17 @@ class OpenSignalPlugin(IPlugin):
                 ds = fileio.load_mat(fname)
             else:
                 if self.mainwin:
-                    self.mainwin.statusBar().showMessage(f"Formato no soportado: {ext}", 4000)
+                    self.mainwin.statusBar().showMessage(f"Unsupported format: {ext}", 4000)
                 return
         except Exception as e:
-            QMessageBox.warning(self.ui, "Error", f"Error abriendo el archivo {fname}\n{e}.")
+            QMessageBox.warning(self.ui, "Error", f"Error opening file {fname}\n{e}.")
             self._log("_on_open_clicked error:", e)
             traceback.print_exc()
             return
 
 
         key = store.add_signal(ds, ds.name)
-        self._log("Guardado en DataStore:", key)
+        self._log("Saved in DataStore:", key)
         store.set_active_signal(key)
         self.kernel.emit_event("signal_added", {"key": key})
 
@@ -252,7 +252,7 @@ class OpenSignalPlugin(IPlugin):
         self.vtk_menu.set_signal_name(ds.name)
 
         if self.mainwin:
-            self.mainwin.statusBar().showMessage(f"Cargado: {fname}", 4000)
+            self.mainwin.statusBar().showMessage(f"Loaded: {fname}", 4000)
 
     def _set_dataset(self, ds: SignalDataset):
         self.current_ds = ds
@@ -295,13 +295,13 @@ class OpenSignalPlugin(IPlugin):
             item.setCheckState(QtCore.Qt.Unchecked)
             self._block_item_changed = False
             if self.mainwin:
-                self.mainwin.statusBar().showMessage(f"Máximo {self.MAX_CHANNELS_VISIBLE} canales visibles.", 2500)
+                self.mainwin.statusBar().showMessage(f"Maximum {self.MAX_CHANNELS_VISIBLE} visible channels.", 2500)
             return
         self._render_selected()
 
     # ---------------- layout helpers ----------------
     def _relayout_charts(self):
-        """Reposiciona charts con separación suficiente para que se vean los ejes."""
+        """Reposition charts with enough spacing so axes are visible."""
         if not self.vtk_view or not self._charts:
             return
 
@@ -312,7 +312,7 @@ class OpenSignalPlugin(IPlugin):
 
         left_margin, right_margin = 8, 8
         top_margin, bottom_margin = 10, 12
-        gap = 40            # espacio entre charts
+        gap = 40            # space between charts
         min_row_h = 150
 
         rows = len(self._charts)
@@ -335,26 +335,26 @@ class OpenSignalPlugin(IPlugin):
             ax_b.SetLabelsVisible(True)
             ax_b.SetTitle("Time (s)")
 
-        # Sincronizar los rangos después del re-layout
+        # Synchronize ranges after re-layout
         self._sync_all_x_axes()
 
         rw.Render()
 
     def _sync_all_x_axes(self):
-        """Sincroniza todos los ejes X al mismo rango."""
+        """Synchronize all X axes to the same range."""
         if not self._charts or self._is_syncing:
             return
 
         self._is_syncing = True
         try:
-            # Rango del chart de referencia
+            # Reference chart range
             ref_axis = self._charts[0].GetAxis(vtk.vtkAxis.BOTTOM)
 
             ref_range = [0.0, 0.0]
             ref_axis.GetRange(ref_range)
             x0, x1 = ref_range
 
-            # Aplicar a todos los charts
+            # Apply to all charts
             for chart in self._charts:
                 axis = chart.GetAxis(vtk.vtkAxis.BOTTOM)
                 axis.SetRange(x0, x1)
@@ -396,7 +396,7 @@ class OpenSignalPlugin(IPlugin):
             ax_b.SetGridVisible(True)
             ax_l.SetGridVisible(True)
 
-            # Mostrar labels y título de X en todos
+            # Show labels and X title on all charts
             ax_b.SetLabelsVisible(True)
             ax_b.SetTitle("Time (s)")
 
@@ -413,7 +413,7 @@ class OpenSignalPlugin(IPlugin):
             self.vtk_menu.set_chart(self._charts)
             
     def _chart_at_pixel(self, x: int, y: int):
-        """Devuelve el chart cuyo rectángulo contiene el punto (x, y) en coords de VTK."""
+        """Return the chart whose rectangle contains point (x, y) in VTK coords."""
         for ch in self._charts:
             r = ch.GetSize()  # vtkRectf: x, y, width, height
             if (r.GetX() <= x <= r.GetX() + r.GetWidth()

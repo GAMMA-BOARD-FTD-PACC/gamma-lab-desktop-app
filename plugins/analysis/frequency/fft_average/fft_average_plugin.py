@@ -36,13 +36,13 @@ class Fft_average_plugin(IPlugin):
     
     def get_widget(self, parent=None):
         if self.widget is None:
-            self._log("get_widget(): creando UI")
+            self._log("get_widget(): creating UI")
             self.ui = Ui_Fft_Average()
             self.widget = QtWidgets.QWidget(parent)
             self.ui.setupUi(self.widget)
             self.alerts.parent = self.widget
 
-            self._log("UI creada. plotArea:", bool(self.ui.plotArea),
+            self._log("UI created. plotArea:", bool(self.ui.plotArea),
                       "panel:", bool(self.ui.layoutWidget),
                       "splitter:", bool(self.ui.splitter))
             self._wire_ui()
@@ -72,14 +72,14 @@ class Fft_average_plugin(IPlugin):
 
     def _on_calculate_clicked(self):
             self._log("_on_calculate_clicked()")
-            # 1) Cargar trials de la señal activa
+            # 1) Load trials from the active signal
             fs, X, ch_name = self._load_trials_from_store()
             if X is None or fs is None:
-                self._notify("FFT Average: no hay trials en la señal activa.")
+                self._notify("FFT Average: no trials in the active signal.")
                 return
 
-            # 2) Parámetros UI
-            target_fs = float(self.ui.sampleDensitySpinBox.value())  # 0 = sin remuestreo
+            # 2) UI parameters
+            target_fs = float(self.ui.sampleDensitySpinBox.value())  # 0 = no resampling
             lo = float(self.ui.lowFrequencySpinBox.value())
             hi = float(self.ui.highFrequencySpinBox.value())
             if lo > hi:
@@ -91,7 +91,7 @@ class Fft_average_plugin(IPlugin):
 
             # 4) Plot
             self._plot_fft_average(freq, mag_avg, ch_name, lo, hi, fs_eff)
-            self._notify(f"FFT listo: fs_eff={fs_eff:.2f} Hz, {freq.size} bins, trials={mag_avg.shape[1]}")
+            self._notify(f"FFT ready: fs_eff={fs_eff:.2f} Hz, {freq.size} bins, trials={mag_avg.shape[1]}")
 
     def _sync_range(self):
         lo = float(self.ui.lowFrequencySpinBox.value())
@@ -111,7 +111,7 @@ class Fft_average_plugin(IPlugin):
         self.ui.plotArea.setLayout(QtWidgets.QVBoxLayout())
         self.ui.plotArea.layout().setContentsMargins(0, 0, 0, 0)
         self.ui.plotArea.layout().addWidget(self.vtk_interactor)
-        self._log("ensure_vtk(): interactor embebido")
+        self._log("ensure_vtk(): embedded interactor")
 
         self.vtk_view = vtk.vtkContextView()
         self.vtk_view.SetRenderWindow(self.vtk_interactor.GetRenderWindow())
@@ -127,10 +127,10 @@ class Fft_average_plugin(IPlugin):
     # ====== DATA ======
     def _load_trials_from_store(self):
         """
-        Busca la señal activa en el DataStore y retorna:
-          fs: float (sampling_rate del TrialDataset)
-          X:  np.ndarray (Ns, T)  matriz de trials (columnas = trials)
-          ch_name: nombre de canal (opcional para título)
+        Find the active signal in the DataStore and return:
+          fs: float (TrialDataset sampling_rate)
+          X:  np.ndarray (Ns, T)  trials matrix (columns = trials)
+          ch_name: channel name (optional for title)
         """
 
          
@@ -146,7 +146,7 @@ class Fft_average_plugin(IPlugin):
         X  = np.asarray(getattr(td, "trials", None), dtype=np.float64)  # (Ns, T)
         ch = getattr(td, "channel_name", "")
         if X is None or X.ndim != 2 or fs <= 0:
-            self._log("TrialDataset inválido (fs<=0 o trials no 2D).")
+            self._log("Invalid TrialDataset (fs<=0 or trials not 2D).")
             return None, None, None
 
         self._log(f"Trials: Ns={X.shape[0]}, T={X.shape[1]}, fs={fs}")
@@ -155,18 +155,18 @@ class Fft_average_plugin(IPlugin):
     # ====== FFT - AVERAGE ======
     def _compute_fft_average(self, X: np.ndarray, fs: float, target_fs: float, *, per_trial: bool = False):
         """
-        FFT estilo MATLAB con promedio opcional entre trials.
-        - X: (Ns, T)  (columnas = trials)
-        - fs: sampling rate original
-        - target_fs: si > 0, remuestrea por diezmado (srt = round(fs/target_fs))
+        MATLAB-style FFT with optional averaging across trials.
+        - X: (Ns, T)  (columns = trials)
+        - fs: original sampling rate
+        - target_fs: if > 0, resample via decimation (srt = round(fs/target_fs))
 
-        Devuelve:
+        Returns:
         freq: (Nf,)
-        mag:  (Nf, T) si per_trial=True, o (Nf, 1) si promedio
+        mag:  (Nf, T) if per_trial=True, or (Nf, 1) if averaged
         fs_eff: float
         """
         Ns, T = X.shape
-        # Diezmado como en MATLAB
+        # Decimation as in MATLAB
         if target_fs and target_fs > 0:
             srt = max(1, int(round(fs / float(target_fs))))
         else:
@@ -182,11 +182,11 @@ class Fft_average_plugin(IPlugin):
         freq = np.linspace(0.0, fs_eff/2.0, mFourier.shape[0])
 
         if per_trial:
-            # Equivalente a GF==1 en MATLAB: devolver todas las curvas
+            # Equivalent to GF==1 in MATLAB: return all curves
             mag_out = mag  # (Nf, T)
         else:
-            # Promedio entre trials (como mean(m_FFT',1) en MATLAB)
-            # Usamos nanmean para ignorar NaNs si existieran
+            # Average across trials (like mean(m_FFT',1) in MATLAB)
+            # Use nanmean to ignore NaNs if any
             mag_mean = np.nanmean(mag, axis=1)        # (Nf,)
             mag_out  = mag_mean[:, None]              # (Nf, 1) para reutilizar el mismo plotter
 
@@ -194,11 +194,11 @@ class Fft_average_plugin(IPlugin):
                 f"T={T}, per_trial={per_trial}")
         return freq, mag_out, fs_eff
 
-    # ====== Plot en VTK ======
+    # ====== Plot in VTK ======
     def _plot_fft_average(self, freq: np.ndarray, mag: np.ndarray, ch_name: str, lo: float, hi: float, fs_eff: float):
         """
-        Construye vtkTable usando trials_matrix_to_vtk_table(freq, mag)
-        y dibuja líneas una por trial. Aplica filtro [lo, hi].
+        Build a vtkTable using trials_matrix_to_vtk_table(freq, mag)
+        and draw one line per trial. Apply [lo, hi] filter.
         """
         if self.vtk_view is None:
             self._ensure_vtk()
@@ -206,21 +206,21 @@ class Fft_average_plugin(IPlugin):
         hi = min(hi, fs_eff/2.0)
         lo = max(lo, 0.0)
         if lo >= hi:
-            self._notify("Rango de frecuencias vacío tras ajustar al Nyquist."); return
+            self._notify("Empty frequency range after adjusting to Nyquist."); return
         sel = (freq >= lo) & (freq <= hi)
-        self._log(f"Plot bins: {sel.sum()} de {freq.size}")
+        self._log(f"Plot bins: {sel.sum()} of {freq.size}")
         freq_v = freq[sel]
         mag_v  = mag[sel, :]  # (Nf_sel, T)
 
-        # Limitar cantidad de curvas mostradas
+        # Limit number of displayed curves
         MAX_PLOTS = 200
         if mag_v.shape[1] > MAX_PLOTS:
-            self._log(f"Hay {mag_v.shape[1]} trials → mostrando {MAX_PLOTS}")
+            self._log(f"There are {mag_v.shape[1]} trials → showing {MAX_PLOTS}")
             mag_v = mag_v[:, :MAX_PLOTS]
 
         table = trials_matrix_to_vtk_table(freq_v, mag_v)
 
-        # Crear chart limpio
+        # Create clean chart
         scene = self.vtk_view.GetScene()
         scene.ClearItems()
         self.chart = vtk.vtkChartXY()
@@ -237,7 +237,7 @@ class Fft_average_plugin(IPlugin):
         except Exception:
             pass
         
-        # Un plot por columna
+        # One plot per column
         num_cols = table.GetNumberOfColumns()
         print(f"num_cols={num_cols}")
         for c in range(1, num_cols):
@@ -245,8 +245,8 @@ class Fft_average_plugin(IPlugin):
             plot.SetInputData(table, 0, c)
             plot.SetWidth(1.0)
 
-           # --- Menú contextual---
-    
+           # --- Context menu ---
+
         try:
             self.vtk_menu = VTKContextMenu(self.chart, self.vtk_interactor, self.active_signal.name, ch_name,self.meta.id,  parent=self.widget)
 
