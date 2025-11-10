@@ -6,6 +6,11 @@ from PyQt5.QtGui import QFontDatabase, QFont, QIcon
 import resources_rc
 
 from core.kernel import Kernel
+try:
+    import vtk  # Reduce noisy VTK warnings on teardown (Windows)
+    vtk.vtkObject.GlobalWarningDisplayOff()
+except Exception:
+    pass
 from app.view.main_window import MainWindow
 from core.plugins.manager import PluginManager
 from core.services.data_store import DataStore

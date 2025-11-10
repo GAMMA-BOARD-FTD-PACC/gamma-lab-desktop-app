@@ -45,8 +45,10 @@ class OpenSignalPlugin(IPlugin):
 
 
     def stop(self):
-        if self.vtk_interactor:
-            self.vtk_interactor.Disable()
+        try:
+            self._teardown_vtk()
+        except Exception as e:
+            self._log("teardown error:", e)
 
     def process(self, data: any):
         """Restore rendering and re-enable interaction."""
@@ -68,6 +70,10 @@ class OpenSignalPlugin(IPlugin):
             store: DataStore | None = self.kernel.get_service("DataStore")
             if store and store.get_active_signal() is not None:
                 self._set_dataset(store.get_active_signal())
+            try:
+                self.ui.destroyed.connect(self._teardown_vtk)
+            except Exception:
+                pass
         else:
             self.ui.setParent(parent)
         return self.ui
@@ -125,6 +131,51 @@ class OpenSignalPlugin(IPlugin):
         except Exception:
             pass
         self._log("ensure_vtk(): scheduled init")
+
+    def _teardown_vtk(self):
+        """Safely dismantle VTK view to avoid OpenGL handle errors at exit."""
+        # Clear charts from scene
+        try:
+            if self.vtk_view is not None:
+                sc = self.vtk_view.GetScene()
+                if sc is not None:
+                    sc.ClearItems()
+        except Exception:
+            pass
+
+        rw = None
+        try:
+            if self.vtk_interactor is not None:
+                try:
+                    rw = self.vtk_interactor.GetRenderWindow()
+                except Exception:
+                    rw = None
+                try:
+                    self.vtk_interactor.Disable()
+                except Exception:
+                    pass
+                try:
+                    if rw is not None:
+                        rw.AbortRenderOn()
+                        rw.Finalize()
+                except Exception:
+                    pass
+                try:
+                    if hasattr(self.vtk_interactor, 'SetRenderWindow'):
+                        self.vtk_interactor.SetRenderWindow(None)
+                except Exception:
+                    pass
+                try:
+                    self.vtk_interactor.deleteLater()
+                except Exception:
+                    pass
+        finally:
+            self.vtk_interactor = None
+
+        self.vtk_view = None
+        self._charts = []
+        self._vtk_table = None
+        self.vtk_menu = None
 
     def _setup_sync_callback(self):
         """Configure callback to synchronize X axes across all charts."""

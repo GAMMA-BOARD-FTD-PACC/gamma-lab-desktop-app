@@ -109,12 +109,28 @@ class ArtifactRemovePlugin(IPlugin):
 
     def stop(self):
         """Called when the plugin closes or is disabled."""
-        print(f"{LOGP} stop() - Disabling VTK interactor.")
-        if self.vtk_interactor and self.vtk_interactor.isEnabled():
-            try:
-                self.vtk_interactor.Disable()
-            except Exception as e: 
-                print(f"{LOGP} Error disabling interactor: {e}")
+        print(f"{LOGP} stop() - Tearing down VTK and workers.")
+        # Stop timers (avoid late renders)
+        try:
+            self._refresh_timer.stop()
+        except Exception:
+            pass
+
+        # Stop background worker thread if running
+        try:
+            if self._apply_thread:
+                self._apply_thread.quit()
+                self._apply_thread.wait(2000)
+                self._apply_thread = None
+                self._apply_worker = None
+        except Exception as e:
+            print(f"{LOGP} Error stopping apply thread: {e}")
+
+        # Full teardown of VTK to prevent wglMakeCurrent on destroyed HWND
+        try:
+            self._teardown_vtk()
+        except Exception as e:
+            print(f"{LOGP} teardown error: {e}")
 
     def get_widget(self, parent=None):
         """Return the plugin's main widget to the main window."""
@@ -153,6 +169,12 @@ class ArtifactRemovePlugin(IPlugin):
                 try:
                     if self.mainwin:
                         self.mainwin.show_watermark()
+                except Exception:
+                    pass
+
+                # Ensure we teardown VTK if Qt destroys the widget first
+                try:
+                    self.widget.destroyed.connect(self._teardown_vtk)
                 except Exception:
                     pass
 
@@ -566,6 +588,54 @@ class ArtifactRemovePlugin(IPlugin):
         self.chart = None
         self.vtk_menu = None
         print(f"{LOGP} VTK references cleaned.")
+
+    def _teardown_vtk(self):
+        """Safely dismantle VTK objects to avoid invalid OpenGL handles on close."""
+        # Clear scene to stop any pending renders
+        try:
+            if self.vtk_view is not None:
+                scene = self.vtk_view.GetScene()
+                if scene is not None:
+                    scene.ClearItems()
+        except Exception:
+            pass
+
+        rw = None
+        # Disable and finalize render window while HWND is still valid, then detach widget
+        try:
+            if self.vtk_interactor is not None:
+                try:
+                    rw = self.vtk_interactor.GetRenderWindow()
+                except Exception:
+                    rw = None
+                try:
+                    if self.vtk_interactor.isEnabled():
+                        self.vtk_interactor.Disable()
+                except Exception:
+                    pass
+                try:
+                    if rw is not None:
+                        rw.AbortRenderOn()
+                        rw.Finalize()
+                except Exception:
+                    pass
+                try:
+                    if hasattr(self.vtk_interactor, 'SetRenderWindow'):
+                        self.vtk_interactor.SetRenderWindow(None)
+                except Exception:
+                    pass
+                try:
+                    self.vtk_interactor.deleteLater()
+                except Exception:
+                    pass
+        finally:
+            self.vtk_interactor = None
+
+        # Drop remaining references
+        self.vtk_view = None
+        self.chart = None
+        self.vtk_menu = None
+        print(f"{LOGP} VTK torn down.")
 
 
     def _plot_curve(self, t: np.ndarray, y: np.ndarray, title: str = "", ch_name: str = ""):

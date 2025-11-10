@@ -52,11 +52,10 @@ class Wavelet_average_plugin(IPlugin):
 
     def stop(self):
         """Stop plugin and disable VTK interactor if present."""
-        if self.vtk_widget and self.vtk_widget.GetRenderWindow():
-            interactor = self.vtk_widget.GetRenderWindow().GetInteractor()
-            if interactor:
-                interactor.Disable()
-                self._log("VTK interactor disabled.")
+        try:
+            self._teardown_vtk()
+        except Exception as e:
+            self._log("teardown error:", e)
     # end def
 
 
@@ -80,6 +79,10 @@ class Wavelet_average_plugin(IPlugin):
         self._create_vtk_container()
 
         self.ui.createWaveletButton.clicked.connect(self.on_create_wavelet)
+        try:
+            self.widget.destroyed.connect(self._teardown_vtk)
+        except Exception:
+            pass
         return self.widget
     # end def
 
@@ -131,6 +134,51 @@ class Wavelet_average_plugin(IPlugin):
         except Exception as e:
             self._log("Error creating VTK container:", e)
     # end def
+
+    def _teardown_vtk(self):
+        """Safely dismantle VTK view to avoid OpenGL handle errors at exit."""
+        # Clear context items
+        try:
+            if self._context_view is not None:
+                sc = self._context_view.GetScene()
+                if sc is not None:
+                    sc.ClearItems()
+        except Exception:
+            pass
+
+        rw = None
+        try:
+            if self.vtk_widget is not None:
+                try:
+                    rw = self.vtk_widget.GetRenderWindow()
+                except Exception:
+                    rw = None
+                try:
+                    if rw and rw.GetInteractor():
+                        rw.GetInteractor().Disable()
+                except Exception:
+                    pass
+                try:
+                    if rw is not None:
+                        rw.AbortRenderOn()
+                        rw.Finalize()
+                except Exception:
+                    pass
+                try:
+                    if hasattr(self.vtk_widget, 'SetRenderWindow'):
+                        self.vtk_widget.SetRenderWindow(None)
+                except Exception:
+                    pass
+                try:
+                    self.vtk_widget.deleteLater()
+                except Exception:
+                    pass
+        finally:
+            self.vtk_widget = None
+
+        self._context_view = None
+        self.renwin = None
+        self._vtk_renderer = None
 
     def ensure_vtk(self):
         """Ensure VTK context view exists and is configured."""

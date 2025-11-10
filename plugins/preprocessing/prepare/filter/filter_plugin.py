@@ -52,11 +52,10 @@ class Filter_plugin(IPlugin):
 
 
     def stop(self):
-        if self.vtk_top and self.vtk_top.GetRenderWindow().GetInteractor():
-            self.vtk_top.GetRenderWindow().GetInteractor().Disable()
-
-        if self.vtk_bot and self.vtk_bot.GetRenderWindow().GetInteractor():
-            self.vtk_bot.GetRenderWindow().GetInteractor().Disable()
+        try:
+            self._teardown_vtk()
+        except Exception as e:
+            self._log("teardown error:", e)
     # end def
 
     
@@ -77,6 +76,11 @@ class Filter_plugin(IPlugin):
 
         self.init_controls()
         self.ensure_vtk()
+
+        try:
+            self.widget.destroyed.connect(self._teardown_vtk)
+        except Exception:
+            pass
 
 
         return self.widget
@@ -132,6 +136,88 @@ class Filter_plugin(IPlugin):
 
         except Exception as e:
             self._log("Error ensure_vtk:", e)
+
+    def _teardown_vtk(self):
+        """Safely dismantle both VTK views to avoid OpenGL handle errors at exit."""
+        # Top view
+        try:
+            if self.view_top is not None:
+                sc = self.view_top.GetScene()
+                if sc is not None:
+                    sc.ClearItems()
+        except Exception:
+            pass
+        try:
+            if self.vtk_top is not None:
+                rw_top = None
+                try:
+                    rw_top = self.vtk_top.GetRenderWindow()
+                except Exception:
+                    rw_top = None
+                try:
+                    ir = rw_top.GetInteractor() if rw_top else None
+                    if ir:
+                        ir.Disable()
+                except Exception:
+                    pass
+                try:
+                    if rw_top is not None:
+                        rw_top.AbortRenderOn()
+                        rw_top.Finalize()
+                except Exception:
+                    pass
+                try:
+                    if hasattr(self.vtk_top, 'SetRenderWindow'):
+                        self.vtk_top.SetRenderWindow(None)
+                except Exception:
+                    pass
+                try:
+                    self.vtk_top.deleteLater()
+                except Exception:
+                    pass
+        finally:
+            self.vtk_top = None
+            self.view_top = None
+
+        # Bottom view
+        try:
+            if self.view_bot is not None:
+                sc = self.view_bot.GetScene()
+                if sc is not None:
+                    sc.ClearItems()
+        except Exception:
+            pass
+        try:
+            if self.vtk_bot is not None:
+                rw_bot = None
+                try:
+                    rw_bot = self.vtk_bot.GetRenderWindow()
+                except Exception:
+                    rw_bot = None
+                try:
+                    ir = rw_bot.GetInteractor() if rw_bot else None
+                    if ir:
+                        ir.Disable()
+                except Exception:
+                    pass
+                try:
+                    if rw_bot is not None:
+                        rw_bot.AbortRenderOn()
+                        rw_bot.Finalize()
+                except Exception:
+                    pass
+                try:
+                    if hasattr(self.vtk_bot, 'SetRenderWindow'):
+                        self.vtk_bot.SetRenderWindow(None)
+                except Exception:
+                    pass
+                try:
+                    self.vtk_bot.deleteLater()
+                except Exception:
+                    pass
+        finally:
+            self.vtk_bot = None
+            self.view_bot = None
     # end def
 
     

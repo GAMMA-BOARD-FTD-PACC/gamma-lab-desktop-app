@@ -27,9 +27,10 @@ class Average_plugin(IPlugin):
 
     def stop(self):
         print("Stopping Average")
-
-        if self.vtk_widget:
-            self.vtk_widget.Disable()   
+        try:
+            self._teardown_vtk()
+        except Exception as e:
+            self._log("teardown error:", e)
 
 
     def get_widget(self, parent=None):
@@ -44,6 +45,10 @@ class Average_plugin(IPlugin):
 
             # Connect "Calculate Average" button
             self.ui.calculateAverageButton.clicked.connect(self._on_calculate_average)
+            try:
+                self.widget.destroyed.connect(self._teardown_vtk)
+            except Exception:
+                pass
 
         else:
             self.widget.setParent(parent)
@@ -204,5 +209,45 @@ class Average_plugin(IPlugin):
                 self.alerts.info(f"Error creating contextual menu\n {str(e)}", "Contextual menu")
 
 
+    def _teardown_vtk(self):
+        """Safely dismantle VTK view to avoid OpenGL handle errors at exit."""
+        try:
+            if getattr(self, 'view', None) is not None:
+                sc = self.view.GetScene()
+                if sc is not None:
+                    sc.ClearItems()
+        except Exception:
+            pass
 
-   
+        rw = None
+        try:
+            if self.vtk_widget is not None:
+                try:
+                    rw = self.vtk_widget.GetRenderWindow()
+                except Exception:
+                    rw = None
+                try:
+                    if rw and rw.GetInteractor():
+                        rw.GetInteractor().Disable()
+                except Exception:
+                    pass
+                try:
+                    if rw is not None:
+                        rw.AbortRenderOn()
+                        rw.Finalize()
+                except Exception:
+                    pass
+                try:
+                    if hasattr(self.vtk_widget, 'SetRenderWindow'):
+                        self.vtk_widget.SetRenderWindow(None)
+                except Exception:
+                    pass
+                try:
+                    self.vtk_widget.deleteLater()
+                except Exception:
+                    pass
+        finally:
+            self.vtk_widget = None
+
+        self.view = None
+        self.vtk_menu = None

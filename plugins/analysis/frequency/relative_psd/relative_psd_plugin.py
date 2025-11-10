@@ -37,8 +37,10 @@ class Relative_psd_plugin(IPlugin):
 
     def stop(self):
         self._log("stop()")
-        if self._plot_enabled and self.vtk_interactor:
-            self.vtk_interactor.Disable()
+        try:
+            self._teardown_vtk()
+        except Exception as e:
+            self._log("teardown error:", e)
 
     def process(self, data):
         if self._plot_enabled and self.vtk_interactor:
@@ -71,6 +73,10 @@ class Relative_psd_plugin(IPlugin):
                 if self.ui.plotArea.layout() is None:
                     self.ui.plotArea.setLayout(QtWidgets.QVBoxLayout())
                     self.ui.plotArea.layout().setContentsMargins(0, 0, 0, 0)
+            try:
+                self.widget.destroyed.connect(self._teardown_vtk)
+            except Exception:
+                pass
         else:
             self.widget.setParent(parent)
         return self.widget
@@ -463,3 +469,48 @@ class Relative_psd_plugin(IPlugin):
         freq = freq.astype(np.float64)
         self._log(f"PSD: srt={srt}, fs_eff={fs_eff:.3f} Hz, Nf={freq.size}, T_calc={pxx.shape[1]}")
         return freq, pxx, fs_eff
+
+    def _teardown_vtk(self):
+        """Safely dismantle VTK view to avoid OpenGL handle errors at exit."""
+        if not self._plot_enabled:
+            return
+        # Clear scene
+        try:
+            if self.vtk_view is not None:
+                sc = self.vtk_view.GetScene()
+                if sc is not None:
+                    sc.ClearItems()
+        except Exception:
+            pass
+
+        rw = None
+        try:
+            if self.vtk_interactor is not None:
+                try:
+                    rw = self.vtk_interactor.GetRenderWindow()
+                except Exception:
+                    rw = None
+                try:
+                    self.vtk_interactor.Disable()
+                except Exception:
+                    pass
+                try:
+                    if rw is not None:
+                        rw.AbortRenderOn()
+                        rw.Finalize()
+                except Exception:
+                    pass
+                try:
+                    if hasattr(self.vtk_interactor, 'SetRenderWindow'):
+                        self.vtk_interactor.SetRenderWindow(None)
+                except Exception:
+                    pass
+                try:
+                    self.vtk_interactor.deleteLater()
+                except Exception:
+                    pass
+        finally:
+            self.vtk_interactor = None
+
+        self.vtk_view = None
+        self.chart = None
