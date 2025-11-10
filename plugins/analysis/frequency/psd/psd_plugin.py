@@ -30,11 +30,9 @@ class Psd_plugin(IPlugin):
 
 
     def stop(self):
-        self._log("stop() - teardown VTK")
-        try:
-            self._teardown_vtk()
-        except Exception as e:
-            self._log("teardown error:", e)
+        self._log("stop() - cleanup VTK")
+        if self.vtk_interactor:
+            self.vtk_interactor.Disable()
         
     def process(self, data):
         if self.vtk_interactor:
@@ -67,10 +65,6 @@ class Psd_plugin(IPlugin):
 
             # logs post-show (dimensiones reales)
             QtCore.QTimer.singleShot(0, self._log_sizes)
-            try:
-                self.widget.destroyed.connect(self._teardown_vtk)
-            except Exception:
-                pass
         else:
             self.widget.setParent(parent)
         return self.widget
@@ -182,50 +176,6 @@ class Psd_plugin(IPlugin):
         except Exception:
             pass
         self._log("ensure_vtk(): scheduled init")
-
-    def _teardown_vtk(self):
-        """Safely dismantle VTK view to avoid OpenGL handle errors at exit."""
-        # Clear scene
-        try:
-            if self.vtk_view is not None:
-                sc = self.vtk_view.GetScene()
-                if sc is not None:
-                    sc.ClearItems()
-        except Exception:
-            pass
-
-        rw = None
-        try:
-            if self.vtk_interactor is not None:
-                try:
-                    rw = self.vtk_interactor.GetRenderWindow()
-                except Exception:
-                    rw = None
-                try:
-                    self.vtk_interactor.Disable()
-                except Exception:
-                    pass
-                try:
-                    if rw is not None:
-                        rw.AbortRenderOn()
-                        rw.Finalize()
-                except Exception:
-                    pass
-                try:
-                    if hasattr(self.vtk_interactor, 'SetRenderWindow'):
-                        self.vtk_interactor.SetRenderWindow(None)
-                except Exception:
-                    pass
-                try:
-                    self.vtk_interactor.deleteLater()
-                except Exception:
-                    pass
-        finally:
-            self.vtk_interactor = None
-
-        self.vtk_view = None
-        self.chart = None
-        self.vtk_menu = None
 
 
     # ------- actions -------

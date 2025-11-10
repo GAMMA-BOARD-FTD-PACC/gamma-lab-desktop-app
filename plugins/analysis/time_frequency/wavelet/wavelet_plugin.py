@@ -50,10 +50,10 @@ class Wavelet_plugin(IPlugin):
     # end def
 
     def stop(self):
-        try:
-            self._teardown_vtk()
-        except Exception:
-            pass
+        if self.vtk_widget and self.vtk_widget.GetRenderWindow():
+            interactor = self.vtk_widget.GetRenderWindow().GetInteractor()
+            if interactor:
+                interactor.Disable()
     # end def
 
     # =====================================================
@@ -72,10 +72,6 @@ class Wavelet_plugin(IPlugin):
         self.init_controls()
         self.ensure_vtk()
 
-        try:
-            self.widget.destroyed.connect(self._teardown_vtk)
-        except Exception:
-            pass
 
         return self.widget
     # end def
@@ -141,54 +137,9 @@ class Wavelet_plugin(IPlugin):
             if interactor and not interactor.GetInitialized():
                 interactor.Initialize()
             # end if
+
         except Exception as e:
             self._log("Error ensure_vtk:", e)
-
-    def _teardown_vtk(self):
-        """Safely dismantle VTK view to avoid OpenGL handle errors at exit."""
-        # Clear context items
-        try:
-            if self._context_view is not None:
-                sc = self._context_view.GetScene()
-                if sc is not None:
-                    sc.ClearItems()
-        except Exception:
-            pass
-
-        rw = None
-        try:
-            if self.vtk_widget is not None:
-                try:
-                    rw = self.vtk_widget.GetRenderWindow()
-                except Exception:
-                    rw = None
-                try:
-                    if rw and rw.GetInteractor():
-                        rw.GetInteractor().Disable()
-                except Exception:
-                    pass
-                try:
-                    if hasattr(self.vtk_widget, 'SetRenderWindow'):
-                        self.vtk_widget.SetRenderWindow(None)
-                except Exception:
-                    pass
-                try:
-                    self.vtk_widget.deleteLater()
-                except Exception:
-                    pass
-        finally:
-            self.vtk_widget = None
-
-        try:
-            if rw is not None:
-                rw.AbortRenderOn()
-                rw.Finalize()
-        except Exception:
-            pass
-
-        self._context_view = None
-        self.renwin = None
-        self._vtk_renderer = None
     # end def
 
     
