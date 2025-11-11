@@ -47,7 +47,7 @@ class Ui_OpenSignal(QtWidgets.QWidget):
         sideLayout.setSpacing(10)
         self.splitter.widget(1).setMaximumWidth(300)
 
-        # ====== Título del panel ======
+        # ====== Panel title ======
         self.lblParams = QtWidgets.QLabel("Parameters", self.sidebar)
         self.lblParams.setProperty("variant", "title")          # 👈 usa tu QSS
         sideLayout.addWidget(self.lblParams)
@@ -57,7 +57,7 @@ class Ui_OpenSignal(QtWidgets.QWidget):
         self.divParams.setProperty("role", "section-divider")   # 👈 usa tu QSS
         sideLayout.addWidget(self.divParams)
 
-        # ====== Subtítulo: Showed Channels ======
+        # ====== Subtitle: Shown Channels ======
         self.lblShowed = QtWidgets.QLabel("Showed Channels", self.sidebar)
         self.lblShowed.setProperty("variant", "subtitle")       # 👈
         sideLayout.addWidget(self.lblShowed)
@@ -67,14 +67,14 @@ class Ui_OpenSignal(QtWidgets.QWidget):
         self.divShowed.setProperty("role", "divider")           # 👈
         sideLayout.addWidget(self.divShowed)
 
-        # ====== Lista de canales (sin QGroupBox) ======
+        # ====== Channel list (without QGroupBox) ======
         self.listChannels = QtWidgets.QListWidget(self.sidebar)
         self.listChannels.setObjectName("listChannels")
         self.listChannels.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
         self.listChannels.setAlternatingRowColors(True)
         sideLayout.addWidget(self.listChannels, 1)
 
-        # ====== Botón de acción ======
+        # ====== Action button ======
         self.Btn_abrir_senal = QtWidgets.QPushButton("Open Signal", self.sidebar)
         self.Btn_abrir_senal.setObjectName("mainActionButton")
         self.Btn_abrir_senal.setMinimumHeight(34)

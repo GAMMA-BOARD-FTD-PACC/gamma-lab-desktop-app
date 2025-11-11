@@ -2,10 +2,10 @@ from PyQt5 import QtCore, QtWidgets
 
 class Ui_ErpPlot(QtWidgets.QWidget):
     """
-    Panel ERP Plot (versión simplificada):
-    - Centro: QSplitter con dos áreas (butterflyPlot y heatmapPlot).
-    - Derecha: parámetros (Select all / Single / Range / Lista de trials / Plot).
-    - Sin grupo Advanced y sin botones auxiliares en la lista de trials.
+    ERP Plot panel (simplified version):
+    - Center: QSplitter with two areas (butterflyPlot and heatmapPlot).
+    - Right: parameters (Select all / Single / Range / Trials list / Plot).
+    - No Advanced group and no auxiliary buttons in the trials list.
     """
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -18,7 +18,7 @@ class Ui_ErpPlot(QtWidgets.QWidget):
         root = QtWidgets.QHBoxLayout(self)
         root.setSpacing(0)
 
-        # ====== Splitter principal (horizontal) ======
+        # ====== Main splitter (horizontal) ======
         self.main_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal, self)
         self.main_splitter.setObjectName("main_splitter")
 
@@ -40,7 +40,7 @@ class Ui_ErpPlot(QtWidgets.QWidget):
 
         self.main_splitter.addWidget(self.splitter)
 
-        # ====== Right: Panel de parámetros ======
+        # ====== Right: Parameters panel ======
         self.scrollArea = QtWidgets.QScrollArea(self.main_splitter)
         self.scrollArea.setWidgetResizable(True)
         self.scrollArea.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
@@ -211,7 +211,7 @@ class Ui_ErpPlot(QtWidgets.QWidget):
         QtCore.QMetaObject.connectSlotsByName(self)
 
     def _wireDefaultState(self):
-        # Estados por defecto y reglas de habilitación
+        # Default states and enablement rules
         self.chkSelectAll.toggled.connect(self._onSelectAllToggled)
         self.chkSingleTrial.toggled.connect(self._onSingleToggled)
         self.chkUseRange.toggled.connect(self._onRangeToggled)
@@ -220,7 +220,7 @@ class Ui_ErpPlot(QtWidgets.QWidget):
         self._onSingleToggled(self.chkSingleTrial.isChecked())
         self._onRangeToggled(self.chkUseRange.isChecked())
 
-    # ==== reglas de habilitación ====
+    # ==== enablement rules ====
     def _onSelectAllToggled(self, on: bool):
         if on:
             self.chkSingleTrial.setChecked(False)
@@ -248,7 +248,7 @@ class Ui_ErpPlot(QtWidgets.QWidget):
         self.spnFrom.setEnabled(rng)
         self.spnTo.setEnabled(rng)
 
-        # Lista de trials habilitada solo en modo manual
+        # Trials list enabled only in manual mode
         manual = not (sel_all or single or rng)
         self.txtFilter.setEnabled(manual)
         self.lstTrials.setEnabled(manual)

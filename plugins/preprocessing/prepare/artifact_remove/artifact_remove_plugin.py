@@ -50,7 +50,7 @@ class _ApplyWorker(QtCore.QObject):
         except Exception as e:
             self.error.emit(f"{type(e).__name__}: {e}")
 
-# Clase Principal del Plugin
+# Main Plugin Class
 class ArtifactRemovePlugin(IPlugin):
     def __init__(self, meta: PluginMeta):
         super().__init__(meta)
@@ -117,7 +117,7 @@ class ArtifactRemovePlugin(IPlugin):
                 print(f"{LOGP} Error disabling interactor: {e}")
 
     def get_widget(self, parent=None):
-        """ Entrega el widget principal del plugin a la ventana principal. """
+        """Return the plugin's main widget to the main window."""
         
         if self.widget is None:
             print(f"{LOGP} get_widget(): Creating UI for the first time...")
@@ -148,6 +148,13 @@ class ArtifactRemovePlugin(IPlugin):
                 self._load_and_display_trials()
                 if self.ui and self.ui.paramsLayout:
                     self._on_mode_changed(self.ui.mode_combo.currentText())
+
+                # Show watermark until something is plotted
+                try:
+                    if self.mainwin:
+                        self.mainwin.show_watermark()
+                except Exception:
+                    pass
 
             except Exception as e: 
                 error_message = f"Failed to initialize Remove Artifact plugin:\n{type(e).__name__}: {e}"
@@ -259,7 +266,7 @@ class ArtifactRemovePlugin(IPlugin):
                     if point_a == point_b and mode_text != "Cut From Start":
                         raise ValueError("Points A and B cannot be the same.")
 
-            # --- Feedback y bloqueo de reentradas
+            # --- Feedback and reentrancy guard
             self.ui.apply_button.setEnabled(False)
             self.ui.mode_combo.setEnabled(False)
             self.ui.prev_button.setEnabled(False)
@@ -271,12 +278,12 @@ class ArtifactRemovePlugin(IPlugin):
                     pass
             self._clear_render("")
 
-            # --- Crear y lanzar worker en un QThread
+            # --- Create and start worker in a QThread
             self._apply_thread = QtCore.QThread(self.widget)
             self._apply_worker = _ApplyWorker(self.kernel, mode, point_a, point_b)
             self._apply_worker.moveToThread(self._apply_thread)
 
-            # Conexiones
+            # Connections
             self._apply_thread.started.connect(self._apply_worker.run)
             self._apply_worker.finished.connect(self._on_apply_finished) 
             self._apply_worker.error.connect(self._on_apply_error)
@@ -330,7 +337,7 @@ class ArtifactRemovePlugin(IPlugin):
         self._load_and_display_trials()
         QtCore.QTimer.singleShot(50, self._force_render)
 
-    # --- HELPERS PARA OBTENER TRIALS ACTIVOS ---
+    # --- HELPERS TO FETCH ACTIVE TRIALS ---
     def _get_active_signal_and_name(self):
         store = self.kernel.get_service("DataStore")
         if not store:
@@ -553,12 +560,12 @@ class ArtifactRemovePlugin(IPlugin):
                     self.ui.plotArea.layout().addWidget(lbl)
 
     def _cleanup_vtk_references(self):
-       """Clean VTK references to avoid memory leaks."""
-       self.vtk_interactor = None
-       self.vtk_view = None
-       self.chart = None
-       self.vtk_menu = None
-       print(f"{LOGP} VTK references cleaned.")
+        """Clean VTK references to avoid memory leaks."""
+        self.vtk_interactor = None
+        self.vtk_view = None
+        self.chart = None
+        self.vtk_menu = None
+        print(f"{LOGP} VTK references cleaned.")
 
 
     def _plot_curve(self, t: np.ndarray, y: np.ndarray, title: str = "", ch_name: str = ""):
@@ -584,7 +591,7 @@ class ArtifactRemovePlugin(IPlugin):
             
             renderer.SetBackground(vtk.vtkNamedColors().GetColor3d("WhiteSmoke"))
 
-            # --- limpiar datos y convertir a VTK de forma segura (nps.numpy_to_vtk) ---
+            # --- clean data and convert to VTK safely (nps.numpy_to_vtk) ---
             finite_mask = np.isfinite(t) & np.isfinite(y)
             valid_mask = finite_mask.copy()
             
@@ -635,6 +642,12 @@ class ArtifactRemovePlugin(IPlugin):
                     self.alerts.error(f"Error creating the context menu.\n {str(e)}")
 
             print(f"{LOGP} _plot_curve: Plot '{title}' with {n_points} valid points.")
+            # Hide watermark once a plot is shown
+            try:
+                if self.mainwin:
+                    self.mainwin.hide_watermark()
+            except Exception:
+                pass
 
         except RuntimeError as re:
             print(f"{LOGP} _plot_curve: runtime plot error: {re}")

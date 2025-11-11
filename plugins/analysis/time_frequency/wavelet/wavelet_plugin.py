@@ -72,6 +72,7 @@ class Wavelet_plugin(IPlugin):
         self.init_controls()
         self.ensure_vtk()
 
+
         return self.widget
     # end def
 
@@ -365,7 +366,7 @@ class Wavelet_plugin(IPlugin):
             ax_left.SetNumberOfTicks(0)
 
         else:
-            # Modo Lineal estándar
+            # Standard linear mode
             ax_left.SetTickLabelAlgorithm(vtk.vtkAxis.TICK_WILKINSON_EXTENDED)
             ax_left.SetNumberOfTicks(-1)
             ax_left.SetPrecision(2)

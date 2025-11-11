@@ -7,25 +7,25 @@ from scipy.io import loadmat
 import h5py
 
 class FileIOService:
-    """Lectura de archivos. Cada loader retorna un SignalDataset."""
+    """File readers. Each loader returns a SignalDataset."""
     def load_abf(self, file_path: str) -> SignalDataset:
-        print(f"\n=== Cargando archivo ABF: {file_path} ===")
+        print(f"\n=== Loading ABF file: {file_path} ===")
         abf = pyabf.ABF(file_path)
 
         channel_count = abf.channelCount
-        print(f"Channel count detectado: {channel_count}")
+        print(f"Detected channel count: {channel_count}")
 
         time_data = abf.sweepX.copy()
-        print(f"Time data obtenido, length: {len(time_data)}")
-        print(f"Time range: {time_data[0]:.4f} - {time_data[-1]:.4f} segundos")
+        print(f"Obtained time data, length: {len(time_data)}")
+        print(f"Time range: {time_data[0]:.4f} - {time_data[-1]:.4f} s")
 
         signal_rows = []
-        print("Leyendo canales:")
+        print("Reading channels:")
         for ch in range(channel_count):
             abf.setSweep(sweepNumber=0, channel=ch)
             y = abf.sweepY.copy()
             signal_rows.append(y)
-            print(f"  Canal {ch}: {len(y)} puntos")
+            print(f"  Channel {ch}: {len(y)} points")
 
         signals = np.stack(signal_rows, axis=0)
 
@@ -36,7 +36,7 @@ class FileIOService:
 
         sampling_rate = float(abf.dataRate)
         print(f"Sampling rate: {sampling_rate} Hz")
-        print("ABF procesado correctamente")
+        print("ABF processed successfully")
 
         ds = SignalDataset(
             name=Path(file_path).name,
@@ -58,12 +58,12 @@ class FileIOService:
     
     def load_edf(self, file_path: str) -> SignalDataset:
 
-        print(f"\n=== Cargando archivo EDF: {file_path} ===")
+        print(f"\n=== Loading EDF file: {file_path} ===")
         edf = pyedflib.EdfReader(file_path)
 
         try:
             C = edf.signals_in_file
-            print(f"Channel count detectado: {C}")
+            print(f"Detected channel count: {C}")
 
             signals_raw = []
             channel_names = []
@@ -71,7 +71,7 @@ class FileIOService:
             fs_list = []
             durations = []
 
-            print("Leyendo canales:")
+            print("Reading channels:")
             for i in range(C):
                 sig = edf.readSignal(i)
                 fs_i = float(edf.samplefrequency(i))
@@ -83,7 +83,7 @@ class FileIOService:
                 units.append(str(unit_i))
                 fs_list.append(fs_i)
                 durations.append(len(sig) / fs_i)
-                print(f"  Canal {i}: {len(sig)} puntos, fs={fs_i}Hz, name={name_i}, unit={unit_i}")
+                print(f"  Channel {i}: {len(sig)} points, fs={fs_i}Hz, name={name_i}, unit={unit_i}")
 
             same_fs = all(abs(f - fs_list[0]) < 1e-9 for f in fs_list)
             same_len = len({len(s) for s in signals_raw}) == 1
@@ -93,9 +93,9 @@ class FileIOService:
                 N = len(signals_raw[0])
                 time = np.arange(N, dtype=np.float64) / sampling_rate
                 signals = np.stack(signals_raw, axis=0) 
-                print("EDF con fs y longitud uniformes.")
+                print("EDF with uniform fs and length.")
             else:
-                print("Advertencia: Canales con distintos fs/longitudes. Resampleando…")
+                print("Warning: Channels with different fs/lengths. Resampling…")
                 sampling_rate = float(min(fs_list))
                 T_common = float(min(durations))
                 N = int(np.floor(T_common * sampling_rate))
@@ -108,9 +108,9 @@ class FileIOService:
                     resampled.append(y_i.astype(np.float64))
                 signals = np.stack(resampled, axis=0)
 
-            print(f"Time data creado: {len(time)} puntos")
+            print(f"Time data created: {len(time)} points")
             print(f"Time range: {time[0]:.4f} - {time[-1]:.4f} s")
-            print(f"Sampling rate (común): {sampling_rate} Hz")
+            print(f"Sampling rate (common): {sampling_rate} Hz")
 
             ds = SignalDataset(
                 name=Path(file_path).name,
@@ -127,7 +127,7 @@ class FileIOService:
                     "uniform": same_fs and same_len,
                 },
             )
-            print("EDF procesado correctamente")
+            print("EDF processed successfully")
             return ds
 
         finally:
@@ -136,23 +136,23 @@ class FileIOService:
 
     def load_mat(self, file_path: str) -> SignalDataset:
         """
-        Carga un archivo MATLAB (.mat) y lo convierte en un SignalDataset.
-        Soporta tanto formato clásico (scipy) como v7.3 (HDF5).
+        Load a MATLAB (.mat) file and convert it into a SignalDataset.
+        Supports both classic format (scipy) and v7.3 (HDF5).
         """
-        print(f"\n=== Cargando archivo MAT: {file_path} ===")
+        print(f"\n=== Loading MAT file: {file_path} ===")
 
         try:
-            # Intentar con formato clásico
+            # Try classic format first
             mat_data = loadmat(file_path)
             valid_keys = [k for k in mat_data.keys() if not k.startswith("__")]
-            print("Archivo cargado con scipy.io.loadmat")
+            print("File loaded with scipy.io.loadmat")
         except NotImplementedError:
             with h5py.File(file_path, "r") as f:
-                print("Archivo .mat en formato HDF5 (v7.3). Cargando con h5py...")
+                print(".mat file in HDF5 (v7.3) format. Loading with h5py...")
                 keys = list(f.keys())
-                print(f"Variables encontradas (HDF5): {keys}")
+                print(f"Found variables (HDF5): {keys}")
 
-                # Filtrar canales numéricos válidos
+                # Filter valid numeric channels
                 channels = []
                 channel_names = []
 
@@ -163,25 +163,25 @@ class FileIOService:
 
                     arr = np.array(data)
 
-                    # Verificar si el dataset es numérico
+                    # Check if the dataset is numeric
                     if np.issubdtype(arr.dtype, np.number):
                         channels.append(arr.flatten())
                         channel_names.append(key)
-                        print(f"  Canal {key}: {len(arr.flatten())} muestras")
+                        print(f"  Channel {key}: {len(arr.flatten())} samples")
                     else:
-                        print(f"  ⚠️ Variable {key} ignorada (no numérica, tipo {arr.dtype})")
+                        print(f"  ⚠️ Variable {key} ignored (non-numeric, dtype {arr.dtype})")
 
                 if not channels:
-                    raise ValueError("No se encontraron canales numéricos en el archivo .mat")
+                    raise ValueError("No numeric channels found in the .mat file")
 
-                # Normalizar longitud (rellenar con NaN para igualar)
+                # Normalize length (pad with NaN to equalize)
                 max_len = max(len(ch) for ch in channels)
                 padded = [np.pad(ch, (0, max_len - len(ch)), constant_values=np.nan) for ch in channels]
                 signals = np.stack(padded, axis=0)
 
-                # Generar eje de tiempo ficticio si no está presente
+                # Generate a dummy time axis if not present
                 time_data = np.arange(max_len, dtype=float)
-                sampling_rate = 1.0  # desconocida
+                sampling_rate = 1.0  # unknown
 
                 ds = SignalDataset(
                     name=Path(file_path).name,
@@ -195,5 +195,5 @@ class FileIOService:
                     metadata={"variables": keys},
                 )
 
-                print("Archivo .mat procesado correctamente.")
+                print("MAT file processed successfully.")
                 return ds

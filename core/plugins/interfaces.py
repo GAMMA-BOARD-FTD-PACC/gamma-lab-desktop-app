@@ -12,8 +12,8 @@ from PyQt5.QtWidgets import QWidget
 
 
 '''
-Aquí se definen las interfaces para los plugins y servicios, es decir,
-el contrato y sistema de comunicación entre los plugins y el kernel.
+Interfaces for plugins and services — the contract and communication system
+between plugins and the kernel.
 '''
 
 class IPlugin(ABC):
@@ -22,7 +22,7 @@ class IPlugin(ABC):
         self.meta: PluginMeta = meta
         self.started: bool = False
         self.mainwin = None
-        self.widget: QWidget = None  #Es donde se rendriza todo el UI de PyQt
+        self.widget: QWidget = None  # Where the PyQt UI is rendered
         self.kernel: Kernel = None
         self.active_signal: SignalDataset = None
         self.active_chanel = None
@@ -30,23 +30,23 @@ class IPlugin(ABC):
 
         
         
-    # ===== getters leen del YAML =====
+    # ===== Getters read from YAML =====
     def name(self) -> str:
-        """Nombre para UI (desde properties.yml)."""
+        """Display name for UI (from properties.yml)."""
         return self.meta.name
 
     def category(self) -> str:
-        """Categoría del plugin (desde properties.yml)."""
+        """Plugin category (from properties.yml)."""
         return self.meta.category
 
     def subcategory(self) -> str:
-        """Subcategoría del plugin (desde properties.yml)."""
+        """Plugin subcategory (from properties.yml)."""
         return self.meta.subcategory
 
     def icon(self) -> str:
         """
-        Ruta absoluta del icono (dentro de la carpeta del plugin).
-        MainWindow espera una ruta para construir QIcon(icon_path).
+        Absolute path to the icon (inside the plugin folder).
+        MainWindow expects a path to build QIcon(icon_path).
         """
         return str(self.meta.icon_path())
     
@@ -65,21 +65,21 @@ class IPlugin(ABC):
 
 
     def get_datastore(self) -> DataStore | None:
-        """Obtiene el servicio DataStore desde el kernel."""
+        """Obtain the DataStore service from the kernel."""
         try:
             if not self.mainwin:
-                self.alerts.error("No se encontró el MainWindow para acceder al DataStore.")
+                self.alerts.error("MainWindow not found to access the DataStore.")
                 return None
             store: DataStore | None = self.mainwin.kernel.get_service("DataStore")
             if store is None:
                 self.alerts.warning("DataStore service not found.")
             return store
         except Exception as e:
-            self.alerts.error(f"Error accediendo al DataStore: {e}")
+            self.alerts.error(f"Error accessing DataStore: {e}")
             return None
 
     def get_active_signal(self) -> SignalDataset | None:
-        """Devuelve la señal activa o None si no existe."""
+        """Return the active signal or None if not available."""
         try:
             store = self.get_datastore()
             if not store:
@@ -95,7 +95,7 @@ class IPlugin(ABC):
             return None
 
     def get_active_trials(self, signal: SignalDataset | None = None) -> TrialDataset | None:
-        """Devuelve los trials activos de la señal actual."""
+        """Return the active trials for the current signal."""
         try:
             sig = signal or self.active_signal or self.get_active_signal()
             if sig is None:
@@ -116,40 +116,40 @@ class IPlugin(ABC):
     def on_kernel_event(self, topic: str, payload: object):
 
         """
-        Escucha eventos emitidos por el Kernel.
+        Listen to events emitted by the Kernel.
 
-        Se llama cuando ocurre un evento en el kernel y se pasa el tópico y el contenido del evento como argumentos.
+        Invoked when a kernel event occurs; receives the topic and payload.
 
-        Se utiliza para escuchar eventos relevantes para el plugin, como por ejemplo, cambios en la señal activa o nuevos datos añadidos.
+        Used for events relevant to the plugin, e.g., active signal changes or new data added.
 
-        :param topic: El tópico del evento
-        :param payload: El contenido del evento
+        :param topic: Event topic
+        :param payload: Event payload
         :return: None
         """
         if topic == "signal_active_changed" or topic =="signal_added":
-            print(f"Nueva señal cambiada: {payload}")
+            print(f"Signal changed/added: {payload}")
             self.active_signal = self.get_active_signal() 
 
     def initialize(self, kernel):
         """
-        Inicializa el plugin con el kernel.
+        Initialize the plugin with the kernel.
 
-        :param kernel: El kernel del que depende el plugin.
+        :param kernel: The kernel the plugin depends on.
         :return: None
         """
         self.kernel = kernel
-        self._log("Inicializando")
+        self._log("Initializing")
 
     @abstractmethod
     def process(self, data: any):
-        """Procesa datos enviados por el kernel u otros plugins."""
+        """Process data sent by the kernel or other plugins."""
         pass
 
     def start(self, kernel: kernel):
         """
-        Inicializa el plugin con el kernel y registra el evento de cambio en la señal activa.
+        Initialize the plugin with the kernel and register for active-signal change events.
 
-        :param kernel: El kernel del que depende el plugin.
+        :param kernel: The kernel the plugin depends on.
         :return: None
         """
         
@@ -162,11 +162,11 @@ class IPlugin(ABC):
             
     @abstractmethod
     def stop(self):
-        """Se invoca cuando el kernel detiene los plugins."""
+        """Invoked when the kernel stops plugins."""
         pass
 
     @abstractmethod
     def get_widget(self, parent=None):
-        """Devuelve el widget asociado al plugin"""
+        """Return the widget associated with the plugin."""
         pass
 

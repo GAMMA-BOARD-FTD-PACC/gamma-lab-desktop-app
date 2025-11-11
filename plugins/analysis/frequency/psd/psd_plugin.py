@@ -56,6 +56,13 @@ class Psd_plugin(IPlugin):
             self._wire_ui()
             self._init_defaults()  # MATLAB-like defaults
 
+            # Show watermark until the chart is generated
+            try:
+                if self.mainwin:
+                    self.mainwin.show_watermark()
+            except Exception:
+                pass
+
             # logs post-show (dimensiones reales)
             QtCore.QTimer.singleShot(0, self._log_sizes)
         else:
@@ -437,3 +444,10 @@ class Psd_plugin(IPlugin):
             self.alerts.error(f"Error creating the context menu.\n {str(e)}")
 
         self.vtk_view.GetRenderWindow().Render()
+
+        # Hide watermark once content is present
+        try:
+            if self.mainwin:
+                self.mainwin.hide_watermark()
+        except Exception:
+            pass

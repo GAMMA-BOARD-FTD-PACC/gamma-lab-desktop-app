@@ -11,11 +11,11 @@ class PluginAlerts:
 
 
     def __show_message(self, title: str, message: str, level: str):
-        """Método interno para mostrar alertas con diferentes niveles."""
+        """Internal helper to show alerts with different levels."""
         print(f"[PluginAlerts] {level.upper()}: {message}")
 
         if not self.parent:
-            # No hay contexto de interfaz (modo consola o prueba)
+            # No UI context (console or test mode)
             return
 
         if level == "error":
@@ -25,7 +25,7 @@ class PluginAlerts:
         elif level == "info":
             QMessageBox.information(self.parent, title, message)
         else:
-            raise ValueError(f"Nivel de alerta desconocido: {level}")
+            raise ValueError(f"Unknown alert level: {level}")
 
     def error(self, message: str, title: str = "Error"):
         self.__show_message(title, message, "error")
@@ -36,14 +36,14 @@ class PluginAlerts:
     def info(self, message: str, title: str = "Information"):
         self.__show_message(title, message, "info")
 
-    #  SPINNER DE CARGA
-    def show_spinner(self, text: str = "Procesando...", gif_path: str = None):
+    #  LOADING SPINNER
+    def show_spinner(self, text: str = "Processing...", gif_path: str = None):
         """
-        Muestra un spinner de carga modal sobre la ventana principal.
-        Si se llama otra vez sin ocultarlo, no crea un nuevo diálogo.
+        Show a modal loading spinner over the main window.
+        If called again without hiding, it does not create a new dialog.
         """
         if self._spinner_dialog and self._spinner_dialog.isVisible():
-            return  # Ya se está mostrando un spinner
+            return  # A spinner is already visible
 
         self._spinner_dialog = QDialog(self.parent)
         self._spinner_dialog.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
@@ -54,7 +54,7 @@ class PluginAlerts:
         layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignCenter)
 
-        # Spinner GIF o barra
+        # Spinner GIF or progress bar
         if gif_path:
             spinner_label = QLabel()
             movie = QMovie(gif_path)
@@ -62,19 +62,19 @@ class PluginAlerts:
             movie.start()
             layout.addWidget(spinner_label, alignment=Qt.AlignCenter)
         else:
-            # Fallback: barra indeterminada si no hay GIF
+            # Fallback: indeterminate progress bar if no GIF
             bar = QProgressBar()
-            bar.setRange(0, 0)  # modo indeterminado
+            bar.setRange(0, 0)  # indeterminate mode
             bar.setFixedWidth(150)
             layout.addWidget(bar, alignment=Qt.AlignCenter)
 
-        # Texto
+        # Text
         label = QLabel(text)
         label.setAlignment(Qt.AlignCenter)
         label.setStyleSheet("color: white; font-size: 14px;")
         layout.addWidget(label)
 
-        # Fondo oscuro semitransparente
+        # Semi-transparent dark background
         self._spinner_dialog.setStyleSheet("""
             #spinnerDialog {
                 background-color: rgba(0, 0, 0, 150);
@@ -86,11 +86,11 @@ class PluginAlerts:
         self._spinner_dialog.resize(200, 120)
         self._spinner_dialog.show()
 
-        # Forzar render inmediato
+        # Force immediate UI update
         QEventLoop().processEvents()
 
     def hide_spinner(self):
-        """Cierra el spinner de carga si está activo."""
+        """Close the loading spinner if active."""
         if self._spinner_dialog:
             self._spinner_dialog.accept()
             self._spinner_dialog = None

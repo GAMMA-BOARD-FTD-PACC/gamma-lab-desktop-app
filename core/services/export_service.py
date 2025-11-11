@@ -10,9 +10,9 @@ from core.plugins.plugin_alerts import PluginAlerts
 
 class ExportService:
     """
-    Servicio de exportación de imagen y tabla para VTK.
-    - No conoce la clase VTKContextMenu.
-    - Recibe callbacks para obtener chart activo y nombres (signal/channel/plugin).
+    Image and table export service for VTK.
+    - Does not depend on VTKContextMenu class.
+    - Receives callbacks to get the active chart and names (signal/channel/plugin).
     """
     def __init__(self, parent, vtk_widget, get_active_chart, get_names, last_dir_getter, last_dir_setter):
         self.alerts = PluginAlerts()
@@ -24,11 +24,11 @@ class ExportService:
         self._get_last_dir = last_dir_getter
         self._set_last_dir = last_dir_setter
 
-    # ---------- imagen ----------
+    # ---------- image ----------
     def export_image(self, format: str, filename: str = None):
         """
-        Exporta la ventana VTK a imagen (png/jpg/jpeg/bmp/tiff).
-        Si filename es None, abre diálogo. Respeta el directorio 'last_export_dir'.
+        Export the VTK window to an image (png/jpg/jpeg/bmp/tiff).
+        If filename is None, open a dialog. Respects the 'last_export_dir'.
         """
         try:
             signal_name, channel_name, plugin_name = self.get_names()
@@ -43,9 +43,9 @@ class ExportService:
             initial_path = os.path.join(self._get_last_dir(), base_name)
 
             if not filename:
-                file_filter = f"Imagen (*.{format})"
+                file_filter = f"Image (*.{format})"
                 filename, _ = QFileDialog.getSaveFileName(
-                    self.parent, "Guardar imagen como...", initial_path, file_filter
+                    self.parent, "Save image as...", initial_path, file_filter
                 )
                 if not filename:
                     return
@@ -67,7 +67,7 @@ class ExportService:
             elif ext in ["tiff", "tif"]:
                 writer = vtk.vtkTIFFWriter()
             else:
-                self.alerts.error(f"Format '{format}' not suported.")
+                self.alerts.error(f"Format '{format}' not supported.")
                 return
 
             writer.SetFileName(filename)
@@ -79,11 +79,11 @@ class ExportService:
         except Exception as e:
             self.alerts.error("Error exporting image", str(e))
 
-    # ---------- tabla ----------
+    # ---------- table ----------
     def export_table(self, fmt: str, filename: str = None):
         """
-        Exporta datos (todas las series) del chart activo a csv/xlsx/json.
-        Si filename es None, abre diálogo.
+        Export data (all series) from the active chart to csv/xlsx/json.
+        If filename is None, open a dialog.
         """
         try:
             chart = self.get_active_chart()
@@ -105,12 +105,12 @@ class ExportService:
 
             if not filename:
                 filters = {
-                    "csv": "Archivo CSV (*.csv)",
-                    "xlsx": "Archivo Excel (*.xlsx)",
-                    "json": "Archivo JSON (*.json)"
+                    "csv": "CSV file (*.csv)",
+                    "xlsx": "Excel file (*.xlsx)",
+                    "json": "JSON file (*.json)"
                 }
                 filename, _ = QFileDialog.getSaveFileName(
-                    self.parent, f"Guardar tabla como {fmt.upper()}...", initial_path, filters[fmt]
+                    self.parent, f"Save table as {fmt.upper()}...", initial_path, filters[fmt]
                 )
                 if not filename:
                     return
@@ -126,7 +126,7 @@ class ExportService:
                 x_col = table.GetColumn(0)
                 y_col = table.GetColumn(1)
                 num_points = table.GetNumberOfRows()
-                series_name = plot.GetLabel() or f"Serie_{i + 1}"
+                series_name = plot.GetLabel() or f"Series_{i + 1}"
                 headers.extend([f"{series_name}_X", f"{series_name}_Y"])
                 for r in range(num_points):
                     x_val = x_col.GetValue(r)

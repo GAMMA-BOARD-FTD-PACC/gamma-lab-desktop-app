@@ -8,10 +8,10 @@ from core.plugins.plugin_alerts import PluginAlerts
 
 class MeasurementService:
     """
-    Medición 2 puntos con persistencia por trial y overlays reconstruibles.
-    - Persistimos p1/p2 en coords de datos + contexto (view_id, trial_id, channel_name).
-    - Al navegar: set_context(...) + rebuild_overlays_for_current_context().
-    - Overlays: línea punteada + puntos; mostrar/ocultar sin recrear cuando es posible.
+    2-point measurements with per-trial persistence and rebuildable overlays.
+    - Persist p1/p2 in data coordinates + context (view_id, trial_id, channel_name).
+    - When navigating: set_context(...) + rebuild_overlays_for_current_context().
+    - Overlays: dashed line + points; show/hide without recreating when possible.
     """
 
     def __init__(self, parent, vtk_widget, get_active_chart, datastore_get, datastore_set,
@@ -27,45 +27,45 @@ class MeasurementService:
         self._debug = False
         self._PICK_RADIUS_PX = pick_radius_px
 
-        # ---- estado de interacción ----
+        # ---- interaction state ----
         self._state = 'idle'
         self._current = None        # {'type','p1','p2'}
         self._down_pos = None
 
-        # ---- ejes/rangos (congelados al elegir P1) ----
+        # ---- axes/ranges (frozen when choosing P1) ----
         self._ref_axes = None       # {'x': axis, 'y': axis}
         self._saved_ranges = None   # {'x': (min,max), 'y': (min,max)}
         self._invert_y = False
 
-        # ---- datos para snap ----
+        # ---- data for snapping ----
         self._ref_data = None       # {'xs': [...], 'ys': [...]}
 
-        # ---- acciones del botón izq (bloqueo temporal) ----
+        # ---- left-button actions (temporary suspension) ----
         self._saved_actions = {}
 
-        # ---- overlays visibles actualmente ----
+        # ---- currently visible overlays ----
         self._overlay_enabled = True
-        # cada item: {'id','chart','table','line_plot','points_plot'}
+        # each item: {'id','chart','table','line_plot','points_plot'}
         self._overlays = []
 
-        # ---- contexto actual (para filtrar/repintar) ----
+        # ---- current context (for filtering/repainting) ----
         self._context = {
-            "view_id": None,      # p.ej. "trials", "erp", "fft", "psd", "average", "loader"
-            "graph_id": None,     # UID del chart XY (si hay varios en la vista)
-            "trial_id": None,     # entero o None
+            "view_id": None,      # e.g., "trials", "erp", "fft", "psd", "average", "loader"
+            "graph_id": None,     # XY chart UID (if several in the view)
+            "trial_id": None,     # int or None
             "channel_name": None, # "CA1", "Fp1", ...
             "plugin": None,       # "trials", "erp", "fft", "psd", "open_signal", ...
             "domain": None,       # "time" | "frequency" | "other"
         }
 
-        # paleta para líneas
+        # line color palette
         self._palette = [
             (30, 144, 255), (220, 20, 60), (50, 205, 50), (255, 140, 0),
             (148, 0, 211), (0, 191, 255), (255, 99, 71), (0, 128, 128),
         ]
         self._palette_i = 0
 
-    # ====================== Contexto & navegación ======================
+    # ====================== Context & navigation ======================
 
     def set_context(self, *, view_id=None, graph_id=None, trial_id=None, channel_name=None, plugin=None, domain=None):
         if view_id is not None:      self._context["view_id"] = view_id
@@ -78,7 +78,7 @@ class MeasurementService:
     def _context_matches(self, curr, other) -> bool:
         for key in ("view_id", "graph_id", "trial_id", "channel_name", "plugin", "domain"):
             a = curr.get(key); b = other.get(key)
-            if a is None or b is None:    # sólo comparamos si ambos lo tienen
+            if a is None or b is None:    # compare only if both have it
                 continue
             if a != b:
                 return False
@@ -86,8 +86,8 @@ class MeasurementService:
     
     def clear_visual_overlays(self):
         """
-        Limpia SOLO lo visual (overlays), sin tocar el datastore.
-        Útil antes de cambiar de trial.
+        Clear ONLY visuals (overlays), without touching the datastore.
+        Useful before switching trials.
         """
         while self._overlays:
             ov = self._overlays.pop()
@@ -99,10 +99,10 @@ class MeasurementService:
 
     def rebuild_overlays_for_current_context(self):
         """
-        Reconstruye overlays de TODAS las mediciones cuyos metadatos ctx
-        coincidan con el contexto actual.
+        Rebuild overlays for ALL measurements whose ctx metadata matches
+        the current context.
         """
-        # limpia lo visual actual
+        # clear current visuals
         self.clear_visual_overlays()
 
         ctx = self._context.copy()
@@ -116,7 +116,7 @@ class MeasurementService:
                 except Exception:
                     pass
 
-    # ====================== API pública (medición) ======================
+    # ====================== Public API (measurement) ======================
 
     def _dbg(self, *a):
         if self._debug:
@@ -136,21 +136,21 @@ class MeasurementService:
         
         if measure_type == "slope_all_trials" and self._context.get("plugin") != "trials":
             try:
-                self.alerts.info("Esta medición solo está disponible en el plugin de Trials.")
+                self.alerts.info("This measurement is only available in the Trials plugin.")
             except Exception:
                 pass
             return False
     
         if self._state != 'idle':
             try:
-                self.alerts.info("Ya hay una medición en curso. Completa o cancélala (Esc).")
+                self.alerts.info("A measurement is already in progress. Complete it or cancel (Esc).")
             except Exception:
                 pass
             return False
         
         self._state = 'waiting_p1'
         self._current = {'type': measure_type, 'p1': None, 'p2': None}
-        self.alerts.info("Selecciona el PRIMER punto con clic izquierdo.")
+        self.alerts.info("Select the FIRST point with left click.")
 
     def cancel(self):
         self._state = 'idle'
@@ -182,7 +182,7 @@ class MeasurementService:
 
         ch = self.get_active_chart()
         if not ch:
-            self.alerts.warning("No hay un gráfico activo.")
+            self.alerts.warning("There is no active chart.")
             self.cancel(); return
 
         if self._state == 'waiting_p1':
@@ -200,19 +200,19 @@ class MeasurementService:
                     "xs_len=", (len(self._ref_data['xs']) if self._ref_data else 0))
 
             if not self._ref_data or not self._ref_data.get('xs'):
-                self.alerts.warning("No hay datos de serie para seleccionar puntos.")
+                self.alerts.warning("There is no series data to select points.")
                 self.cancel(); return
 
         picked = self._pick_nearest_data_point(sx, sy)
         if picked is None:
-            self.alerts.warning(f"No hay punto cercano (≤ {self._PICK_RADIUS_PX}px). Intenta de nuevo.")
+            self.alerts.warning(f"No nearby point (≤ {self._PICK_RADIUS_PX}px). Try again.")
             return
 
         if self._state == 'waiting_p1':
             self._current['p1'] = picked
             self._state = 'waiting_p2'
             self._suspend_left_actions(True)
-            self.alerts.info("Ahora selecciona el SEGUNDO punto con clic izquierdo.")
+            self.alerts.info("Now select the SECOND point with left click.")
             return
 
         if self._state == 'waiting_p2':
@@ -226,10 +226,10 @@ class MeasurementService:
             self._finalize()
             return
 
-    # ====================== ejes/rangos & transformaciones ======================
+    # ====================== axes/ranges & transforms ======================
 
     def _get_current_ranges(self):
-        """Lee SIEMPRE los rangos actuales del chart (tras zoom/pan)."""
+        """Always read current chart ranges (after zoom/pan)."""
         ch = self.get_active_chart()
         if not ch:
             return None
@@ -282,7 +282,7 @@ class MeasurementService:
             return None
         x_min_px, x_max_px, y_min_px, y_max_px = rect
 
-        # Preferimos rangos del chart en vivo; usamos saved como fallback
+        # Prefer live chart ranges; use saved as fallback
         rng = self._get_current_ranges() or self._saved_ranges
         if rng is None:
             return None
@@ -316,7 +316,7 @@ class MeasurementService:
         if sx < x_min_px or sx > x_max_px or sy < y_min_px or sy > y_max_px:
             return None
 
-        # Preferimos rangos del chart en vivo; usamos saved como fallback
+        # Prefer live chart ranges; use saved as fallback
         rng = self._get_current_ranges() or self._saved_ranges
         if rng is None:
             return None
@@ -336,7 +336,7 @@ class MeasurementService:
             y_val = y_min + (y_max - sy) * (y_max - y_min) / dyp
         return float(x_val), float(y_val)
 
-    # ====================== datos para snap ======================
+    # ====================== data for snapping ======================
 
     def _load_reference_data_for_pick(self, chart):
         print("\n[MEAS][_load_reference_data_for_pick] >>>")
@@ -490,7 +490,7 @@ class MeasurementService:
 
     def _pick_nearest_data_point(self, sx_click, sy_click):
         if not self._ref_data or not self._ref_data.get('xs'):
-            self._dbg("pick: sin ref_data")  # DEBUG
+            self._dbg("pick: missing ref_data")  # DEBUG
             return None
 
         rect = self._plot_rect_pixels()
@@ -499,7 +499,7 @@ class MeasurementService:
             return None
         x_min_px, x_max_px, y_min_px, y_max_px = rect
         if not (x_min_px <= sx_click <= x_max_px and y_min_px <= sy_click <= y_max_px):
-            self._dbg(f"pick: click fuera del rect {sx_click,sy_click} vs {rect}")  # DEBUG
+            self._dbg(f"pick: click outside rect {sx_click,sy_click} vs {rect}")  # DEBUG
             return None
 
         guess = self._screen_to_plot(sx_click, sy_click)
@@ -535,7 +535,7 @@ class MeasurementService:
         return None
 
 
-    # ====================== persistencia ======================
+    # ====================== persistence ======================
 
     def _save_measurement(self, result, p1, p2, override_ctx=None):
         t = str(result.get("type", "measure"))
@@ -595,7 +595,7 @@ class MeasurementService:
 
 
 
-    # ====================== cierre de medición ======================
+    # ====================== measurement finalization ======================
 
     def _finalize(self):
         cur = self._current or {}
@@ -634,10 +634,10 @@ class MeasurementService:
                 self._current = None
                 return
 
-            # Guarda medición con los campos de amplitud
+            # Save measurement with amplitude fields
             meas_id = self._save_measurement(result, (x1, y1), (x2, y2))
 
-            # Overlay sencillo: dibujar línea vertical en x1 y x2 para marcar ventana
+            # Simple overlay: draw a line between (x1,y1) and (x2,y2) to mark window
             try:
                 self._add_overlay_for_points(meas_id, (x1, y1), (x2, y2))
             except Exception:
@@ -645,10 +645,11 @@ class MeasurementService:
 
             try:
                 self.alerts.info(
-                    (f"Amplitud pico-a-pico = {result['amp_pp']:.6f}\n"
-                    f"Ymax={result['y_max']:.6f} @ x={result['x_at_max']:.6f}\n"
-                    f"Ymin={result['y_min']:.6f} @ x={result['x_at_min']:.6f}\n"
-                    f"ID: {meas_id}", "Saved amplitude")
+                    (f"Peak-to-peak amplitude = {result['amp_pp']:.6f}\n"
+                     f"Ymax={result['y_max']:.6f} @ x={result['x_at_max']:.6f}\n"
+                     f"Ymin={result['y_min']:.6f} @ x={result['x_at_min']:.6f}\n"
+                     f"ID: {meas_id}"),
+                    "Saved amplitude"
                 )
             except Exception:
                 pass
@@ -663,7 +664,7 @@ class MeasurementService:
                 self._load_reference_data_for_pick(ch)
                 if not self._ref_data or not self._ref_data.get('xs'):
                     try:
-                        self.alerts.info("No hay datos para estimar índices en X.")
+                        self.alerts.info("No data to estimate X indices.")
                     except Exception:
                         pass
                     self.cancel(); return
@@ -672,14 +673,14 @@ class MeasurementService:
             i2 = self._nearest_index(x2)
             if i1 is None or i2 is None:
                 try:
-                    self.alerts.info("No se pudieron determinar los índices de los puntos.")
+                    self.alerts.info("Could not determine the indices of the points.")
                 except Exception:
                     pass
                 self.cancel(); return
 
             if i1 == i2:
                 try:
-                    self.alerts.info("Los dos puntos caen en el mismo índice; dx=0.")
+                    self.alerts.info("Both points fall at the same index; dx=0.")
                 except Exception:
                     pass
                 # seguimos adelante para que no deje rastro de estado
@@ -691,7 +692,7 @@ class MeasurementService:
             )
 
             try:
-                self.alerts.info(f"Se generaron {len(ids)} mediciones (una por trial).", "Pendientes por trial")
+                self.alerts.info(f"Generated {len(ids)} measurements (one per trial).", "Slopes per trial")
             except Exception:
                 pass
 
@@ -699,14 +700,14 @@ class MeasurementService:
             self._current = None
 
         else:
-            # tipo no soportado (por si queda rastro de 'derivative')
+            # unsupported type (in case of leftover 'derivative')
             try:
-                self.alerts.info(f"Tipo de medición no soportado: {kind}", "Medición")
+                self.alerts.info(f"Unsupported measurement type: {kind}", "Measurement")
             except Exception:
                 pass
 
 
-    # ====================== bloqueo botón izquierdo ======================
+    # ====================== left-button blocking ======================
 
     def _suspend_left_actions(self, suspend: bool):
         ch = self.get_active_chart()
@@ -788,7 +789,7 @@ class MeasurementService:
         if not ch: return
         tbl = self._make_table_2pts(p1, p2)
 
-        # línea punteada
+        # dashed line
         line_plot = ch.AddPlot(vtk.vtkChart.LINE)
         try:
             pen = line_plot.GetPen()
@@ -800,7 +801,7 @@ class MeasurementService:
         line_plot.SetInputData(tbl, 0, 1)
         line_plot.SetUseIndexForXSeries(False)
 
-        # puntos
+        # points
         points_plot = ch.AddPlot(vtk.vtkChart.POINTS)
         try:
             if hasattr(points_plot, "SetMarkerStyle"): points_plot.SetMarkerStyle(2)
@@ -845,7 +846,7 @@ class MeasurementService:
             pass
         return True
 
-    # ====================== Borrados públicos ======================
+    # ====================== Public deletions ======================
 
     def remove_last_measurement(self):
         if not self._overlays:
@@ -873,7 +874,7 @@ class MeasurementService:
         return True
 
     def on_chart_changed(self):
-        """Invocado por el menú cuando se reemplaza el chart (nuevo trial/vista)."""
+        """Invoked by the menu when the chart is replaced (new trial/view)."""
         self._ref_axes = None
         self._saved_ranges = None
         self._ref_data = None
@@ -889,7 +890,7 @@ class MeasurementService:
         if self._state != 'idle':
             self.cancel() 
             
-    def _dump_chart_state(self, tag=""): ## BORRAR CUANDO SE DEJN DE HACER LOGS
+    def _dump_chart_state(self, tag=""):  # REMOVE WHEN LOGGING NO LONGER NEEDED
         ch = self.get_active_chart()
         if not ch:
             print(f"[MEAS] {tag} chart=None"); return
@@ -897,7 +898,7 @@ class MeasurementService:
             nplots = ch.GetNumberOfPlots()
         except Exception:
             nplots = -1
-        # ejes
+        # axes
         try:
             ax_x = ch.GetAxis(vtk.vtkAxis.BOTTOM)
             ax_y = ch.GetAxis(vtk.vtkAxis.LEFT)
@@ -905,7 +906,7 @@ class MeasurementService:
             yr = (ax_y.GetMinimum(), ax_y.GetMaximum())
         except Exception:
             xr = yr = None
-        # rect en pixels del chart
+        # chart rect in pixels
         try:
             p1 = ch.GetPoint1(); p2 = ch.GetPoint2()
             rect = (p1.GetX(), p2.GetX(), p1.GetY(), p2.GetY())
@@ -914,7 +915,7 @@ class MeasurementService:
 
         print(f"[MEAS] {tag} plots={nplots} xr={xr} yr={yr} rect={rect}")
 
-        # Lista rápida de labels/filas para ver qué plots hay
+        # Quick list of labels/rows to see which plots exist
         try:
             for i in range(nplots):
                 pl = ch.GetPlot(i)
@@ -931,7 +932,7 @@ class MeasurementService:
                     rows = tbl.GetNumberOfRows() if tbl else None
                 except Exception:
                     pass
-                # tipo (LINE/POINTS) si está disponible
+                # type (LINE/POINTS) if available
                 ptype = None
                 try:
                     ptype = pl.GetPlotType()
@@ -943,7 +944,7 @@ class MeasurementService:
 
 
     def _compute_amplitude_window(self, x1, x2):
-        """Usa self._ref_data (xs/ys) para calcular amplitud en la ventana [x1,x2]."""
+        """Use self._ref_data (xs/ys) to compute amplitude in window [x1,x2]."""
         if not self._ref_data or not self._ref_data.get('xs'):
             ch = self.get_active_chart()
             if not ch:
@@ -956,7 +957,7 @@ class MeasurementService:
         return amplitude_in_window(xs, ys, x1, x2)
     
     def _nearest_index(self, x_target):
-        # requiere self._ref_data cargado (xs ordenados)
+        # requires self._ref_data loaded (sorted xs)
         xs = self._ref_data.get('xs') if self._ref_data else None
         if not xs:
             return None
@@ -964,7 +965,7 @@ class MeasurementService:
         cand = []
         if i > 0: cand.append(i-1)
         if i < len(xs): cand.append(i)
-        # elegir el más cercano en X
+        # choose the closest in X
         best_i, best_d = None, None
         for j in cand:
             d = abs(xs[j] - x_target)
@@ -1006,11 +1007,11 @@ class MeasurementService:
             y1 = float(col.GetValue(i1))
             y2 = float(col.GetValue(i2))
 
-            # métrica estándar “slope” con tus utilidades
+            # standard "slope" metric using utilities
             res = two_point_metrics((t1, y1), (t2, y2), kind='slope')
-            # agrega metadatos útiles
+            # add useful metadata
             res["trial_name"] = name
-            # mapea trial_k (1-based) a trial_id (0-based)
+            # map trial_k (1-based) to trial_id (0-based)
             try:
                 k = int(name.split("_")[1])
                 trial_id_zero_based = k - 1

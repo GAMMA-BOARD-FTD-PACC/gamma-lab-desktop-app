@@ -78,6 +78,7 @@ class Filter_plugin(IPlugin):
         self.init_controls()
         self.ensure_vtk()
 
+
         return self.widget
     # end def
     

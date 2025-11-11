@@ -6,8 +6,8 @@ import os
 
 class Kernel(QObject):
   
-    event = pyqtSignal(str, object)  # Eventos generales
-    plugin_registered = pyqtSignal(str)  # Cuando se registra un plugin
+    event = pyqtSignal(str, object)  # General events
+    plugin_registered = pyqtSignal(str)  # Emitted when a plugin is registered
 
 
     def __init__(self):
@@ -17,42 +17,42 @@ class Kernel(QObject):
 
     def register_plugin(self, name, plugin):
         if name in self._plugins:
-            print(f"El plugin '{name}' ya está registrado, se sobreescribirá.")
-        print(f"Registrando plugin: {name}")
-        #Agregar el plugin al diccionario de plugins
+            print(f"Plugin '{name}' is already registered; it will be overwritten.")
+        print(f"Registering plugin: {name}")
+        # Add the plugin to the plugins dict
         self._plugins[name] = plugin
 
-        #Veriricar que el plugin tenga el método start y arrancarlo
+        # Verify plugin has initialize() and call it
         if hasattr(plugin, "initialize"):
             try:
                 plugin.initialize(self)
             except Exception as e:
-                print(f"Error inicializando plugin '{name}':", e)
+                print(f"Error initializing plugin '{name}':", e)
 
-        #emitir el evento de creación de un plugin
+        # Emit the plugin-registered event
         self.plugin_registered.emit(name)
 
-    #Obtener el nombre todos los plugins registrados
+    # Get all registered plugin names
     def get_plugins(self):
         return list(self._plugins.keys())
     
-    #Obtener un plugin por su nombre
+    # Get a plugin by name
     def get_plugin(self, name):
         return self._plugins.get(name)
 
-    #Obtener todos los plugins de una categoría
+    # Get all plugins by category
     def get_plugins_by_category(self, category: str):
         return [name for name, p in self._plugins.items() if hasattr(p, "category") and p.category() == category]
 
     
 
-    #Cargar dinámicamente y arrancar todos los plugins registrados
+    # Dynamically load and register a plugin
     def load_and_register(self, name: str, module_path: str, class_name: str):
         """
-        Carga dinámicamente un plugin desde un módulo de Python y lo registra.
-        - name: nombre con el que se registrará el plugin
-        - module_path: ruta del módulo (ej: 'plugins.my_plugin')
-        - class_name: nombre de la clase dentro del módulo
+        Dynamically load a plugin from a Python module and register it.
+        - name: name to register the plugin with
+        - module_path: module path (e.g., 'plugins.my_plugin')
+        - class_name: class name inside the module
         """
         try:
             if module_path in sys.modules:
@@ -64,23 +64,23 @@ class Kernel(QObject):
             self.register_plugin(name, plugin_instance)
             return True
         except Exception as e:
-            print(f"ERROR: no se pudo cargar el plugin '{name}' desde {module_path}: {e}")
+            print(f"ERROR: could not load plugin '{name}' from {module_path}: {e}")
             return False
         
     '''
     def execute(self, name, data=None):
         """
-        Ejecuta un método 'process(data)' en el plugin indicado.
+        Execute a 'process(data)' method on the specified plugin.
         """
         if name in self._plugins:
             plugin = self._plugins[name]
             if hasattr(plugin, "process"):
                 plugin.process(data)
-                return {"success": True, "message": f"Plugin '{name}' ejecutado."}
+                return {"success": True, "message": f"Plugin '{name}' executed."}
             else:
-                return {"success": False, "message": f"Plugin '{name}' no tiene método process()."}
+                return {"success": False, "message": f"Plugin '{name}' has no process() method."}
         else:
-            msg = f"ERROR: el plugin '{name}' no está registrado."
+            msg = f"ERROR: plugin '{name}' is not registered."
             print(msg)
             return {"success": False, "message": msg}
     '''

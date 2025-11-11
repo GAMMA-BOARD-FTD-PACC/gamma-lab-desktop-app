@@ -207,7 +207,7 @@ class Wavelet_average_plugin(IPlugin):
     # end def
 
     def _on_wavelet_done(self, times, freqs, avg_scalogram, scaled, error):
-        """Callback cuando el hilo termina el cálculo."""
+        """Callback when the worker thread finishes computation."""
         self.alerts.hide_spinner()
 
         if error:

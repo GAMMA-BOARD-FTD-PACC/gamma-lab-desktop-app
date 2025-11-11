@@ -58,7 +58,7 @@ class TrialsPlugin(IPlugin):
     # -------------- UI ---------------------
     def get_widget(self, parent=None):
         if self.widget is None:
-            self._log("get_widget: creando UI")
+            self._log("get_widget: creating UI")
             self.ui = Ui_Trials(parent)
             self.widget = self.ui
             self.alerts.parent = self.widget
@@ -69,7 +69,7 @@ class TrialsPlugin(IPlugin):
 
             self._populate_channels_once()
 
-            #Botones para navegar entre trials
+            # Buttons to navigate between trials
             self.ui.Btn_prev_trial.clicked.connect(lambda: self.navigate_trial(-1))
             self.ui.Btn_next_trial.clicked.connect(lambda: self.navigate_trial(1))
         else:
@@ -86,7 +86,7 @@ class TrialsPlugin(IPlugin):
         self.ui.plotArea.setLayout(QtWidgets.QVBoxLayout())
         self.ui.plotArea.layout().setContentsMargins(0, 0, 0, 0)
         self.ui.plotArea.layout().addWidget(self.vtk_interactor)
-        self._log("ensure_vtk(): interactor embebido")
+        self._log("ensure_vtk(): embedded interactor")
 
         self.vtk_view = vtk.vtkContextView()
         self.vtk_view.SetRenderWindow(self.vtk_interactor.GetRenderWindow())
@@ -118,7 +118,7 @@ class TrialsPlugin(IPlugin):
         self._log("ensure_vtk(): scheduled init")
 
     def _on_vtk_widget_destroyed(self, *args):
-        # seguridad adicional si Qt destruye el widget
+        # extra safety if Qt destroys the widget
         try:
             if self.vtk_view is not None:
                 rw = self.vtk_view.GetRenderWindow()
@@ -161,16 +161,16 @@ class TrialsPlugin(IPlugin):
     
     def on_kernel_event(self, topic: str, payload: object):
         """
-        Escucha eventos emitidos por el Kernel.
+        Listen to events emitted by the Kernel.
         """
         if topic == "signal_active_changed" or topic =="signal_added":
-            print(f"Nueva señal cambiada: {payload}")
+            print(f"New signal changed: {payload}")
             self._populate_channels_once()
 
 
 
     def _on_stim_count_changed(self, val: int):
-        """Callback cuando cambia el número de estímulos: aplica reglas al campo de ISI."""
+        """Callback when the number of stimuli changes: apply rules to the ISI field."""
         try:
             self._apply_interstim_ui_rules(int(val))
         except Exception as e:
@@ -178,8 +178,8 @@ class TrialsPlugin(IPlugin):
         
     def _apply_interstim_ui_rules(self, stim_count: int):
         """
-        - stim_count <= 1: deshabilitar ISI y ponerlo en 0.0
-        - stim_count >= 2: habilitar ISI, exigir > 0 (mínimo sugerido 1 ms)
+        - stim_count <= 1: disable ISI and set it to 0.0
+        - stim_count >= 2: enable ISI, require > 0 (suggested minimum 1 ms)
         """
         isi = self.ui.interStimTimeDoubleSpinBox
 
@@ -188,7 +188,7 @@ class TrialsPlugin(IPlugin):
             isi.setEnabled(False)
             isi.setMinimum(0.0)
             isi.setValue(0.0)
-            isi.setToolTip("Inter-stim time no aplica cuando hay 0 ó 1 estímulo por trial.")
+            isi.setToolTip("Inter-stim time does not apply when there are 0 or 1 stimuli per trial.")
             isi.blockSignals(False)
             return
 
@@ -198,24 +198,24 @@ class TrialsPlugin(IPlugin):
         isi.setMinimum(0.001)
         if isi.value() <= 0.0:
             isi.setValue(0.1)
-        isi.setToolTip("Tiempo entre estímulos (s). Debe ser > 0 cuando hay ≥2 estímulos por trial.")
+        isi.setToolTip("Inter-stimulus time (s). Must be > 0 when there are ≥2 stimuli per trial.")
         isi.blockSignals(False)
         
 
     def _populate_channel_combos(self, ds: SignalDataset):
         """
-        Llena channelComboBox y stimChannelComboBox con los mismos nombres (userData = índice).
-        - Channel → por defecto índice 0
-        - Stim Channel → por defecto último canal
+        Fill channelComboBox and stimChannelComboBox with the same names (userData = index).
+        - Channel → default index 0
+        - Stim Channel → default last channel
         """
-        # Obtener referencias (tolerante si UI no tiene todavía el stim combo)
+        # Get references (tolerant if UI does not yet have the stim combo)
         cb_main = getattr(self.ui, "channelComboBox", None)
         cb_stim = getattr(self.ui, "stimChannelComboBox", None)
 
         if cb_main is None:
-            return  # nada que hacer
+            return  # nothing to do
 
-        # Construir lista de nombres
+        # Build list of names
         names = []
         try:
             if getattr(ds, "channel_names", None):
@@ -224,7 +224,7 @@ class TrialsPlugin(IPlugin):
             self._log("channel_names error:", e)
 
         if not names:
-            # Fallback por shape
+            # Fallback by shape
             C = 0
             try:
                 sig = getattr(ds, "signals", None)
@@ -232,9 +232,9 @@ class TrialsPlugin(IPlugin):
             except Exception:
                 C = 0
             names = [f"ch-{i+1}" for i in range(C)]
-            self._log("fallback nombres por shape:", len(names))
+            self._log("fallback names by shape:", len(names))
 
-        # Poblar principal
+        # Populate main combo
         cb_main.blockSignals(True)
         cb_main.clear()
         for i, name in enumerate(names):
@@ -242,26 +242,26 @@ class TrialsPlugin(IPlugin):
         cb_main.setCurrentIndex(0 if names else -1)
         cb_main.blockSignals(False)
 
-        # Poblar stim (si existe en UI)
+        # Populate stim combo (if present in UI)
         if cb_stim is not None:
             cb_stim.blockSignals(True)
             cb_stim.clear()
             for i, name in enumerate(names):
                 cb_stim.addItem(name, i)
-            # por defecto el ÚLTIMO canal
+            # default to the LAST channel
             default_idx = (len(names) - 1) if names else -1
             cb_stim.setCurrentIndex(default_idx)
-            cb_stim.setToolTip("Canal usado para detectar onsets/estímulos")
+            cb_stim.setToolTip("Channel used to detect onsets/stimuli")
             cb_stim.blockSignals(False)
 
 
     def _populate_channels_once(self):
-        """Intenta cargar la señal activa y poblar el combo (silencioso si no hay)."""
+        """Try to load the active signal and populate the combo (silent if none)."""
         ds = self.get_active_signal()
         if ds:
             self._populate_channel_combos(ds)
         else:
-            self._log("_populate_channels_once: no hay señal activa (aún)")
+            self._log("_populate_channels_once: no active signal (yet)")
     
     # -------------- Acciones UI -----------------
     def _on_generate_clicked(self):
@@ -311,8 +311,8 @@ class TrialsPlugin(IPlugin):
         try:
             td = cut_trials_single_channel(
             ds=ds,
-            channel=int(ch),                  # canal objetivo a cortar
-            stim_channel=None if stim_ch is None else int(stim_ch),  # canal de estímulos para detectar onsets
+            channel=int(ch),                  # target channel to cut
+            stim_channel=None if stim_ch is None else int(stim_ch),  # stimulus channel to detect onsets
             threshold=th,
             t0=t0, t1=t1,
             end_mode=mode,
@@ -333,19 +333,19 @@ class TrialsPlugin(IPlugin):
         except Exception as e:
             self._log("add_trial_dataset warning:", e)
 
-        #Se muestra solo el primer trial
+        # Show only the first trial
         self.last_td = td
         self.navigate_trial(0)
 
-        self._notify(f"Trials: T={td.trials.shape[1]}, Ns={td.trials.shape[0]}, canal='{td.channel_name}'")
+        self._notify(f"Trials: T={td.trials.shape[1]}, Ns={td.trials.shape[0]}, channel='{td.channel_name}'")
    
 
-    # -------------- Navegación entre trials ----------------------
+    # -------------- Navigation between trials ----------------------
     def navigate_trial(self, direction: int):
         """
-        Muestra el siguiente o anterior trial según 'direction'.
-        direction = +1 → siguiente
-        direction = -1 → anterior
+        Show next or previous trial according to 'direction'.
+        direction = +1 → next
+        direction = -1 → previous
         """
         if not self.last_td:
             self.alerts.info("No trials loaded.", "Navigation")
@@ -363,15 +363,15 @@ class TrialsPlugin(IPlugin):
             self.visible_trials = [0]
 
         current = self.visible_trials[0]
-        new_idx = (current + direction) % T  # navegación circular
+        new_idx = (current + direction) % T  # circular navigation
         self.visible_trials = [new_idx]
 
-        #self._log(f"Navegando trial {new_idx + 1}/{T}")
+        #self._log(f"Navigating trial {new_idx + 1}/{T}")
         self._render_trials(td)
 
         self._update_trial_ui(sd, new_idx, T, None)
 
-        # Conectar el botón
+        # Connect the button
         try:
             self.ui.Btn_discard_trial.clicked.disconnect()
         except Exception:
@@ -390,7 +390,7 @@ class TrialsPlugin(IPlugin):
         if not ds:
             return
 
-        """Alterna el estado de descarte del trial actual (añadir o remover de la lista del SignalDataset)."""
+        """Toggle discard state of the current trial (add or remove from SignalDataset list)."""
         if not self.last_td:
             self.alerts.warning("No trials loaded.", "Discard trial")
             return
@@ -401,21 +401,21 @@ class TrialsPlugin(IPlugin):
             return
 
         estado = ds.is_trial_discarded(ds.name, ch, index)
-        print(f"Trial {index + 1} descartado: {estado}")
+        print(f"Trial {index + 1} discarded: {estado}")
 
         if estado:
-            # Incluir nuevamente
+            # Include again
             ds.include_trial(ds.name, ch, index)
             self._update_trial_ui(ds, index, T, False)
             self.alerts.info(f"Trial {index + 1} included.", "Include trial")
         else:
-            # Marcar como descartado
+            # Mark as discarded
             ds.discard_trial(ds.name, ch, index)
             self._update_trial_ui(ds, index, T, True)
             self.alerts.info(f"Trial {index + 1} discarded.", "Discard trial")
 
     def _update_trial_ui(self, ds: SignalDataset, index: int, total: int = None, estado_descartado: bool = None):
-        """Actualiza el label y botón del trial actual según si está descartado."""
+        """Update current trial label/button depending on discard state."""
         total_text = f"/{total}" if total else ""
         ch = self.ui.channelComboBox.currentText()
 
@@ -423,11 +423,11 @@ class TrialsPlugin(IPlugin):
             estado_descartado = ds.is_trial_discarded(ds.name, ch, index)
 
         if estado_descartado:
-            self.ui.currentTrialLabel.setText(f"Trial actual: {index + 1} (descartado){total_text}")
+            self.ui.currentTrialLabel.setText(f"Current trial: {index + 1} (discarded){total_text}")
             self.ui.currentTrialLabel.setStyleSheet("color: red; font-weight: bold;")
             self.ui.Btn_discard_trial.setText("Include")
         else:
-            self.ui.currentTrialLabel.setText(f"Trial actual: {index + 1}{total_text}")
+            self.ui.currentTrialLabel.setText(f"Current trial: {index + 1}{total_text}")
             self.ui.currentTrialLabel.setStyleSheet("color: black; font-weight: bold;")
             self.ui.Btn_discard_trial.setText("Discard")
 
@@ -436,10 +436,10 @@ class TrialsPlugin(IPlugin):
         self._log("_render_trials: enter")
         
         if self.vtk_view is None:
-            self._log("  vtk_view no inicializado → ensure_vtk()")
+            self._log("  vtk_view not initialized → ensure_vtk()")
             self._ensure_vtk()
         if self.vtk_view is None:
-            self._log("  sin VTK view, abort")
+            self._log("  no VTK view, abort")
             return
 
         table = trials_matrix_to_vtk_table(td.time_rel, td.trials)
@@ -473,7 +473,7 @@ class TrialsPlugin(IPlugin):
 
         try:
             self.vtk_view.GetRenderWindow().Render()
-            self._log("  render OK (ContextView interactivo)")
+            self._log("  render OK (interactive ContextView)")
         except Exception as e:
             self._log("Render error:", e)
             

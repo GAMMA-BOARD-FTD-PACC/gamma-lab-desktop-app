@@ -3,7 +3,7 @@ import json
 
 class SettingsService:
     """
-    Servicio simple para guardar y cargar configuraciones persistentes en un archivo JSON.
+    Simple service to save and load persistent settings in a JSON file.
     """
     def __init__(self, filename="gamma_lab_settings.json"):
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -12,7 +12,7 @@ class SettingsService:
         self.load()
 
     def load(self):
-        """Carga el archivo si existe."""
+        """Load the file if it exists."""
         if os.path.exists(self.filename):
             try:
                 with open(self.filename, "r", encoding="utf-8") as f:
@@ -23,18 +23,18 @@ class SettingsService:
             self.data = {}
 
     def save(self):
-        """Guarda los cambios al archivo."""
+        """Persist current settings to the file."""
         try:
             with open(self.filename, "w", encoding="utf-8") as f:
                 json.dump(self.data, f, ensure_ascii=False, indent=4)
         except Exception as e:
-            print(f"[SettingsService] Error al guardar configuración: {e}")
+            print(f"[SettingsService] Error saving settings: {e}")
 
     def get(self, key, default=None):
-        """Obtiene un valor guardado."""
+        """Get a stored value."""
         return self.data.get(key, default)
 
     def set(self, key, value):
-        """Guarda un valor y persiste."""
+        """Set a value and persist it."""
         self.data[key] = value
         self.save()
