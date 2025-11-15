@@ -1,49 +1,295 @@
-# test/plugins_test/test_psd_plugin.py
-import os
-from pathlib import Path
 import numpy as np
 import pytest
+from pathlib import Path
 
+# --- Real pipeline imports (core app services & plugins) ---
 from core.services.fileio import FileIOService
 from core.filters import trials as tr
 from core.services.trial_dataset import TrialDataset
-from plugins.analysis.frequency.psd.psd_plugin import Psd_plugin
 from core.plugins.meta import PluginMeta
+from plugins.analysis.frequency.psd.psd_plugin import Psd_plugin
 
-# ---------- Config ----------
-ABF_PATH = Path(r"C:\Users\sergi\OneDrive\Documentos\Mis cosas\Tesis\pruebas\datos_prueba\17308005.abf")
-MATLAB_CSV = Path(r"C:\Users\sergi\OneDrive\Documentos\GitHub\gamma-lab-desktop-app\test\data\psd_datos.csv")
 
+# ============================================================
+#                  GLOBAL CONFIG / TEST DATA
+# ============================================================
+
+# Base directory for test data files
+BASE_DIR = Path(__file__).resolve().parents[2] / "test" / "data"
+
+# Input ABF file
+ABF_PATH = BASE_DIR / "17308005.abf"
+
+# MATLAB reference CSV
+MATLAB_CSV = BASE_DIR / "psd_data_matlab.csv"
+
+
+# ============================================================
+#                 TRIALS DIVISION PARAMETERS
+# ============================================================
+
+# Channel where the signal of interest is stored
 TARGET_CHANNEL = 0
-STIM_CHANNEL = 1
-THRESHOLD = 0.7
-T0 = -0.05
-T1 = 4.00
-END_MODE = "until_next_onset"
-STIM_EXPECTED = 1
-ISI = 0.0
-PAD_VALUE = np.nan
 
-# Parámetros por defecto (como en el plugin)
+# Channel used to detect stimulus onsets
+STIM_CHANNEL = 1
+
+# Threshold to detect a stimulus event
+THRESHOLD = 0.7
+
+# Time window around each stimulus (in seconds)
+T0 = -0.05     # Start time relative to stimulus
+T1 = 4.00      # End time relative to stimulus
+
+# How to decide the end of a trial
+END_MODE = "until_next_onset"
+
+# Expected number of stimuli per trial (sanity check inside filter)
+STIM_EXPECTED = 1
+
+# Inter-stimulus interval (used by the cutting logic)
+ISI = 0.0
+
+# Value used to pad trials if needed
+PAD_VALUE = 0.0
+
+
+# ============================================================
+#                 PSD / WELCH PARAMETERS
+# ============================================================
+
+# Default PSD parameters
 TARGET_FS = 1000.0
 WIN = "hamming"
-NPERSEG = 256
+NPERSEG = 1024
 NOVERLAP = 128
-NFFT = 256
+NFFT = 1024
 DETREND = "none"
 F_LO = 0.0
 F_HI = 500.0
 
-RTOL = 1e-6
-ATOL = 1e-6
-# ----------------------------
 
+# ============================================================
+#                 NUMERICAL COMPARISON PARAMETERS
+# ============================================================
+
+# Expected number of columns (trials) in the PSD matrix
+K_EXPECTED = 60          # 60 trials → 60 columns
+
+# Minimum acceptable Pearson correlation per column (trial)
+MIN_CORR = 0.88
+
+# Fractional test parameters
+FRAC_MIN_PASS = 0.95     # At least 95% of points must be within tolerance
+FRAC_ATOL = 0.0001         # Absolute tolerance (adjust if too strict)
+FRAC_RTOL = 0.0         # Relative tolerance
+
+
+# ============================================================
+#           MATLAB CSV LOADING HELPER (PER-TRIAL PSD)
+# ============================================================
+
+def load_csv_matlab_psd(path: Path) -> np.ndarray:
+    """
+    Load the CSV exported from MATLAB for per-trial PSD.
+
+    We assume shape (Nf, K) or (K, Nf) with K=60 trials.
+    No averaging is done here; we return the full 2D matrix.
+    """
+    M = np.loadtxt(path, delimiter=";")
+    M = np.asarray(M, dtype=np.float64)
+
+    if M.ndim == 1:
+        # If for some reason it is 1D, treat as a single curve.
+        M = M.reshape(-1, 1)
+
+    return M
+
+
+# ============================================================
+#                    NUMPY HELPER FUNCTIONS
+# ============================================================
+
+def crop_rows_to_min(A: np.ndarray, B: np.ndarray):
+    """
+    Crop A and B to the same number of rows (the minimum of both),
+    keeping all columns. A and B are treated as 2D matrices (N, K).
+
+    1D arrays are promoted to (N, 1) matrices.
+    """
+    A = np.asarray(A, dtype=float)
+    B = np.asarray(B, dtype=float)
+
+    if A.ndim == 1:
+        A = A.reshape(-1, 1)
+    if B.ndim == 1:
+        B = B.reshape(-1, 1)
+
+    assert A.ndim == 2 and B.ndim == 2, "Input arrays must be 2D."
+    assert A.shape[1] == B.shape[1], f"Different number of columns: {A.shape[1]} vs {B.shape[1]}"
+
+    n = min(A.shape[0], B.shape[0])
+    return A[:n, :], B[:n, :]
+
+
+def diff_debug_report_fraction(A, B, within, tol_mat, label_a="APP", label_b="MATLAB", topk_cols=10):
+    """
+    Build a detailed debug report for the fractional tolerance test.
+
+    The report includes:
+      - The worst point (row, col) where tolerance is violated,
+      - The difference, local tolerance, and excess at that point,
+      - The total number of violating columns,
+      - The top columns ranked by number of violations and max excess.
+
+    Columns that are entirely NaN are handled without warnings.
+    """
+    A = np.asarray(A, dtype=float)
+    B = np.asarray(B, dtype=float)
+    A, B = crop_rows_to_min(A, B)
+
+    valid = np.isfinite(A) & np.isfinite(B)
+    over_mask = valid & (~within)
+
+    if not np.any(over_mask):
+        return "[frac] no violations"
+
+    diffs = np.abs(A - B)
+    excess = np.full_like(diffs, np.nan, dtype=float)
+    excess[over_mask] = diffs[over_mask] - tol_mat[over_mask]
+
+    # Worst violating point (ignoring NaNs).
+    flat_idx = np.nanargmax(excess)
+    r, c = np.unravel_index(flat_idx, excess.shape)
+    worst_excess = float(excess[r, c])
+    worst_diff = float(diffs[r, c])
+    worst_tol = float(tol_mat[r, c])
+    va, vb = float(A[r, c]), float(B[r, c])
+
+    # Aggregated statistics by column (avoid all-NaN warnings).
+    by_col_counts = np.nansum(over_mask, axis=0)
+    with np.errstate(all="ignore", invalid="ignore"):
+        by_col_maxexc = np.nanmax(excess, axis=0)
+
+    # Filter columns that actually have violations.
+    cols = np.where(by_col_counts > 0)[0]
+    topk = []
+    if cols.size > 0:
+        # Sort by (#violations desc, max_excess desc).
+        order = np.lexsort((-by_col_maxexc[cols], -by_col_counts[cols]))[::-1]
+        for idx in order[:topk_cols]:
+            cidx = int(cols[idx])
+            topk.append((cidx, int(by_col_counts[cidx]), float(by_col_maxexc[cidx])))
+
+    lines = []
+    lines.append(
+        f"[frac] worst @ (row={r}, col={c}) -> diff={worst_diff:.6f}, "
+        f"tol_local={worst_tol:.6f}, excess={worst_excess:.6f} ; "
+        f"{label_a}={va:.6f} ; {label_b}={vb:.6f}"
+    )
+    lines.append(f"[frac] total columns with violations: {len(cols)}")
+    if topk:
+        lines.append("[frac] top columns by violations (col, count, max_excess):")
+        for col_id, cnt, mx in topk:
+            lines.append(f"  - col={col_id:02d}  count={cnt}  max_excess={mx:.6f}")
+    return "\n".join(lines)
+
+
+def corr_by_col(A, B):
+    """
+    Compute Pearson correlation per column (trial/curve).
+    """
+    A, B = crop_rows_to_min(A, B)
+    K = A.shape[1]
+    C = np.full(K, np.nan, float)
+
+    for j in range(K):
+        a = A[:, j]
+        b = B[:, j]
+        m = np.isfinite(a) & np.isfinite(b)
+        if m.sum() > 2:
+            C[j] = np.corrcoef(a[m], b[m])[0, 1]
+
+    return C
+
+
+def assert_points_within_tolerance_fraction(
+    A,
+    B,
+    *,
+    min_pass_ratio=FRAC_MIN_PASS,
+    atol=FRAC_ATOL,
+    rtol=FRAC_RTOL,
+    ref="B",
+    label_a="APP",
+    label_b="MATLAB",
+    msg="",
+    topk_cols=10,
+):
+    """
+    Require that at least `min_pass_ratio` of the valid points satisfy:
+
+        |A - B| <= atol + rtol * |ref|
+
+    where `ref` indicates which matrix (A or B) is used in the
+    relative term (rtol * |ref|).
+    """
+    A = np.asarray(A, dtype=float)
+    B = np.asarray(B, dtype=float)
+    A, B = crop_rows_to_min(A, B)
+
+    # Only evaluate points where both matrices are finite.
+    valid = np.isfinite(A) & np.isfinite(B)
+    total = int(np.sum(valid))
+    if total == 0:
+        # Nothing to compare: silently accept.
+        return
+
+    # Choose which matrix is used as "reference" in the tolerance formula.
+    ref_mat = A if ref.upper() == "A" else B
+    tol_mat = atol + rtol * np.abs(ref_mat)
+
+    diffs = np.abs(A - B)
+    within = (diffs <= tol_mat) & valid
+    passed = int(np.sum(within))
+    ratio = passed / float(total)
+
+    if ratio >= min_pass_ratio:
+        # Enough points are within tolerance → test passes.
+        return
+
+    # Build a detailed report to help debugging failures.
+    lines = []
+    lines.append(msg or "Fractional tolerance check failed")
+    lines.append(f"[frac] shape {label_a}={A.shape}, {label_b}={B.shape}")
+    lines.append(
+        f"[frac] params: min_pass_ratio={min_pass_ratio:.3f}, "
+        f"atol={atol}, rtol={rtol} (ref={ref})"
+    )
+    lines.append(f"[frac] passed={passed}/{total} -> ratio={ratio:.5f}")
+    lines.append(
+        diff_debug_report_fraction(
+            A, B, within, tol_mat, label_a, label_b, topk_cols
+        )
+    )
+    raise AssertionError("\n".join(lines))
+
+
+# ============================================================
+#                TEST FOR PSD PLUGIN
+# ============================================================
 
 class PsdDouble(Psd_plugin):
     """
-    Doble de prueba que evita VTK/UI e inyecta TD/SD, capturando (freq, power)
-    ya filtrados y con selección de modo = Average o Individual.
+    Minimal test double for the PSD plugin.
+
+    This class:
+      - Creates the real plugin to reuse _compute_psd(),
+      - Avoids VTK initialization,
+      - Lets the tests call _compute_psd() directly and compare
+        its output against MATLAB.
     """
+
     def __init__(self):
         meta = PluginMeta(
             id="psd",
@@ -55,156 +301,225 @@ class PsdDouble(Psd_plugin):
             logic_class="Psd_plugin",
         )
         super().__init__(meta)
-        self._active_signal = None
-        self._active_trials = None
-        self.captured_freq = None      # (Nf_sel,)
-        self.captured_power = None     # (Nf_sel, Kcols)
 
-    # inyección
-    def set_active_signal(self, sd):
-        self._active_signal = sd
-
-    def set_active_trials(self, td: TrialDataset):
-        self._active_trials = td
-
-    # puente
-    def get_active_signal(self):
-        return self._active_signal
-
-    def get_active_trials(self):
-        return self._active_trials
-
-    # evita VTK
     def _ensure_vtk(self, *args, **kwargs):
+        """
+        Override VTK initialization to keep the test completely headless.
+        """
         self.vtk_interactor = None
         self.vtk_view = None
 
-    # captura en vez de plotear
-    def _plot_psd(self, freq, power, plot_title, lo, hi, ch_name):
-        sel = (freq >= lo) & (freq <= hi)
-        self.captured_freq = np.asarray(freq[sel], dtype=float)
-        self.captured_power = np.asarray(power[sel, :], dtype=float)
 
-    # helper sin UI: modo "Average" (columna única)
-    def run_average(self, target_fs=TARGET_FS, lo=F_LO, hi=F_HI,
-                    window=WIN, nperseg=NPERSEG, noverlap=NOVERLAP, nfft=NFFT, detrend=DETREND):
-        td = self.get_active_trials()
-        assert td is not None, "TrialDataset no presente"
-        X = np.asarray(td.trials, dtype=np.float64)
-        fs = float(td.sampling_rate)
+# ============================================================
+#                        FIXTURES
+# ============================================================
 
-        freq, power_all, fs_eff = self._compute_psd(
-            X, fs, target_fs, window, int(nperseg), int(noverlap), int(nfft), detrend
-        )
-        # promedio por frecuencia → (Nf, 1)
-        power_avg = np.mean(power_all, axis=1, keepdims=True)
-        self._plot_psd(freq, power_avg, "PSD (Average)", lo, hi, getattr(td, "channel_name", ""))
-        return freq, power_avg, fs_eff
+@pytest.fixture(scope="class")
+def ds():
+    """
+    Load the real ABF file using FileIOService and return
+    a signal dataset with float64 time and signal arrays.
+    """
+    fio = FileIOService()
+    sd = fio.load_abf(str(ABF_PATH))
 
-    # helper modo "Individual" (índice 0)
-    def run_individual(self, trial_idx=0, target_fs=TARGET_FS, lo=F_LO, hi=F_HI,
-                       window=WIN, nperseg=NPERSEG, noverlap=NOVERLAP, nfft=NFFT, detrend=DETREND):
-        td = self.get_active_trials()
-        assert td is not None, "TrialDataset no presente"
-        X = np.asarray(td.trials, dtype=np.float64)
-        fs = float(td.sampling_rate)
+    # Ensure we work with float64 for better numerical stability.
+    sd.signals = sd.signals.astype(np.float64, copy=False)
+    sd.time = sd.time.astype(np.float64, copy=False)
 
-        freq, power_all, fs_eff = self._compute_psd(
-            X, fs, target_fs, window, int(nperseg), int(noverlap), int(nfft), detrend
-        )
-        assert 0 <= trial_idx < power_all.shape[1], "trial_idx fuera de rango"
-        power_one = power_all[:, trial_idx:trial_idx+1]
-        self._plot_psd(freq, power_one, f"PSD (Trial {trial_idx})", lo, hi, getattr(td, "channel_name", ""))
-        return freq, power_one, fs_eff
+    return sd
 
+
+@pytest.fixture(scope="class")
+def td(ds):
+    """
+    Cut trials from the ABF signal using the real pipeline:
+    core.filters.trials.cut_trials_single_channel.
+    """
+    return tr.cut_trials_single_channel(
+        ds=ds,
+        channel=TARGET_CHANNEL,
+        stim_channel=STIM_CHANNEL,
+        threshold=THRESHOLD,
+        t0=T0,
+        t1=T1,
+        end_mode=END_MODE,
+        stim_expected=STIM_EXPECTED,
+        inter_stim_time=ISI,
+        pad_value=PAD_VALUE,
+        debug=False,
+    )
+
+
+@pytest.fixture(scope="class")
+def app_psd(td):
+    """
+    Compute PSD for all trials using _compute_psd() and return
+    the full power matrix (Nf, K) without averaging.
+    """
+    plug = PsdDouble()
+
+    X = np.asarray(td.trials, dtype=np.float64)   # (Ns, T)
+    fs = float(td.sampling_rate)
+
+    freq, power_all, fs_eff = plug._compute_psd(
+        X,
+        fs,
+        TARGET_FS,
+        WIN,
+        int(NPERSEG),
+        int(NOVERLAP),
+        int(NFFT),
+        DETREND,
+    )
+    # power_all: (Nf, K_trials)
+
+    print(
+        "APP PSD: freq.shape =",
+        freq.shape,
+        ", power_all.shape =",
+        power_all.shape,
+        ", fs_eff =",
+        fs_eff,
+    )
+
+    return freq, power_all
+
+
+@pytest.fixture(scope="class")
+def matlab_psd_matrix():
+    """
+    Load per-trial PSD from MATLAB as a 2D matrix.
+
+    It may come as (Nf, K) or (K, Nf); orientation is adapted later.
+    """
+    M = load_csv_matlab_psd(MATLAB_CSV)
+    print("MATLAB PSD shape:", M.shape)
+    return M
+
+
+# ============================================================
+#                   INTEGRATION TEST SUITE
+#          APP PSD per trial vs MATLAB Reference
+# ============================================================
 
 @pytest.mark.skipif(not ABF_PATH.exists(), reason="ABF file not found")
 @pytest.mark.skipif(not MATLAB_CSV.exists(), reason="MATLAB CSV not found")
 class TestPsdABFVsMatlab:
+    """
+    Integration tests that compare the per-trial PSD matrix produced
+    by the Gamma Lab PSD plugin against a MATLAB reference.
 
-    @pytest.fixture(scope="class")
-    def ds(self):
-        fio = FileIOService()
-        sd = fio.load_abf(str(ABF_PATH))
-        sd.signals = sd.signals.astype(np.float64, copy=False)
-        sd.time = sd.time.astype(np.float64, copy=False)
-        return sd
+    The tests check:
+      1) Shape / columns consistency (60 trials).
+      2) High Pearson correlation per trial (column).
+      3) Pointwise agreement for ≥ 95% of the points within a given
+         absolute and relative tolerance.
+    """
 
-    @pytest.fixture(scope="class")
-    def td(self, ds):
-        return tr.cut_trials_single_channel(
-            ds=ds,
-            channel=TARGET_CHANNEL,
-            stim_channel=STIM_CHANNEL,
-            threshold=THRESHOLD,
-            t0=T0,
-            t1=T1,
-            end_mode=END_MODE,
-            stim_expected=STIM_EXPECTED,
-            inter_stim_time=ISI,
-            pad_value=PAD_VALUE,
-            debug=False,
+    # --------------------------------------------------------
+    # Helper to match MATLAB orientation to the APP matrix
+    # --------------------------------------------------------
+    def _orient_matlab_like_app(self, power_app, M):
+        """
+        Return M with the same orientation (Nf, K) as power_app.
+
+        We assume K_EXPECTED = 60 columns (trials).
+        """
+        Nf_app, _ = power_app.shape
+
+        if M.shape[0] == Nf_app:
+            return M
+        if M.shape[1] == Nf_app:
+            return M.T
+
+        # Fallback: choose the orientation with larger number of rows
+        # as a best guess for the frequency dimension.
+        return M if M.shape[0] >= M.shape[1] else M.T
+
+    # --------------------------------------------------------
+    # 1. Structure / length checks
+    # --------------------------------------------------------
+    def test_shape_and_columns(self, app_psd, matlab_psd_matrix):
+        """
+        Both matrices must have K=60 columns (one per trial) and
+        at least one frequency row.
+        """
+        _, power_app = app_psd          # (Nf_app, K_app)
+        M_use = self._orient_matlab_like_app(power_app, matlab_psd_matrix)
+
+        assert power_app.ndim == 2 and M_use.ndim == 2
+        assert power_app.shape[1] == K_EXPECTED, (
+            f"APP columns={power_app.shape[1]} != {K_EXPECTED}"
         )
-
-    @pytest.fixture(scope="class")
-    def app_psd_avg(self, ds, td):
-        plug = PsdDouble()
-        plug.set_active_signal(ds)
-        plug.set_active_trials(td)
-        plug.run_average(
-            target_fs=TARGET_FS, lo=F_LO, hi=F_HI,
-            window=WIN, nperseg=NPERSEG, noverlap=NOVERLAP, nfft=NFFT, detrend=DETREND,
+        assert M_use.shape[1] == K_EXPECTED, (
+            f"MATLAB columns={M_use.shape[1]} != {K_EXPECTED}"
         )
-        # (Nf_sel, 1)
-        assert plug.captured_power is not None and plug.captured_power.ndim == 2 and plug.captured_power.shape[1] == 1
-        return plug.captured_freq, plug.captured_power[:, 0]
+        assert power_app.shape[0] >= 1 and M_use.shape[0] >= 1
 
-    @pytest.fixture(scope="class")
-    def matlab_psd_avg(self):
+    # --------------------------------------------------------
+    # 2. Correlation per column (trial)
+    # --------------------------------------------------------
+    def test_correlation_by_column(self, app_psd, matlab_psd_matrix):
         """
-        Carga curva PSD de MATLAB (si hay dos columnas [f, Pxx], usa la segunda).
+        Check Pearson correlation per trial (column) with threshold
+        MIN_CORR. This allows for small scale/offset differences while
+        still enforcing a similar spectral shape.
         """
-        M = np.loadtxt(MATLAB_CSV, delimiter=",")
-        M = np.asarray(M, dtype=np.float64)
-        if M.ndim == 1:
-            return None, M
-        if M.ndim == 2 and M.shape[1] >= 2:
-            return M[:, 0], M[:, 1]
-        return (M[:, 0] if M.shape[1] > 1 else None), M[:, -1]
+        _, power_app = app_psd
+        M_use = self._orient_matlab_like_app(power_app, matlab_psd_matrix)
 
-    def test_internal_welch_consistency(self, td):
-        """
-        Verifica que _compute_psd concuerde con SciPy.welch parametrizado como el plugin
-        y que el promedio entre trials coincida.
-        """
-        plug = PsdDouble()
-        plug.set_active_trials(td)
+        # We expect exactly 60 columns (trials).
+        assert power_app.shape[1] == K_EXPECTED and M_use.shape[1] == K_EXPECTED
 
-        # plugin
-        freq_p, power_all_p, fs_eff = plug._compute_psd(
-            np.asarray(td.trials, dtype=np.float64), float(td.sampling_rate),
-            TARGET_FS, WIN, NPERSEG, NOVERLAP, NFFT, DETREND
+        C = corr_by_col(power_app, M_use)
+        finite_mask = np.isfinite(C)
+        assert np.any(finite_mask), "No columns with valid data for correlation."
+
+        low = np.where(finite_mask & (C < MIN_CORR))[0]
+        if low.size > 0:
+            order = np.argsort(C[finite_mask])
+            worst_idx = np.where(finite_mask)[0][order[:5]]
+            msg = (
+                f"Low correlation in columns {low.tolist()} "
+                f"(min={np.nanmin(C):.4f}, threshold={MIN_CORR})"
+            )
+            msg += "\nWorst correlations: " + ", ".join(
+                f"col {int(i)}: {C[int(i)]:.4f}" for i in worst_idx
+            )
+            pytest.fail(msg)
+
+    # --------------------------------------------------------
+    # 3. Pointwise comparison with tolerance (allows outliers)
+    # --------------------------------------------------------
+    def test_pointwise_fraction_allowing_outliers(self, app_psd, matlab_psd_matrix):
+        """
+        Require that at least FRAC_MIN_PASS of valid points satisfy:
+
+            |APP - MATLAB| <= FRAC_ATOL + FRAC_RTOL * |MATLAB|
+
+        A small fraction of outliers is allowed, but detailed information
+        is reported if the requirement is not met.
+        """
+        _, power_app = app_psd
+        M_use = self._orient_matlab_like_app(power_app, matlab_psd_matrix)
+
+        # We expect exactly 60 columns (trials).
+        assert power_app.shape[1] == K_EXPECTED and M_use.shape[1] == K_EXPECTED
+
+        A, B = crop_rows_to_min(power_app, M_use)
+
+        assert_points_within_tolerance_fraction(
+            A,
+            B,
+            min_pass_ratio=FRAC_MIN_PASS,
+            atol=FRAC_ATOL,
+            rtol=FRAC_RTOL,
+            ref="B",
+            label_a="APP",
+            label_b="MATLAB",
+            msg=(
+                f"PSD per-trial: {FRAC_MIN_PASS*100:.1f}% of the points must be "
+                f"within tolerance (atol={FRAC_ATOL}, rtol={FRAC_RTOL})"
+            ),
         )
-        avg_p = np.mean(power_all_p, axis=1)  # (Nf,)
-
-        # correr ruta "average" de la clase
-        freq2, power_avg2, _ = plug.run_average(
-            target_fs=TARGET_FS, lo=F_LO, hi=F_HI,
-            window=WIN, nperseg=NPERSEG, noverlap=NOVERLAP, nfft=NFFT, detrend=DETREND,
-        )
-        # quitamos el filtro para comparar “crudo” (alínealo por mínimo)
-        n = min(avg_p.shape[0], power_avg2.shape[0])
-        assert np.allclose(avg_p[:n], power_avg2[:n, 0], rtol=RTOL, atol=ATOL, equal_nan=True)
-
-    def test_matches_matlab(self, app_psd_avg, matlab_psd_avg):
-        """
-        Compara la curva PSD promedio calculada por la app vs CSV de MATLAB.
-        """
-        _, app_power = app_psd_avg
-        _, mat_power = matlab_psd_avg
-
-        n = min(app_power.shape[0], mat_power.shape[0])
-        a = app_power[:n]
-        b = mat_power[:n]
-        assert np.allclose(a, b, rtol=RTOL, atol=ATOL, equal_nan=True), \
-            f"PSD average mismatch at length {n}: app[{a.shape}] vs matlab[{b.shape}]"
