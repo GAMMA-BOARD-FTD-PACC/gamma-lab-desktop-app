@@ -272,9 +272,12 @@ class Erp_plugin(IPlugin):
             plot = chart.AddPlot(vtk.vtkChart.LINE)
             plot.SetInputData(table, 0, c)
             plot.SetWidth(0.5)
-
-        # chart.GetAxis(vtk.vtkAxis.BOTTOM).SetTitle("Time (s)")
-        # chart.GetAxis(vtk.vtkAxis.LEFT).SetTitle("Amplitude")
+        
+        ax_bottom = chart.GetAxis(vtk.vtkAxis.BOTTOM)
+        ax_left = chart.GetAxis(vtk.vtkAxis.LEFT)
+        
+        ax_bottom.SetTitle("Time (s)")
+        ax_left.SetTitle("Amplitude")
 
         try:
             self.vtk_menu = VTKContextMenu(chart, self.vtk_top, self.active_signal.name,self.ch_name,self.meta.id, parent=self.widget)
