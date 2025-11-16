@@ -3,6 +3,7 @@ from pathlib import Path
 import sys
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QFontDatabase, QFont, QIcon
+from PyQt5.QtCore import Qt
 import resources_rc
 
 from core.kernel import Kernel
@@ -59,6 +60,10 @@ def main():
     kernel.register_service("MainWindow", main_win)
 
     main_win.show()
+    # Ensure the window is restored if it was minimized and force a maximized state
+    main_win.setWindowState((main_win.windowState() & ~Qt.WindowMinimized) | Qt.WindowMaximized)
+    main_win.raise_()
+    main_win.activateWindow()
     sys.exit(app.exec_())
 
 
