@@ -8,7 +8,7 @@ from scipy.interpolate import interp1d
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
-from core.plugins.vtk_context_menu import VTKContextMenu
+from core.utils.vtk_context_menu import VTKContextMenu
 from plugins.analysis.time_frequency.wavelet_average.wavelet_average_plugin_ui import Ui_Wavelet_Average
 
 
@@ -51,6 +51,8 @@ class Wavelet_average_plugin(IPlugin):
     # end def
 
     def stop(self):
+        #self._cleanup_worker()  # ✅ Asegúrate de limpiar al detener
+
         """Stop plugin and disable VTK interactor if present."""
         if self.vtk_widget and self.vtk_widget.GetRenderWindow():
             interactor = self.vtk_widget.GetRenderWindow().GetInteractor()
@@ -58,6 +60,25 @@ class Wavelet_average_plugin(IPlugin):
                 interactor.Disable()
                 self._log("VTK interactor disabled.")
     # end def
+
+    def _cleanup_worker(self):
+        if self.worker is not None:
+            try:
+                self.worker.requestInterruption()
+                
+                print("Waiting for worker thread to terminate...")
+                if self.worker.isRunning():
+                    self.worker.quit()
+                    print("Worker thread terminated.")
+                    self.worker.wait()
+                    print("Worker thread terminated.")
+
+                print("No está corriendo el worker")  
+            except Exception as e:
+                self._log(f"Error cleaning worker: {e}")
+
+            self.worker = None
+
 
 
     # =====================================================
@@ -153,6 +174,10 @@ class Wavelet_average_plugin(IPlugin):
     # === Main logic: compute average CWT and render
     # =====================================================
     def on_create_wavelet(self):
+
+        self._cleanup_worker()
+        self.stop()
+
         """Compute average CWT across all active trials and render the average scalogram."""
         if self.get_active_signal() is None:
             return
@@ -197,30 +222,39 @@ class Wavelet_average_plugin(IPlugin):
         )
 
         # Connect signals
-        self.worker.log_signal.connect(self._log)
-        self.worker.notify_signal.connect(lambda level, msg: getattr(self.alerts, level)(msg))
+       
+        self.worker.log_signal.connect(
+            lambda m: (self._log(m), self._notify(m))
+            )
+
+        self.worker.notify_signal.connect(lambda level, msg: self.alerts.info(msg, level))
         self.worker.finished.connect(self._on_wavelet_done)
 
-        self.alerts.show_spinner("Computing wavelet")
         self.worker.start()
 
     # end def
 
     def _on_wavelet_done(self, times, freqs, avg_scalogram, scaled, error):
         """Callback when the worker thread finishes computation."""
-        self.alerts.hide_spinner()
 
         if error:
             self.alerts.error(f"Failed to compute wavelet: {error}")
+            self._cleanup_worker()
             return
 
         try:
             self.ensure_vtk()
+
             self.render_scalogram(times, freqs, avg_scalogram, "Wavelet Average (Morlet)", scaled)
             self._log("Rendering complete.")
         except Exception as e:
             self._log("Render failed:", e)
             self.alerts.error(f"Rendering failed: {e}")
+        finally:
+            self._cleanup_worker()
+            self.process("Done")
+            self.alerts.hide_spinner()
+
 
     # =====================================================
     # === Wavelet computation (single trial)
@@ -348,6 +382,14 @@ class Wavelet_average_plugin(IPlugin):
     # =====================================================
     def render_scalogram(self, t, freqs, scalogram, title="Scalogram", log_scale=False):
         """Render a 2D scalogram using VTK chart (histogram2D)."""
+        if t is None or freqs is None or scalogram is None:
+            self._log("render_scalogram aborted: empty data.")
+            return
+
+        if len(freqs) < 2 or len(t) < 2 or scalogram.size == 0:
+            self._log("render_scalogram aborted: invalid scalogram.")
+            return
+
         if not self.vtk_widget or not self._context_view:
             self._log("render_scalogram: VTK not initialized.")
             return
@@ -355,6 +397,7 @@ class Wavelet_average_plugin(IPlugin):
         context_view = self._context_view
         scene = context_view.GetScene()
         scene.ClearItems()
+        scene.RemoveAllItems()
 
         # Preprocess scalogram array and compute geometry
         n_freqs, n_times = scalogram.shape
@@ -531,10 +574,21 @@ class Wavelet_average_plugin(IPlugin):
                 self.log_signal.emit(f"Computing wavelet for {n_trials} trials (threaded)...")
 
                 for trial_idx in range(n_trials):
+
+                    if self.isInterruptionRequested():
+                        self.log_signal.emit("Wavelet computation interrupted.")
+                        self.finished.emit(None, None, None, False, "Cancelled")
+                        return
+                    
                     try:
                         sig = np.nan_to_num(self.data[:, trial_idx], nan=0.0, posinf=0.0, neginf=0.0)
+
                         scalogram, times, freqs = plugin.compute_wavelet(
-                            sig, self.fs_calculado, self.fs, self.fmin, self.fmax, self.cycles
+                            sig, 
+                            self.fs_calculado, 
+                            self.fs, self.fmin, 
+                            self.fmax, 
+                            self.cycles
                         )
                         if scalogram is None or scalogram.size == 0:
                             self.log_signal.emit(f"Trial {trial_idx+1}/{n_trials}: empty scalogram, skipping.")
@@ -543,6 +597,8 @@ class Wavelet_average_plugin(IPlugin):
                         scalograms.append(scalogram)
                     except Exception as e:
                         self.log_signal.emit(f"Trial {trial_idx+1}/{n_trials} failed: {e}")
+
+                    self.log_signal.emit(f"Trial {trial_idx+1}/{n_trials}: computed")
 
                 if not scalograms:
                     raise ValueError("No valid scalograms computed")
@@ -558,6 +614,7 @@ class Wavelet_average_plugin(IPlugin):
                     avg_scalogram, freqs = plugin._scale_log(avg_scalogram, freqs)
                     self.log_signal.emit("Log scaling applied.")
 
+                self.log_signal.emit(f"Wavelet average complete.")
                 self.finished.emit(times, freqs, avg_scalogram, self.scaled, None)
 
             except Exception as e:

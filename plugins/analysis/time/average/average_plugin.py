@@ -1,7 +1,7 @@
 from core import kernel
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
-from core.plugins.vtk_context_menu import VTKContextMenu
+from core.utils.vtk_context_menu import VTKContextMenu
 
 
 from plugins.analysis.time.average.average_plugin_ui import Ui_Average

@@ -64,6 +64,28 @@ def _time_window_indices(t: np.ndarray, a: float, b: float) -> Tuple[int, int]:
     i_b = max(0, min(i_b, t.shape[0]))
     return i_a, i_b
 
+
+def _fill_nan_segments(t: np.ndarray, data: np.ndarray) -> np.ndarray:
+    """
+    Replace NaN/Inf segments column-wise using interpolation so downstream analysis
+    receives finite values. Uses np.interp which clamps to edge values when the
+    NaN block touches the start/end.
+    """
+    if not np.isnan(data).any():
+        return data
+
+    for col in range(data.shape[1]):
+        y = data[:, col]
+        valid = np.isfinite(y)
+        if valid.all():
+            continue
+        idx = np.where(valid)[0]
+        if idx.size == 0:
+            data[:, col] = 0.0
+            continue
+        data[:, col] = np.interp(t, t[idx], y[idx])
+    return data
+
 # ----------------- Public logic -----------------
 
 def apply_modification_to_all_valid(kernel, *, mode: str, point_a: float, point_b: float = 0.0):
@@ -201,10 +223,25 @@ def apply_modification_to_all_valid(kernel, *, mode: str, point_a: float, point_
     else:
         raise ValueError(f"Unknown mode: {mode}")
 
+    # Smooth NaN segments so later analysis plugins receive finite values
+    out_active = _fill_nan_segments(t, out_active)
+
     # 5) Write changes into the BASE TrialDataset (by mapped columns)
     for k, orig_col in enumerate(orig_indices):
         if 0 <= orig_col < td_base.trials.shape[1]:
             td_base.trials[:, orig_col] = out_active[:, k]
+
+    # 5.5) Invalidate filtered cache so get_active_trials recomputes arrays after edits
+    key = (file_name, channel_name)
+    try:
+        cache = getattr(sd, "_SignalDataset__filtered_cache", None)
+        if isinstance(cache, dict):
+            cache.pop(key, None)
+        versions = getattr(sd, "_SignalDataset__discard_versions", None)
+        if isinstance(versions, dict):
+            versions.pop(key, None)
+    except Exception:
+        pass
 
     # 6) Mark metadata of modified trials (optional)
     try:

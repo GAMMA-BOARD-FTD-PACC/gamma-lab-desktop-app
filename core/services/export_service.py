@@ -6,7 +6,7 @@ import pandas as pd
 import csv
 import json
 
-from core.plugins.plugin_alerts import PluginAlerts
+from core.utils.plugin_alerts import PluginAlerts
 
 class ExportService:
     """

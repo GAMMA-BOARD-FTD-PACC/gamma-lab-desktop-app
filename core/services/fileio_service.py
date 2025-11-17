@@ -1,5 +1,5 @@
 from pathlib import Path
-from .signal_dataset import SignalDataset
+from ..model.signal_dataset import SignalDataset
 import numpy as np
 import pyabf
 import pyedflib

@@ -38,12 +38,8 @@ class PluginAlerts:
 
     #  LOADING SPINNER
     def show_spinner(self, text: str = "Processing...", gif_path: str = None):
-        """
-        Show a modal loading spinner over the main window.
-        If called again without hiding, it does not create a new dialog.
-        """
         if self._spinner_dialog and self._spinner_dialog.isVisible():
-            return  # A spinner is already visible
+            return
 
         self._spinner_dialog = QDialog(self.parent)
         self._spinner_dialog.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
@@ -53,8 +49,9 @@ class PluginAlerts:
 
         layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignCenter)
+        layout.setContentsMargins(20, 20, 20, 20)
 
-        # Spinner GIF or progress bar
+        # -------- Spinner GIF or ProgressBar --------
         if gif_path:
             spinner_label = QLabel()
             movie = QMovie(gif_path)
@@ -62,32 +59,62 @@ class PluginAlerts:
             movie.start()
             layout.addWidget(spinner_label, alignment=Qt.AlignCenter)
         else:
-            # Fallback: indeterminate progress bar if no GIF
             bar = QProgressBar()
-            bar.setRange(0, 0)  # indeterminate mode
-            bar.setFixedWidth(150)
+            bar.setRange(0, 0)
+            bar.setFixedWidth(160)
+            bar.setObjectName("spinnerProgressBar")
             layout.addWidget(bar, alignment=Qt.AlignCenter)
 
-        # Text
+        # -------- Text --------
         label = QLabel(text)
         label.setAlignment(Qt.AlignCenter)
-        label.setStyleSheet("color: white; font-size: 14px;")
+        label.setObjectName("spinnerText")
         layout.addWidget(label)
 
-        # Semi-transparent dark background
+        self._spinner_dialog.setLayout(layout)
+        self._spinner_dialog.resize(240, 140)
+
+        # -------- INLINE CSS STYLES --------
         self._spinner_dialog.setStyleSheet("""
             #spinnerDialog {
-                background-color: rgba(0, 0, 0, 150);
-                border-radius: 10px;
+                background-color: #ffffff;
+                border-radius: 12px;
+                border: 1px solid #e0e0e0;
+            }
+
+            QLabel#spinnerText {
+                color: #555555;
+                font-size: 14px;
+                font-weight: 500;
+            }
+
+            QProgressBar#spinnerProgressBar {
+                border: 1px solid #d0d0d0;
+                border-radius: 6px;
+                height: 10px;
+            }
+
+            QProgressBar#spinnerProgressBar::chunk {
+                background-color: #3a7bd5;
+                border-radius: 6px;
             }
         """)
 
-        self._spinner_dialog.setLayout(layout)
-        self._spinner_dialog.resize(200, 120)
-        self._spinner_dialog.show()
+        # -------- Optional Shadow (looks premium) --------
+        try:
+            from PyQt5.QtWidgets import QGraphicsDropShadowEffect
+            shadow = QGraphicsDropShadowEffect()
+            shadow.setBlurRadius(20)
+            shadow.setOffset(0, 0)
+            shadow.setColor(Qt.gray)
+            self._spinner_dialog.setGraphicsEffect(shadow)
+        except Exception:
+            pass
 
-        # Force immediate UI update
+        self._spinner_dialog.show()
         QEventLoop().processEvents()
+
+
 
     def hide_spinner(self):
         """Close the loading spinner if active."""

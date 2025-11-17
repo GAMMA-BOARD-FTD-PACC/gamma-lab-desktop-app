@@ -3,7 +3,7 @@ import vtk
 import bisect
 
 from core.filters.measurements import amplitude_in_window, two_point_metrics
-from core.plugins.plugin_alerts import PluginAlerts
+from core.utils.plugin_alerts import PluginAlerts
 
 
 class MeasurementService:

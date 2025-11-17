@@ -3,13 +3,14 @@ from pathlib import Path
 import sys
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QFontDatabase, QFont, QIcon
+from PyQt5.QtCore import Qt, QTimer
 import resources_rc
 
 from core.kernel import Kernel
 from app.view.main_window import MainWindow
 from core.plugins.manager import PluginManager
 from core.services.data_store import DataStore
-from core.services.fileio import FileIOService
+from core.services.fileio_service import FileIOService
 
 
 
@@ -58,7 +59,15 @@ def main():
     main_win = MainWindow(kernel)
     kernel.register_service("MainWindow", main_win)
 
-    main_win.show()
+    def show_startup_window():
+        # Restore from minimized state and maximize while keeping window chrome visible
+        main_win.setWindowState((main_win.windowState() & ~Qt.WindowMinimized) | Qt.WindowMaximized)
+        main_win.show()
+        main_win.raise_()
+        main_win.activateWindow()
+
+    # Run once the event loop starts so Windows does not re-minimize the window
+    QTimer.singleShot(0, show_startup_window)
     sys.exit(app.exec_())
 
 

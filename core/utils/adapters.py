@@ -1,7 +1,7 @@
 import vtk
 import numpy as np
 from vtkmodules.util import numpy_support
-from core.services.fileio import SignalDataset
+from core.services.fileio_service import SignalDataset
 
 def dataset_to_vtk_table(ds: SignalDataset) -> vtk.vtkTable:
     """

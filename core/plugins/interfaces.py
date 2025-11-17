@@ -4,10 +4,10 @@ import sys
 from core import kernel
 from core.kernel import Kernel
 from core.plugins.meta import PluginMeta
-from core.plugins.plugin_alerts import PluginAlerts
+from core.utils.plugin_alerts import PluginAlerts
 from core.services.data_store import DataStore
-from core.services.signal_dataset import SignalDataset
-from core.services.trial_dataset import TrialDataset
+from core.model.signal_dataset import SignalDataset
+from core.model.trial_dataset import TrialDataset
 from PyQt5.QtWidgets import QWidget
 
 

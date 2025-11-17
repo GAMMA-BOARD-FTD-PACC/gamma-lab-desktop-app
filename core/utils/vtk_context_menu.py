@@ -6,7 +6,7 @@ import os
 
 from core.services.export_service import ExportService
 from core.services.measurement_service import MeasurementService
-from core.services.settingsService import SettingsService
+from core.services.settings_service import SettingsService
 
 
 class VTKContextMenu:

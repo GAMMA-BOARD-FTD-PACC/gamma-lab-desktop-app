@@ -9,12 +9,12 @@ import vtk
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
-from core.plugins.vtk_context_menu import VTKContextMenu
+from core.utils.vtk_context_menu import VTKContextMenu
 from core.services.data_store import DataStore
-from core.services.fileio import FileIOService
-from core.services.settingsService import SettingsService
-from core.services.signal_dataset import SignalDataset
-from core.vtk_adapters.adapters import dataset_to_vtk_table
+from core.services.fileio_service import FileIOService
+from core.services.settings_service import SettingsService
+from core.model.signal_dataset import SignalDataset
+from core.utils.adapters import dataset_to_vtk_table
 
 from plugins.io.open_signal.open_signal_ui import Ui_OpenSignal
 
@@ -187,7 +187,9 @@ class OpenSignalPlugin(IPlugin):
             self.ui,
             "Select signal file",
             last_dir,
-            "Signals (*.abf *.edf *.ebf *.mat);;ABF Files (*.abf);;EDF Files (*.edf);;EBF Files (*.ebf);;MAT Files (*.mat)"
+            # "Signals (*.abf *.edf *.ebf *.mat);;ABF Files (*.abf);;EDF Files (*.edf);;EBF Files (*.ebf);;MAT Files (*.mat)"
+            "Signals (*.abf *.edf);;ABF Files (*.abf);;EDF Files (*.edf)"
+
         )
         if not fname:
             return
@@ -229,8 +231,8 @@ class OpenSignalPlugin(IPlugin):
                 ds = fileio.load_abf(fname)
             elif ext == ".edf":
                 ds = fileio.load_edf(fname)
-            elif ext == ".mat":
-                ds = fileio.load_mat(fname)
+            # elif ext == ".mat":
+            #     ds = fileio.load_mat(fname)
             else:
                 if self.mainwin:
                     self.mainwin.statusBar().showMessage(f"Unsupported format: {ext}", 4000)

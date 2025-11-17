@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import QFileDialog, QHeaderView
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
-from core.services.settingsService import SettingsService
+from core.services.settings_service import SettingsService
 from plugins.measure.slope.slope_plugin_ui import Ui_Slope
 
 

@@ -7,11 +7,11 @@ from scipy.signal import welch
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
-from core.plugins.vtk_context_menu import VTKContextMenu
-from core.services.signal_dataset import SignalDataset
+from core.utils.vtk_context_menu import VTKContextMenu
+from core.model.signal_dataset import SignalDataset
 # UI and VTK adapter
 from plugins.analysis.frequency.psd_average.psd_average_plugin_ui import Ui_Psd_average
-from core.vtk_adapters.adapters import trials_matrix_to_vtk_table
+from core.utils.adapters import trials_matrix_to_vtk_table
 
 class Psd_average_plugin(IPlugin):
     """

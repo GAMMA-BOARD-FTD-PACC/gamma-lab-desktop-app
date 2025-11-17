@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import List, Dict, Any
 import numpy as np
 
-from core.services.trial_dataset import TrialDataset
+from core.model.trial_dataset import TrialDataset
 
 
 '''

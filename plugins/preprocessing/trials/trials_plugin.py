@@ -6,12 +6,12 @@ from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
-from core.plugins.vtk_context_menu import VTKContextMenu
+from core.utils.vtk_context_menu import VTKContextMenu
 from core.services.data_store import DataStore
-from core.services.signal_dataset import SignalDataset
-from core.services.trial_dataset import TrialDataset
+from core.model.signal_dataset import SignalDataset
+from core.model.trial_dataset import TrialDataset
 from core.filters.trials import cut_trials_single_channel
-from core.vtk_adapters.adapters import trials_matrix_to_vtk_table
+from core.utils.adapters import trials_matrix_to_vtk_table
 from plugins.preprocessing.trials.trial_plugin_ui import Ui_Trials
 
 class TrialsPlugin(IPlugin):

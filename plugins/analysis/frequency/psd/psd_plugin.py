@@ -7,10 +7,10 @@ from scipy.signal import welch
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
-from core.plugins.vtk_context_menu import VTKContextMenu
+from core.utils.vtk_context_menu import VTKContextMenu
 # UI and VTK adapter
 from plugins.analysis.frequency.psd.psd_plugin_ui import Ui_Psd
-from core.vtk_adapters.adapters import trials_matrix_to_vtk_table
+from core.utils.adapters import trials_matrix_to_vtk_table
 
 class Psd_plugin(IPlugin):
     """

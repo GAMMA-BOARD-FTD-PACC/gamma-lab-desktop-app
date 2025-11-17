@@ -9,8 +9,8 @@ from types import SimpleNamespace  # Helper for trials
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
-from core.services.signal_dataset import SignalDataset
-from core.services.trial_dataset import TrialDataset
+from core.model.signal_dataset import SignalDataset
+from core.model.trial_dataset import TrialDataset
 
 from plugins.preprocessing.prepare.artifact_remove.artifact_remove_ui import Ui_ArtifactRemove
 # Import logic entry point
@@ -18,7 +18,7 @@ from plugins.preprocessing.prepare.artifact_remove.artifact_logic import apply_m
 
 # Optional import for custom context menu
 try:
-    from core.plugins.vtk_context_menu import VTKContextMenu
+    from core.utils.vtk_context_menu import VTKContextMenu
 except ImportError:
     VTKContextMenu = None
 
@@ -50,6 +50,20 @@ class _ApplyWorker(QtCore.QObject):
         except Exception as e:
             self.error.emit(f"{type(e).__name__}: {e}")
 
+class _WidgetVisibilityFilter(QtCore.QObject):
+    """Listens to show/hide events on the plugin widget to keep the plot in sync."""
+    def __init__(self, plugin):
+        super().__init__(plugin.widget)
+        self._plugin = plugin
+
+    def eventFilter(self, obj, event):
+        if obj is self._plugin.widget:
+            if event.type() == QtCore.QEvent.Show:
+                self._plugin._on_widget_shown()
+            elif event.type() == QtCore.QEvent.Hide:
+                self._plugin._on_widget_hidden()
+        return super().eventFilter(obj, event)
+
 # Main Plugin Class
 class ArtifactRemovePlugin(IPlugin):
     def __init__(self, meta: PluginMeta):
@@ -77,6 +91,7 @@ class ArtifactRemovePlugin(IPlugin):
         self.discarded_indices: Set[int] = set()
         self.modified_indices: Set[int] = set()
 
+        self._visibility_filter: Optional[_WidgetVisibilityFilter] = None
 
     def process(self, data): 
         pass
@@ -155,6 +170,7 @@ class ArtifactRemovePlugin(IPlugin):
                         self.mainwin.show_watermark()
                 except Exception:
                     pass
+                self._ensure_visibility_filter()
 
             except Exception as e: 
                 error_message = f"Failed to initialize Remove Artifact plugin:\n{type(e).__name__}: {e}"
@@ -169,6 +185,7 @@ class ArtifactRemovePlugin(IPlugin):
         else:
             print(f"{LOGP} get_widget(): Reusing existing UI.")
             self.widget.setParent(parent)
+            self._ensure_visibility_filter()
             
             try:
                 if self.vtk_interactor and not self.vtk_interactor.isEnabled():
@@ -452,9 +469,13 @@ class ArtifactRemovePlugin(IPlugin):
             msg = str(e)
             print(f"{LOGP} fetch active trials error: {msg}")
             self._reset_state()
-            # Clear message when there are no trials yet
+            # Clear message when there are no trials yet (show hint in status label instead of overlay)
+            if "unsupported format" in msg or "get_active_trials" in msg:
+                msg = "Generate Trials first"
             if "No channel selected" in msg or "Generate Trials" in msg or "not available" in msg:
-                return self._clear_render("No trial data. Please generate Trials first (Preprocessing → Trials).")
+                if self.ui and hasattr(self.ui, "trial_status_label"):
+                    self.ui.trial_status_label.setText("Status: No trial data. Generate Trials first.")
+                return self._clear_render("", show_message=False)
             return self._clear_render(msg)
 
 
@@ -467,7 +488,9 @@ class ArtifactRemovePlugin(IPlugin):
         Tact = trials.shape[1]
         if Tact == 0:
             self._reset_state()
-            return self._clear_render("No active trials for this signal.")
+            if self.ui and hasattr(self.ui, "trial_status_label"):
+                self.ui.trial_status_label.setText("Status: No active trials for this signal.")
+            return self._clear_render("", show_message=False)
         if not (-1 <= self.current_display_index < Tact):
             self.current_display_index = -1
 
@@ -686,7 +709,7 @@ class ArtifactRemovePlugin(IPlugin):
             except Exception as e:
                 print(f"{LOGP} Error resetting UI state: {e}")
 
-    def _clear_render(self, message=""):
+    def _clear_render(self, message="", show_message=True):
         """Clear the VTK view and optionally show a message."""
         
         if self.vtk_view is None:
@@ -706,7 +729,7 @@ class ArtifactRemovePlugin(IPlugin):
             
             renderer.SetBackground(vtk.vtkNamedColors().GetColor3d("WhiteSmoke"))
             
-            if message:
+            if message and show_message:
                 txt = vtk.vtkTextActor()
                 txt.SetInput(message)
                 prop = txt.GetTextProperty()
@@ -726,6 +749,38 @@ class ArtifactRemovePlugin(IPlugin):
             self.vtk_view.GetRenderWindow().Render()
         except Exception as e:
             print(f"{LOGP} Error during _clear_render: {e}")
+
+    def _ensure_visibility_filter(self):
+        """Install an event filter so we refresh whenever the widget is shown again."""
+        if not self.widget or self._visibility_filter is not None:
+            return
+        self._visibility_filter = _WidgetVisibilityFilter(self)
+        self.widget.installEventFilter(self._visibility_filter)
+
+    def _on_widget_shown(self):
+        """Triggered when the stacked widget makes this plugin visible again."""
+        if not self.widget:
+            return
+        print(f"{LOGP} Widget shown -> refreshing view.")
+        if self._refresh_timer.isActive():
+            self._refresh_timer.stop()
+        try:
+            if self.vtk_interactor and not self.vtk_interactor.isEnabled():
+                self.vtk_interactor.Enable()
+            if self.vtk_interactor:
+                render_window = self.vtk_interactor.GetRenderWindow()
+                if render_window:
+                    interactor = render_window.GetInteractor()
+                    if interactor and not interactor.GetEnabled():
+                        interactor.Enable()
+        except Exception:
+            pass
+        self._refresh_view_coalesced()
+
+    def _on_widget_hidden(self):
+        """Triggered when the plugin is hidden; stop pending refresh."""
+        if self._refresh_timer.isActive():
+            self._refresh_timer.stop()
 
     def _on_data_updated(self, topic: str, payload: object):
         """Listen to kernel events and coalesce refreshes to avoid UI lag."""
