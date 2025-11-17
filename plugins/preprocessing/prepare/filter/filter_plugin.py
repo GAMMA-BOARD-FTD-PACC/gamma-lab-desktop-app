@@ -3,8 +3,8 @@ from PyQt5.QtWidgets import QWidget
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
-from core.plugins.vtk_context_menu import VTKContextMenu
-from core.services.signal_dataset import SignalDataset
+from core.utils.vtk_context_menu import VTKContextMenu
+from core.model.signal_dataset import SignalDataset
 from core.services.data_store import DataStore
 
 from plugins.preprocessing.prepare.filter.filter_plugin_ui import Ui_Filter

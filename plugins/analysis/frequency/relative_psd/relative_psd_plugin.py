@@ -7,10 +7,10 @@ from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
-from core.plugins.vtk_context_menu import VTKContextMenu
-from core.services.signal_dataset import SignalDataset
+from core.utils.vtk_context_menu import VTKContextMenu
+from core.model.signal_dataset import SignalDataset
 from plugins.analysis.frequency.relative_psd.relative_psd_plugin_ui import Ui_Relative_psd
-from core.vtk_adapters.adapters import trials_matrix_to_vtk_table
+from core.utils.adapters import trials_matrix_to_vtk_table
 
 
 class Relative_psd_plugin(IPlugin):

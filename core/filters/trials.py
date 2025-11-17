@@ -1,8 +1,8 @@
 from typing import List, Optional, Literal, Tuple
 import math
 import numpy as np
-from core.services.signal_dataset import SignalDataset
-from core.services.trial_dataset import TrialDataset
+from core.model.signal_dataset import SignalDataset
+from core.model.trial_dataset import TrialDataset
 
 EndMode = Literal["fixed", "until_next_onset"]
 

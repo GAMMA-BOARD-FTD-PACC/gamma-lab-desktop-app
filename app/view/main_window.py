@@ -17,7 +17,7 @@ from PyQt5.QtCore import QSize, Qt, QPropertyAnimation, QEasingCurve, QEvent
 from PyQt5.QtWidgets import QFrame
 
 from core.plugins.interfaces import IPlugin
-from core.plugins.plugin_alerts import PluginAlerts
+from core.utils.plugin_alerts import PluginAlerts
 
 class MainWindow(QMainWindow):
     def __init__(self, kernel):

@@ -3,7 +3,7 @@
     Accessed via key/value pairs.
 '''
 
-from core.services.signal_dataset import SignalDataset
+from core.model.signal_dataset import SignalDataset
 
 class DataStore:
     def __init__(self):

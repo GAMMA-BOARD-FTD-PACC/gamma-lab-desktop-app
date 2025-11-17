@@ -9,8 +9,8 @@ from types import SimpleNamespace  # Helper for trials
 
 from core.plugins.interfaces import IPlugin
 from core.plugins.meta import PluginMeta
-from core.services.signal_dataset import SignalDataset
-from core.services.trial_dataset import TrialDataset
+from core.model.signal_dataset import SignalDataset
+from core.model.trial_dataset import TrialDataset
 
 from plugins.preprocessing.prepare.artifact_remove.artifact_remove_ui import Ui_ArtifactRemove
 # Import logic entry point
@@ -18,7 +18,7 @@ from plugins.preprocessing.prepare.artifact_remove.artifact_logic import apply_m
 
 # Optional import for custom context menu
 try:
-    from core.plugins.vtk_context_menu import VTKContextMenu
+    from core.utils.vtk_context_menu import VTKContextMenu
 except ImportError:
     VTKContextMenu = None
 

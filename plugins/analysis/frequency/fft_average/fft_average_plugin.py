@@ -7,9 +7,9 @@ from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 from PyQt5 import QtWidgets, QtCore
 
 from core.plugins.meta import PluginMeta
-from core.plugins.vtk_context_menu import VTKContextMenu
-from core.services.signal_dataset import SignalDataset
-from core.vtk_adapters.adapters import trials_matrix_to_vtk_table
+from core.utils.vtk_context_menu import VTKContextMenu
+from core.model.signal_dataset import SignalDataset
+from core.utils.adapters import trials_matrix_to_vtk_table
 from plugins.analysis.frequency.fft_average.fft_average_plugin_ui import Ui_Fft_Average
 
 class Fft_average_plugin(IPlugin):

@@ -10,7 +10,7 @@ from core.kernel import Kernel
 from app.view.main_window import MainWindow
 from core.plugins.manager import PluginManager
 from core.services.data_store import DataStore
-from core.services.fileio import FileIOService
+from core.services.fileio_service import FileIOService
 
 
 
