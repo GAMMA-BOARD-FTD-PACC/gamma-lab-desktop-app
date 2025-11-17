@@ -34,7 +34,6 @@ class MainWindow(QMainWindow):
         self.setWindowIcon(icon)
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
-        self.showMaximized()
         
         self.alerts = PluginAlerts()
         self.alerts.parent = self

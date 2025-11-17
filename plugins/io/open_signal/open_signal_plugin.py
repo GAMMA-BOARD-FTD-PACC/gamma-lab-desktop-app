@@ -187,7 +187,9 @@ class OpenSignalPlugin(IPlugin):
             self.ui,
             "Select signal file",
             last_dir,
-            "Signals (*.abf *.edf *.ebf *.mat);;ABF Files (*.abf);;EDF Files (*.edf);;EBF Files (*.ebf);;MAT Files (*.mat)"
+            # "Signals (*.abf *.edf *.ebf *.mat);;ABF Files (*.abf);;EDF Files (*.edf);;EBF Files (*.ebf);;MAT Files (*.mat)"
+            "Signals (*.abf *.edf);;ABF Files (*.abf);;EDF Files (*.edf)"
+
         )
         if not fname:
             return
@@ -229,8 +231,8 @@ class OpenSignalPlugin(IPlugin):
                 ds = fileio.load_abf(fname)
             elif ext == ".edf":
                 ds = fileio.load_edf(fname)
-            elif ext == ".mat":
-                ds = fileio.load_mat(fname)
+            # elif ext == ".mat":
+            #     ds = fileio.load_mat(fname)
             else:
                 if self.mainwin:
                     self.mainwin.statusBar().showMessage(f"Unsupported format: {ext}", 4000)
