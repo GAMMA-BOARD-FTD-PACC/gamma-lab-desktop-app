@@ -1,7 +1,7 @@
 import types
 import numpy as np
 import pytest
-from core.services.fileio import FileIOService, SignalDataset
+from core.services.fileio_service import FileIOService, SignalDataset
 
 # ---------------------------------------------------------------------
 # Dummy classes simulating pyedflib.EdfReader behavior
@@ -71,7 +71,7 @@ def test_load_edf_valid_uniform(monkeypatch, tmp_path):
     """
     Valid case: uniform EDF → signals stack cleanly into a SignalDataset.
     """
-    import core.services.fileio as fileio_mod
+    import core.services.fileio_service as fileio_mod
     monkeypatch.setattr(
         fileio_mod,
         "pyedflib",
@@ -94,7 +94,7 @@ def test_load_edf_corrupted(monkeypatch, tmp_path):
     """
     Error case: pyedflib.EdfReader raises on open → service should raise.
     """
-    import core.services.fileio as fileio_mod
+    import core.services.fileio_service as fileio_mod
     monkeypatch.setattr(
         fileio_mod,
         "pyedflib",

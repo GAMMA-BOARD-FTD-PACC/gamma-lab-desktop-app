@@ -5,7 +5,7 @@ import pytest
 
 # SUT
 import core.filters.trials as tr
-from core.services.signal_dataset import SignalDataset
+from core.model.signal_dataset import SignalDataset
 
 
 # ---------------------------------------------------------------------

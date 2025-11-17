@@ -1,6 +1,6 @@
 .env
 **/__pycache__/
-
+**.pytest_cache
 # Entornos virtuales
 venv/
 .env/

@@ -1,7 +1,7 @@
 import types
 import numpy as np
 import pytest
-from core.services.fileio import FileIOService, SignalDataset
+from core.services.fileio_service import FileIOService, SignalDataset
 
 # ---------------------------------------------------------------------
 # Dummy class simulating pyabf.ABF behavior
@@ -68,7 +68,7 @@ def test_load_abf_valid(monkeypatch, tmp_path):
     """
     Valid case: correctly formatted ABF file with two channels.
     """
-    import core.services.fileio as fileio_mod
+    import core.services.fileio_service as fileio_mod
     monkeypatch.setattr(fileio_mod, "pyabf", types.SimpleNamespace(ABF=DummyABF), raising=True)
 
     svc = FileIOService()
@@ -93,7 +93,7 @@ def test_load_abf_corrupted(monkeypatch, tmp_path):
     """
     Error case: the ABF constructor raises an exception (corrupted file).
     """
-    import core.services.fileio as fileio_mod
+    import core.services.fileio_service as fileio_mod
     monkeypatch.setattr(fileio_mod, "pyabf", types.SimpleNamespace(ABF=DummyABF_Raises), raising=True)
 
     svc = FileIOService()

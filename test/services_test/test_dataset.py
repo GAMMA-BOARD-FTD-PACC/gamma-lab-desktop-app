@@ -3,7 +3,7 @@ import pytest
 import numpy as np
 
 from core.services.data_store import DataStore
-from core.services.signal_dataset import SignalDataset
+from core.model.signal_dataset import SignalDataset
 
 
 # ---------------------------------------------------------------------
