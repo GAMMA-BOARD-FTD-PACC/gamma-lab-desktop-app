@@ -37,7 +37,7 @@ Download one of the supported versions:
 
 Choose the *Windows installer (64‑bit)*.
 
-### ✔ During installation:
+### During installation:
 - Check **“Add Python to PATH”**
 - Click **Customize Installation**
 - Keep all defaults enabled
@@ -80,7 +80,6 @@ This script performs all environment preparation automatically:
 If you want to create a desktop shortcut to run Gamma Lab, you can run the following script by double-clicking it.
 
 ```bash
-.
 create_shortcut.bat
 ```
 
