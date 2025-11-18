@@ -1,79 +1,76 @@
 @echo off
-setlocal enabledelayedexpansion
 title Gamma Lab
 
 echo Launching Gamma Lab...
 echo.
 
 REM ==========================================
-REM GET LIST OF INSTALLED PYTHON VERSIONS
+REM CHECK SYSTEM PYTHON VERSION
 REM ==========================================
-py -0 > py_list.tmp 2>nul
 
-IF %ERRORLEVEL% NEQ 0 (
-    echo [ERROR] Python Launcher not found. Please install Python 3.11.
+for /f "tokens=2 delims= " %%v in ('python -V 2^>nul') do set PYV=%%v
+
+for /f "tokens=1-3 delims=." %%a in ("%PYV%") do (
+    set PY_MAJOR=%%a
+    set PY_MINOR=%%b
+    set PY_PATCH=%%c
+)
+
+if "%PY_MAJOR%"=="" (
+    echo [ERROR] Python not found. Install Python 3.11 or newer.
     pause
     exit /b
 )
 
-set FOUND311=0
+echo Python detected: %PY_MAJOR%.%PY_MINOR%.%PY_PATCH%
 
-for /f "tokens=1" %%v in (py_list.tmp) do (
-    echo %%v | find "3.11" >nul
-    if !ERRORLEVEL! == 0 (
-        set FOUND311=1
-    )
-)
-
-del py_list.tmp
-
-
-REM ==========================================
-REM VERIFY PYTHON 3.11 IS INSTALLED
-REM ==========================================
-if %FOUND311%==0 (
-    echo [ERROR] No Python 3.11.x installation detected.
-    echo Please install Python 3.11 from:
-    echo https://www.python.org/downloads/release/python-3110/
+REM Require Python >= 3.11
+if %PY_MAJOR% LSS 3 (
+    echo [ERROR] Python 3.11 or newer is required.
     pause
     exit /b
 )
 
-echo Python 3.11 detected.
+if %PY_MAJOR%==3 if %PY_MINOR% LSS 11 (
+    echo [ERROR] Python 3.11 or newer is required.
+    pause
+    exit /b
+)
+
+echo Python version OK.
 echo.
-
 
 REM ==========================================
 REM CREATE OR USE VIRTUAL ENVIRONMENT
 REM ==========================================
-set INSTALL_DEP=0
 
-IF EXIST ".venv\Scripts\activate" (
+if exist ".venv\Scripts\activate" (
     set VENV_PATH=.venv\Scripts\activate
-) ELSE IF EXIST "venv\Scripts\activate" (
-    set VENV_PATH=venv\Scripts\activate
-) ELSE (
-    echo Creating virtual environment with Python 3.11...
-    py -3.11 -m venv .venv
+) else (
+    echo Creating virtual environment...
+    python -m venv .venv
     set VENV_PATH=.venv\Scripts\activate
-    set INSTALL_DEP=1
 )
 
 echo Activating virtual environment...
 call %VENV_PATH%
 echo.
 
-echo Installing dependencies...
+REM ==========================================
+REM ALWAYS INSTALL DEPENDENCIES
+REM ==========================================
+
+echo Installing/Checking dependencies...
 pip install --upgrade pip
 pip install -r requirements.txt
-echo Dependencies installed.
-
+echo Dependencies up to date.
+echo.
 
 REM ==========================================
 REM RUN APPLICATION
 REM ==========================================
+
 echo Running Gamma Lab...
-py -3.11 main.py
+python main.py
 echo.
 
-pause >nul
