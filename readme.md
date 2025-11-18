@@ -3,6 +3,10 @@
 This document explains how to install and run **Gamma Lab** on Windows using Python 3.11, 3.12, or 3.13 and the included `run.bat` launcher.
 ---
 
+## 📦 Download the latest project release
+The easiest way to obtain Gamma Lab is by downloading the compressed package containing the latest stable version from the official repository's Releases section:
+
+🔗 Download latest release (.zip): [releases](https://github.com/GAMMA-BOARD-FTD-PACC/gamma-lab-desktop-app/releases)
 
 # 1. Check your Python version
 
