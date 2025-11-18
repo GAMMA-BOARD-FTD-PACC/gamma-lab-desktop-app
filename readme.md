@@ -56,14 +56,14 @@ python --version
 Gamma Lab includes a launcher script:
 
 ```
-run.bat
+gamma_lab.bat
 ```
 
 You can start the application by either double-clicking it or running:
 
 ```bash
 .
-run.bat
+gamma_lab.bat
 ```
 
 This script performs all environment preparation automatically:
