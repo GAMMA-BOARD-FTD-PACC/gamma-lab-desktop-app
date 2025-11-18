@@ -214,6 +214,10 @@ class Wavelet_average_plugin(IPlugin):
         scaled = self.ui.scaleCheckBox.isChecked()
         norm_method = self.ui.normalizeComboBox.currentText().lower()
 
+        if fmin <= 0:
+            self.alerts.error("Low frequency cannot be zero or negative.")
+            return
+
         self.alerts.show_spinner("Computing wavelet")
 
         # Create and execute thread

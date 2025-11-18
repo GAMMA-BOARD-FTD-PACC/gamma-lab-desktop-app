@@ -177,6 +177,10 @@ class Wavelet_plugin(IPlugin):
         scaled = self.ui.scaleCheckBox.isChecked()
         norm_method = self.ui.normalizeComboBox.currentText().lower()
 
+        if fmin <= 0:
+            self.alerts.error("Low frequency cannot be zero or negative.")
+            return
+        
         scalogram, times, freqs = self.compute_wavelet(sig, fs_calculado, fs, fmin, fmax, cycles)
 
         if normalize:
