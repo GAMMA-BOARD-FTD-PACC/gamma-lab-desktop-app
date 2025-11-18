@@ -41,22 +41,6 @@ echo Python version OK.
 echo.
 
 REM ==========================================
-REM CREATE OR USE VIRTUAL ENVIRONMENT
-REM ==========================================
-
-if exist ".venv\Scripts\activate" (
-    set VENV_PATH=.venv\Scripts\activate
-) else (
-    echo Creating virtual environment...
-    python -m venv .venv
-    set VENV_PATH=.venv\Scripts\activate
-)
-
-echo Activating virtual environment...
-call %VENV_PATH%
-echo.
-
-REM ==========================================
 REM ALWAYS INSTALL DEPENDENCIES
 REM ==========================================
 
