@@ -1,6 +1,4 @@
-from PyQt5 import QtCore, QtWidgets
-from PyQt5.QtWebEngineWidgets import QWebEngineView
-
+from PyQt5 import QtCore, QtWidgets, QtWebEngineWidgets
 
 class Ui_FAQ(object):
     def setupUi(self, FAQ):
@@ -8,26 +6,26 @@ class Ui_FAQ(object):
 
         # Layout principal horizontal
         self.mainLayout = QtWidgets.QHBoxLayout(FAQ)
-        self.mainLayout.setObjectName("mainLayout")
         self.mainLayout.setSpacing(0)
 
         # Splitter horizontal
         self.splitter = QtWidgets.QSplitter(FAQ)
         self.splitter.setOrientation(QtCore.Qt.Horizontal)
-        self.splitter.setObjectName("splitter")
         self.mainLayout.addWidget(self.splitter)
 
         # --- Left Area: PDF Workspace ---
         self.pdfArea = QtWidgets.QFrame(self.splitter)
         self.pdfArea.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.pdfArea.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.pdfArea.setObjectName("pdfArea")
 
         self.pdfLayout = QtWidgets.QVBoxLayout(self.pdfArea)
         self.pdfLayout.setContentsMargins(0, 0, 0, 0)
         self.pdfLayout.setSpacing(0)
 
-        self.pdfView = QWebEngineView(self.pdfArea)
+        self.pdfView = QtWebEngineWidgets.QWebEngineView(self.pdfArea)
+        # Activar visor de PDF
+        self.pdfView.settings().setAttribute(QtWebEngineWidgets.QWebEngineSettings.PluginsEnabled, True)
+        self.pdfView.settings().setAttribute(QtWebEngineWidgets.QWebEngineSettings.PdfViewerEnabled, True)
         self.pdfLayout.addWidget(self.pdfView)
 
         # --- Right Area: Button Panel ---
@@ -37,8 +35,6 @@ class Ui_FAQ(object):
         self.scrollArea.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
 
         self.layoutWidget = QtWidgets.QWidget()
-        self.layoutWidget.setObjectName("layoutWidget")
-
         self.paramsLayout = QtWidgets.QVBoxLayout(self.layoutWidget)
         self.paramsLayout.setContentsMargins(8, 0, 8, 0)
         self.paramsLayout.setSpacing(12)
@@ -48,9 +44,8 @@ class Ui_FAQ(object):
 
         # ==== Title ====
         self.titleLabel = QtWidgets.QLabel(self.layoutWidget)
-        self.titleLabel.setObjectName("titleLabel")
-        self.titleLabel.setProperty("variant", "title")
         self.titleLabel.setAlignment(QtCore.Qt.AlignLeft)
+        self.titleLabel.setProperty("variant", "title")  # mantiene el estilo QSS
         self.paramsLayout.addWidget(self.titleLabel)
 
         self.line = QtWidgets.QFrame(self.layoutWidget)
@@ -60,24 +55,19 @@ class Ui_FAQ(object):
 
         # ==== Buttons ====
         self.repoButton = QtWidgets.QPushButton(self.layoutWidget)
-        self.repoButton.setObjectName("mainActionButton")
-        self.paramsLayout.addWidget(self.repoButton)
-
         self.docsButton = QtWidgets.QPushButton(self.layoutWidget)
-        self.docsButton.setObjectName("mainActionButton")
-        self.paramsLayout.addWidget(self.docsButton)
-
         self.videosButton = QtWidgets.QPushButton(self.layoutWidget)
-        self.videosButton.setObjectName("mainActionButton")
-        self.paramsLayout.addWidget(self.videosButton)
-
         self.downloadButton = QtWidgets.QPushButton(self.layoutWidget)
-        self.downloadButton.setObjectName("mainActionButton")
-        self.paramsLayout.addWidget(self.downloadButton)
+
+        # Asignar objectName igual que antes para que la QSS los aplique
+        for btn in [self.repoButton, self.docsButton, self.videosButton, self.downloadButton]:
+            btn.setObjectName("mainActionButton")
+            btn.setProperty("role", "action-button")  # opcional si tu QSS lo necesita
+            self.paramsLayout.addWidget(btn)
 
         self.paramsLayout.addStretch(1)
 
-        # Size splitter: PDF workspace grande, panel pequeño
+        # Ajustar tamaños del splitter
         self.splitter.setSizes([700, 300])
         self.splitter.setStretchFactor(0, 1)
         self.splitter.setStretchFactor(1, 0)
