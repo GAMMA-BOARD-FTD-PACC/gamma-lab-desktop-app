@@ -48,11 +48,11 @@ class HelpPlugin(IPlugin):
             lambda: webbrowser.open("https://github.com/GAMMA-BOARD-FTD-PACC/gamma-lab-desktop-app")
         )
         self.ui.docsButton.clicked.connect(
-            lambda: webbrowser.open("https://github.com/GAMMA-BOARD-FTD-PACC/gamma-lab-desktop-app")
+            lambda: webbrowser.open("https://github.com/GAMMA-BOARD-FTD-PACC/Documentos")
         )
         self.ui.videosButton.clicked.connect(
             lambda: webbrowser.open("https://youtube.com/playlist?list=PLTiLHF2jqOJZLib1CLtq1JnGZeNTktVmm&si=6JOE_WovbWcczJy2")
         )
         self.ui.downloadButton.clicked.connect(
-            lambda: webbrowser.open("https://github.com/GAMMA-BOARD-FTD-PACC/gamma-lab-desktop-app")
+            lambda: webbrowser.open("https://github.com/GAMMA-BOARD-FTD-PACC/gamma-lab-desktop-app/releases")
         )
