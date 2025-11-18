@@ -3,7 +3,8 @@ from pathlib import Path
 import sys
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QFontDatabase, QFont, QIcon
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QCoreApplication
+
 import resources_rc
 
 from core.kernel import Kernel
@@ -23,6 +24,9 @@ def main():
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('GammaLab.DesktopApp')
         except Exception:
             pass
+
+        # ⚡ Esto debe ir antes de crear QApplication
+    QCoreApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
     app = QApplication(sys.argv)
     # Set application icon (taskbar, Alt-Tab). Prefer embedded resource, fallback to file path.
     icon = QIcon(":/assets/logos/app-logo.png")

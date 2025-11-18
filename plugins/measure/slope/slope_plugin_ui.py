@@ -40,7 +40,7 @@ class Ui_Slope(object):
 
         # Button
         self.pushButton = QtWidgets.QPushButton(self.rightPanel)
-        self.pushButton.setObjectName("pushButton")
+        self.pushButton.setObjectName("mainActionButton")
         self.rightLayout.addWidget(self.pushButton)
 
         # Spacer (to push buttons up)

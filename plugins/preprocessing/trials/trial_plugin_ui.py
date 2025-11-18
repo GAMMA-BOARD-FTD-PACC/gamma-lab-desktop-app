@@ -186,6 +186,7 @@ class Ui_Trials(QtWidgets.QWidget):
         self.initialTimeDoubleSpinBox.setRange(-1e9, 1e9)
         self.initialTimeDoubleSpinBox.setSingleStep(0.001)
         self.initialTimeDoubleSpinBox.setValue(-0.05)
+        self.initialTimeDoubleSpinBox.setSuffix(" s")
 
         self.finalTimeLabel = QtWidgets.QLabel(self.panel)
         self.finalTimeLabel.setText("Final Time")
@@ -195,6 +196,7 @@ class Ui_Trials(QtWidgets.QWidget):
         self.finalTimeDoubleSpinBox.setRange(-1e9, 1e9)
         self.finalTimeDoubleSpinBox.setSingleStep(0.001)
         self.finalTimeDoubleSpinBox.setValue(3.0)
+        self.finalTimeDoubleSpinBox.setSuffix(" s")
 
         self.interStimTimeLabel = QtWidgets.QLabel(self.panel)
         self.interStimTimeLabel.setText("Inter Stim Time")
@@ -204,6 +206,8 @@ class Ui_Trials(QtWidgets.QWidget):
         self.interStimTimeDoubleSpinBox.setRange(-1e9, 1e9)
         self.interStimTimeDoubleSpinBox.setSingleStep(0.001)
         self.interStimTimeDoubleSpinBox.setValue(0.0)
+        self.interStimTimeDoubleSpinBox.setSuffix(" s")
+        
 
         # Trial End Mode
         self.endModeComboLabel = QtWidgets.QLabel(self.panel)

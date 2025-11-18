@@ -140,11 +140,6 @@ class IPlugin(ABC):
         self.kernel = kernel
         self._log("Initializing")
 
-    @abstractmethod
-    def process(self, data: any):
-        """Process data sent by the kernel or other plugins."""
-        pass
-
     def start(self, kernel: kernel):
         """
         Initialize the plugin with the kernel and register for active-signal change events.
@@ -170,3 +165,7 @@ class IPlugin(ABC):
         """Return the widget associated with the plugin."""
         pass
 
+    @abstractmethod
+    def process(self, data: any):
+        """Process data sent by the kernel or other plugins."""
+        pass
