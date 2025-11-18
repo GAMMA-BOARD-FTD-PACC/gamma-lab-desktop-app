@@ -44,14 +44,13 @@ class HelpPlugin(IPlugin):
             self.widget.setParent(parent)
         return self.widget
 
-    def load_pdf(self, pdf_path):
-        """Carga el PDF en el QWebEngineView."""
-        # Convertir la ruta absoluta local a una QUrl usando el esquema de archivo
-        file_url = QUrl.fromLocalFile(pdf_path)
-        print(file_url)
-        
-        # Cargar la URL en el QWebEngineView
-        self.ui.pdfView.load(file_url)
+    def load_pdf(self, pdf_path=None):
+        """Carga un PDF o muestra una página web de prueba."""
+        # Por ahora, mostramos Google para probar que QWebEngineView funciona
+        test_url = QUrl("https://github.com/GAMMA-BOARD-FTD-PACC/gamma-lab-desktop-app/blob/develop/requirements.txt")
+        self.ui.pdfView.setUrl(test_url)
+
+
     
     
     def init_buttons(self):
